@@ -356,22 +356,69 @@ fn log_service_event(config: &Config, message: &str) -> io::Result<()> {
 
 fn start_service(config: &Config) -> io::Result<()> {
     let session_name = "nexus";
+
     if !is_job_running(session_name) {
         let service_log = config.log_dir.join("service.log");
-        Command::new("screen")
+        let output = Command::new("screen")
             .args([
                 "-dmS",
                 session_name,
                 "bash",
                 "-c",
-                &format!("exec 1> {}; nexus daemon", service_log.display()),
+                &format!(
+                    "exec 1> {} 2> {}; nexus process",
+                    service_log.display(),
+                    service_log.display()
+                ),
             ])
             .output()?;
-        println!("{}", "Nexus service started".green());
+
+        if !output.status.success() {
+            eprintln!("Failed to start screen session: {:?}", output);
+        } else {
+            println!("{}", "Nexus service started".green());
+        }
     } else {
         println!("{}", "Nexus service is already running".yellow());
     }
     Ok(())
+}
+
+fn nexus_process(config: &Config) -> io::Result<()> {
+    loop {
+        // Poll nvidia-smi every 5 seconds to check for available GPUs
+        let gpus = get_gpu_info()?;
+
+        // Load jobs from the queue
+        let mut jobs = load_jobs(config)?;
+
+        // Collect available GPUs first
+        let available_gpus: Vec<&GpuInfo> =
+            gpus.iter().filter(|g| is_gpu_available(g, &jobs)).collect();
+
+        // Assign jobs to available GPUs
+        for gpu in available_gpus {
+            if let Some(job) = jobs.iter_mut().find(|j| j.status == JobStatus::Queued) {
+                if let Err(e) = start_job(job, gpu.index, config) {
+                    eprintln!("{}", format!("Failed to start job {}: {}", job.id, e).red());
+                    job.status = JobStatus::Failed;
+                }
+            }
+        }
+
+        // Save the job state
+        save_jobs(&jobs, config)?;
+
+        // Sleep for 5 seconds before polling again
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    }
+}
+
+fn is_gpu_available(gpu: &GpuInfo, jobs: &[Job]) -> bool {
+    // Check if there is any running job that is using this GPU
+    !jobs
+        .iter()
+        .any(|job| job.status == JobStatus::Running && job.gpu_index == Some(gpu.index))
 }
 
 fn stop_service() -> io::Result<()> {
@@ -460,6 +507,7 @@ fn render_status(config: &Config) -> io::Result<()> {
 }
 
 fn handle_status(config: &Config) -> io::Result<()> {
+    // Show the queue, history, and current GPU status without starting the service
     render_status(config)
 }
 
@@ -689,6 +737,15 @@ fn handle_attach(target: &str) -> io::Result<()> {
     }
 }
 
+fn handle_attach_service() -> io::Result<()> {
+    if is_job_running("nexus") {
+        Command::new("screen").args(["-r", "nexus"]).status()?;
+    } else {
+        println!("{}", "No running nexus service found.".red());
+    }
+    Ok(())
+}
+
 fn handle_config(_config: &Config) -> io::Result<()> {
     let home = dirs::home_dir().unwrap();
     let config_path = home.join(".nexus/config.toml");
@@ -711,7 +768,6 @@ fn print_help() {
 
 {}:
     nexus                     Show status
-    nexus -n                 Non-interactive status
     nexus stop               Stop the nexus service
     nexus restart            Restart the nexus service
     nexus add \"command\"      Add job to queue
@@ -723,6 +779,7 @@ fn print_help() {
     nexus resume             Resume queue processing
     nexus logs <id> [-f]     View logs for job
     nexus attach <id|gpu>    Attach to running job's screen session
+    nexus attach service     Attach to the nexus service session
     nexus edit               Open jobs.txt in $EDITOR
     nexus config             View current config
     nexus config edit        Edit config.toml in $EDITOR
@@ -818,10 +875,13 @@ fn main() -> io::Result<()> {
 
     match args.get(1).map(|s| s.as_str()) {
         None => {
-            start_service(&config)?;
-            handle_status(&config)
+            start_service(&config)?; // Starts the service in the screen session
+            handle_status(&config) // Shows the current status
         }
-        Some("-n") => handle_status(&config),
+        Some("process") => {
+            nexus_process(&config)?; // Continuously runs the nexus background process
+            Ok(())
+        }
         Some("stop") => stop_service(),
         Some("restart") => {
             stop_service()?;
