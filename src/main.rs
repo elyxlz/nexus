@@ -29,10 +29,10 @@ struct Job {
 }
 
 struct Config {
-    _colors_enabled: bool, // This indicates it's currently unused
     log_dir: PathBuf,
     jobs_file: PathBuf,
     refresh_rate: u64,
+    _colors_enabled: bool, // This indicates it's currently unused
     datetime_format: String,
 }
 
@@ -129,7 +129,7 @@ datetime_format = "%Y-%m-%d %H:%M:%S"
         log_dir,
         jobs_file,
         refresh_rate,
-        colors_enabled,
+        _colors_enabled: colors_enabled, // Updated to match the field name
         datetime_format,
     })
 }
