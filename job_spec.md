@@ -37,6 +37,7 @@ nexus remove <id>       # Remove job from queue
 nexus pause             # Pause queue processing
 nexus resume            # Resume queue processing
 nexus logs <id>         # View logs for job (running or completed)
+nexus logs service [-f] # View or follow service logs
 nexus attach <id|gpu>   # Attach to running job's screen session
 nexus edit              # Open jobs.txt in $EDITOR
 nexus config            # View current config
@@ -189,6 +190,10 @@ jobs_file = "~/.nexus/jobs.txt"
 - Shows both stdout and stderr
 - Supports real-time following for running jobs
 - Example: `nexus logs abc`
+
+### nexus logs service
+
+- Views logs for the nexus service
 
 ### nexus attach <id|gpu>
 

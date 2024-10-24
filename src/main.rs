@@ -2,15 +2,12 @@ use chrono::{DateTime, Local};
 use colored::*;
 use humantime::format_duration;
 use sha2::{Digest, Sha256};
-use signal_hook::{consts::SIGTERM, iterator::Signals};
 use std::{
     env,
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, Write},
     path::PathBuf,
     process::Command,
-    sync::atomic::{AtomicBool, Ordering},
-    sync::Arc,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -65,7 +62,7 @@ log_dir = "~/.nexus/logs"
 jobs_file = "~/.nexus/jobs.txt"
 
 [display]
-refresh_rate = 5  # Status view refresh in seconds
+refresh_rate = 10  # Status view refresh in seconds
 colors_enabled = true
 datetime_format = "%Y-%m-%d %H:%M:%S"
 "#;
@@ -200,6 +197,12 @@ fn start_job(job: &mut Job, gpu_index: usize, config: &Config) -> io::Result<()>
     job.status = JobStatus::Running;
     job.log_dir = Some(log_dir);
     job.env_vars = env_vars;
+
+    // Log job start
+    log_service_event(
+        config,
+        &format!("Job {} started on GPU {}", job.id, gpu_index),
+    )?;
 
     Ok(())
 }
@@ -366,7 +369,7 @@ fn start_service(config: &Config) -> io::Result<()> {
                 "bash",
                 "-c",
                 &format!(
-                    "exec 1> {} 2> {}; nexus process",
+                    "exec 1> {} 2> {}; nexus service",
                     service_log.display(),
                     service_log.display()
                 ),
@@ -377,6 +380,7 @@ fn start_service(config: &Config) -> io::Result<()> {
             eprintln!("Failed to start screen session: {:?}", output);
         } else {
             println!("{}", "Nexus service started".green());
+            log_service_event(config, "Nexus service started")?; // Log service start
         }
     } else {
         println!("{}", "Nexus service is already running".yellow());
@@ -384,7 +388,7 @@ fn start_service(config: &Config) -> io::Result<()> {
     Ok(())
 }
 
-fn nexus_process(config: &Config) -> io::Result<()> {
+fn nexus_service(config: &Config) -> io::Result<()> {
     loop {
         // Poll nvidia-smi every 5 seconds to check for available GPUs
         let gpus = get_gpu_info()?;
@@ -410,7 +414,7 @@ fn nexus_process(config: &Config) -> io::Result<()> {
         save_jobs(&jobs, config)?;
 
         // Sleep for 5 seconds before polling again
-        std::thread::sleep(std::time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_secs(config.refresh_rate));
     }
 }
 
@@ -421,11 +425,12 @@ fn is_gpu_available(gpu: &GpuInfo, jobs: &[Job]) -> bool {
         .any(|job| job.status == JobStatus::Running && job.gpu_index == Some(gpu.index))
 }
 
-fn stop_service() -> io::Result<()> {
+fn stop_service(config: &Config) -> io::Result<()> {
     Command::new("screen")
         .args(["-S", "nexus", "-X", "quit"])
         .output()?;
     println!("{}", "Nexus service stopped".green());
+    log_service_event(config, "Nexus service stopped")?; // Log service stop
     Ok(())
 }
 
@@ -511,70 +516,28 @@ fn handle_status(config: &Config) -> io::Result<()> {
     render_status(config)
 }
 
-// Job processing
-fn process_jobs(config: &Config) -> io::Result<()> {
-    let mut jobs = load_jobs(config)?;
-    let gpus = get_gpu_info()?;
-
-    // Update status of running jobs
-    for job in jobs.iter_mut().filter(|j| j.status == JobStatus::Running) {
-        if let Some(session) = &job.screen_session {
-            if !is_job_running(session) {
-                job.status = JobStatus::Completed;
-                log_service_event(
-                    config,
-                    &format!("Job {} completed on GPU {}", job.id, job.gpu_index.unwrap()),
-                )?;
-            }
-        }
-    }
-
-    // Find available GPUs
-    let available_gpus: Vec<usize> = gpus
-        .iter()
-        .map(|g| g.index)
-        .filter(|&i| {
-            !jobs
-                .iter()
-                .any(|j| j.status == JobStatus::Running && j.gpu_index == Some(i))
-        })
-        .collect();
-
-    // Start jobs on available GPUs
-    for gpu_index in available_gpus {
-        if let Some(job) = jobs.iter_mut().find(|j| j.status == JobStatus::Queued) {
-            if let Err(e) = start_job(job, gpu_index, config) {
-                eprintln!("{}", format!("Failed to start job {}: {}", job.id, e).red());
-                job.status = JobStatus::Failed;
-                log_service_event(
-                    config,
-                    &format!("Failed to start job {} on GPU {}: {}", job.id, gpu_index, e),
-                )?;
-            } else {
-                log_service_event(
-                    config,
-                    &format!(
-                        "Started job {} on GPU {}: {}",
-                        job.id, gpu_index, job.command
-                    ),
-                )?;
-            }
-        }
-    }
-
-    save_jobs(&jobs, config)?;
-    Ok(())
-}
-
 // Command handlers
 fn handle_add(command: &str, config: &Config) -> io::Result<()> {
     let mut jobs = load_jobs(config)?;
+
     let job = create_job(command.to_string());
+    let added_time = Local::now().format(&config.datetime_format).to_string();
+
     println!(
         "{} {}",
         "Added job".green(),
         job.id.to_string().magenta().bold()
     );
+    println!("{}: {}", "Command".white().bold(), job.command.cyan());
+    println!("{}: {}", "Time Added".white().bold(), added_time.cyan());
+    println!("{}", "The job has been added to the queue.".green());
+
+    // Log job addition
+    log_service_event(
+        config,
+        &format!("Job {} added to queue: {}", job.id, job.command),
+    )?;
+
     jobs.push(job);
     save_jobs(&jobs, config)
 }
@@ -714,6 +677,23 @@ fn handle_logs(id: &str, config: &Config, follow: bool) -> io::Result<()> {
     Ok(())
 }
 
+fn handle_service_logs(config: &Config) -> io::Result<()> {
+    // Get the path to the service log file
+    let log_path = config.log_dir.join("service.log");
+
+    // Check if the log file exists
+    if !log_path.exists() {
+        println!("{}", "No service log found.".red());
+        return Ok(());
+    }
+
+    // Read and print the contents of the log file
+    let content = fs::read_to_string(&log_path)?;
+    println!("{}", content);
+
+    Ok(())
+}
+
 fn handle_attach(target: &str) -> io::Result<()> {
     let session_name = if target == "service" {
         "nexus".to_string()
@@ -778,6 +758,7 @@ fn print_help() {
     nexus pause              Pause queue processing
     nexus resume             Resume queue processing
     nexus logs <id> [-f]     View logs for job
+    nexus logs service [-f]   View or follow service logs
     nexus attach <id|gpu>    Attach to running job's screen session
     nexus attach service     Attach to the nexus service session
     nexus edit               Open jobs.txt in $EDITOR
@@ -817,58 +798,6 @@ fn print_command_help(command: &str) {
     }
 }
 
-fn run_daemon(config: &Config) -> io::Result<()> {
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
-
-    // Set up signal handler
-    let mut signals = Signals::new(&[SIGTERM])?;
-    thread::spawn(move || {
-        for _ in signals.forever() {
-            r.store(false, Ordering::SeqCst);
-        }
-    });
-
-    log_service_event(config, "Service started")?;
-
-    let gpus = get_gpu_info()?;
-    log_service_event(config, &format!("Found {} GPUs", gpus.len()))?;
-
-    // Recover any running jobs from previous sessions
-    recover_running_jobs()?;
-
-    let mut last_check = SystemTime::now();
-    while running.load(Ordering::SeqCst) {
-        // Check if paused
-        if config.log_dir.join("paused").exists() {
-            thread::sleep(Duration::from_secs(1));
-            continue;
-        }
-
-        // Only check periodically
-        if SystemTime::now()
-            .duration_since(last_check)
-            .unwrap()
-            .as_secs()
-            < config.refresh_rate
-        {
-            thread::sleep(Duration::from_millis(100));
-            continue;
-        }
-        last_check = SystemTime::now();
-
-        // Process jobs
-        if let Err(e) = process_jobs(config) {
-            log_service_event(config, &format!("Error processing jobs: {}", e))?;
-            // Add small delay to prevent rapid error logging
-            thread::sleep(Duration::from_secs(1));
-        }
-    }
-
-    log_service_event(config, "Service stopped")?;
-    Ok(())
-}
-
 fn main() -> io::Result<()> {
     let config = load_config()?;
     let args: Vec<String> = env::args().collect();
@@ -878,13 +807,13 @@ fn main() -> io::Result<()> {
             start_service(&config)?; // Starts the service in the screen session
             handle_status(&config) // Shows the current status
         }
-        Some("process") => {
-            nexus_process(&config)?; // Continuously runs the nexus background process
+        Some("service") => {
+            nexus_service(&config)?; // Continuously runs the nexus background service
             Ok(())
         }
-        Some("stop") => stop_service(),
+        Some("stop") => stop_service(&config),
         Some("restart") => {
-            stop_service()?;
+            stop_service(&config)?;
             thread::sleep(Duration::from_secs(1));
             start_service(&config)
         }
@@ -926,8 +855,10 @@ fn main() -> io::Result<()> {
         }
         Some("logs") => {
             if args.len() < 3 {
-                println!("{}", "Usage: nexus logs <id> [-f]".red());
+                println!("{}", "Usage: nexus logs <id|service> [-f]".red());
                 Ok(())
+            } else if args[2] == "service" {
+                handle_service_logs(&config)
             } else {
                 let follow = args.get(3).map_or(false, |arg| arg == "-f");
                 handle_logs(&args[2], &config, follow)
@@ -937,6 +868,8 @@ fn main() -> io::Result<()> {
             if args.len() < 3 {
                 println!("{}", "Usage: nexus attach <id|gpu|service>".red());
                 Ok(())
+            } else if args[2] == "service" {
+                handle_attach_service()
             } else {
                 handle_attach(&args[2])
             }
@@ -952,10 +885,6 @@ fn main() -> io::Result<()> {
             } else {
                 handle_config(&config)
             }
-        }
-        Some("daemon") => {
-            println!("{}", "Starting Nexus daemon...".blue());
-            run_daemon(&config)
         }
         Some("help") => {
             if args.len() > 2 {
