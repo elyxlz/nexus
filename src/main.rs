@@ -1,5 +1,3 @@
-// main.rs
-use chrono::{DateTime, Local};
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
@@ -41,9 +39,8 @@ struct CommandHistory {
     max_entries: usize,
 }
 
-// Add Config struct
+// Changed Config to only keep fields that are used
 struct Config {
-    log_dir: PathBuf,
     jobs_file: PathBuf,
 }
 
@@ -51,7 +48,7 @@ struct AppState {
     jobs: Vec<Job>,
     gpu_info: Vec<GpuInfo>,
     current_view: View,
-    list_state: ListState, // Changed from selected_index: usize
+    list_state: ListState,
     is_paused: bool,
     command_input: String,
     is_command_mode: bool,
@@ -60,7 +57,7 @@ struct AppState {
     base_path: PathBuf,
     error_message: Option<String>,
     last_gpu_check: SystemTime,
-    config: Config, // Added config field
+    config: Config,
 }
 
 enum JobStatus {
@@ -76,19 +73,11 @@ struct GpuInfo {
     memory_used: u64,
 }
 
+#[derive(Clone, Copy)]
 enum View {
     Home,
     Queue,
     History,
-}
-
-// File paths
-fn get_nexus_paths() -> (PathBuf, PathBuf) {
-    let home = std::env::var("HOME").unwrap();
-    let base_path = PathBuf::from(&home).join(".nexus");
-    let jobs_file = base_path.join("jobs.txt");
-    let log_dir = base_path.join("logs");
-    (jobs_file, log_dir)
 }
 
 // GPU Management
@@ -150,7 +139,6 @@ fn get_gpu_info() -> io::Result<Vec<GpuInfo>> {
 }
 
 // Job Management
-
 fn create_job(command: String) -> Job {
     let mut hasher = Sha256::new();
     hasher.update(&command);
@@ -176,7 +164,6 @@ fn start_job(job: &mut Job, gpu_index: usize, base_path: &Path) -> io::Result<()
     let session_name = format!("nexus_job_{}", timestamp);
     let log_dir = create_log_directory(job, base_path)?;
 
-    // Prepare environment variables
     let mut env_vars = vec![
         ("CUDA_VISIBLE_DEVICES".to_string(), gpu_index.to_string()),
         ("NEXUS_JOB_ID".to_string(), timestamp.to_string()),
@@ -185,7 +172,6 @@ fn start_job(job: &mut Job, gpu_index: usize, base_path: &Path) -> io::Result<()
     env_vars.extend(std::env::vars());
     job.env_vars = env_vars.clone();
 
-    // Create command with logging
     let command = format!(
         "exec 1> {} 2> {}; {}",
         log_dir.join("stdout.log").display(),
@@ -193,7 +179,6 @@ fn start_job(job: &mut Job, gpu_index: usize, base_path: &Path) -> io::Result<()
         job.command
     );
 
-    // Start screen session with environment variables
     let env_vars_str = env_vars
         .iter()
         .map(|(k, v)| format!("export {}=\"{}\";", k, v))
@@ -219,42 +204,29 @@ fn start_job(job: &mut Job, gpu_index: usize, base_path: &Path) -> io::Result<()
     Ok(())
 }
 
-fn kill_job(job: &mut Job) -> io::Result<()> {
-    if let Some(session) = &job.screen_session {
-        Command::new("screen")
-            .args(["-S", session, "-X", "quit"])
-            .output()?;
-        job.status = JobStatus::Completed;
-    }
-    Ok(())
-}
-
 // UI Rendering
 fn draw_ui(state: &AppState, frame: &mut ratatui::Frame) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Status line
-            Constraint::Min(1),    // Main content
-            Constraint::Length(1), // Controls
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
         ])
-        .split(frame.size());
+        .split(frame.area());
 
-    // Status line
     let status = format!(
         "NEXUS - [{}]",
         if state.is_paused { "PAUSED" } else { "RUNNING" }
     );
     frame.render_widget(Paragraph::new(status), chunks[0]);
 
-    // Main content based on current view
     match state.current_view {
         View::Home => draw_home_view(state, frame, chunks[1]),
         View::Queue => draw_queue_view(state, frame, chunks[1]),
         View::History => draw_history_view(state, frame, chunks[1]),
     }
 
-    // Controls
     let controls = match state.current_view {
         View::Home => "K: Kill job | Enter: Attach | Tab: Switch view | A: Add job",
         View::Queue => "K: Remove job | Enter: Edit | Tab: Switch view | A: Add job",
@@ -306,7 +278,6 @@ fn draw_home_view(state: &AppState, frame: &mut ratatui::Frame, area: Rect) {
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-// Update queue view to use ListState
 fn draw_queue_view(state: &AppState, frame: &mut ratatui::Frame, area: Rect) {
     let items: Vec<ListItem> = state
         .jobs
@@ -324,7 +295,6 @@ fn draw_queue_view(state: &AppState, frame: &mut ratatui::Frame, area: Rect) {
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-// Update history view to use ListState
 fn draw_history_view(state: &AppState, frame: &mut ratatui::Frame, area: Rect) {
     let items: Vec<ListItem> = state
         .jobs
@@ -363,15 +333,28 @@ fn handle_input(state: &mut AppState) -> io::Result<bool> {
     if event::poll(Duration::from_millis(100))? {
         if let Event::Key(key) = event::read()? {
             match key.code {
+                KeyCode::Char('q') => return Ok(true),
                 KeyCode::Char('v') => {
                     let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
-                    Command::new(editor)
-                        .arg(state.base_path.join("jobs.txt"))
-                        .status()?;
-                    state.jobs = load_jobs_from_file(&state.base_path.join("jobs.txt"))?;
+                    Command::new(editor).arg(&state.config.jobs_file).status()?;
+                    state.jobs = load_jobs_from_file(&state.config.jobs_file)?;
                 }
                 KeyCode::Char(' ') => {
                     state.is_paused = !state.is_paused;
+                }
+                KeyCode::Char('k') => {
+                    if let Some(selected) = state.list_state.selected() {
+                        if let Some(job) = state.jobs.iter_mut().find(|j| {
+                            matches!(j.status, JobStatus::Running) && j.gpu_index == Some(selected)
+                        }) {
+                            if let Some(session) = &job.screen_session {
+                                Command::new("screen")
+                                    .args(["-S", session, "-X", "quit"])
+                                    .output()?;
+                                job.status = JobStatus::Completed;
+                            }
+                        }
+                    }
                 }
                 KeyCode::Enter => match state.current_view {
                     View::Home => {
@@ -399,8 +382,15 @@ fn handle_input(state: &mut AppState) -> io::Result<bool> {
                             }
                         }
                     }
-                    _ => {}
+                    View::Queue => {}
                 },
+                KeyCode::Tab => {
+                    state.current_view = match state.current_view {
+                        View::Home => View::Queue,
+                        View::Queue => View::History,
+                        View::History => View::Home,
+                    };
+                }
                 _ => {}
             }
         }
@@ -408,26 +398,26 @@ fn handle_input(state: &mut AppState) -> io::Result<bool> {
     Ok(false)
 }
 
-pub fn run_app(mut state: AppState) -> io::Result<()> {
-    // Setup terminal
+fn run_app(mut state: AppState) -> io::Result<()> {
     crossterm::terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
-    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
     loop {
         terminal.draw(|f| {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(1), // Status line
-                    Constraint::Min(1),    // Main content
-                    Constraint::Length(1), // Command input or controls
+                    Constraint::Length(1),
+                    Constraint::Min(1),
+                    Constraint::Length(1),
                 ])
-                .split(f.size());
-            // Draw main UI
+                .split(f.area());
+
             draw_ui(&state, f);
-            // Draw command mode or logs
+
             if state.is_command_mode {
                 draw_command_mode(&state, f, chunks[2]);
             } else if let Some(log_path) = &state.show_logs {
@@ -435,7 +425,7 @@ pub fn run_app(mut state: AppState) -> io::Result<()> {
                     state.error_message = Some(format!("Error reading logs: {}", e));
                 }
             }
-            // Draw error message if any
+
             if let Some(error) = &state.error_message {
                 let error_msg = Paragraph::new(error.as_str())
                     .style(Style::default().fg(Color::Red))
@@ -450,17 +440,14 @@ pub fn run_app(mut state: AppState) -> io::Result<()> {
             }
         })?;
 
-        // Handle input
-        if let Event::Key(key) = event::read()? {
+        if let Event::Key(_) = event::read()? {
             if handle_input(&mut state)? {
                 break;
             }
         }
 
-        // Check for completed jobs
         check_completed_jobs(&mut state)?;
 
-        // Update GPU info periodically (every 5 seconds)
         if let Ok(elapsed) = state.last_gpu_check.elapsed() {
             if elapsed.as_secs() >= 5 {
                 if let Ok(info) = get_gpu_info() {
@@ -470,18 +457,15 @@ pub fn run_app(mut state: AppState) -> io::Result<()> {
             }
         }
 
-        // Process queued jobs if not paused
         if !state.is_paused {
             if let Err(e) = process_queue(&mut state) {
                 state.error_message = Some(format!("Queue processing error: {}", e));
             }
         }
 
-        // Auto-save jobs periodically
         save_jobs_to_file(&state.jobs, &state.config.jobs_file)?;
     }
 
-    // Cleanup
     crossterm::terminal::disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     Ok(())
@@ -514,7 +498,6 @@ fn process_queue(state: &mut AppState) -> io::Result<()> {
     Ok(())
 }
 
-// Command History Management
 fn create_command_history() -> CommandHistory {
     CommandHistory {
         entries: VecDeque::with_capacity(100),
@@ -535,7 +518,6 @@ fn add_to_history(history: &mut CommandHistory, command: &str) {
     }
 }
 
-// File Management
 fn create_log_directory(job: &Job, base_path: &Path) -> io::Result<PathBuf> {
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -578,7 +560,6 @@ fn load_jobs_from_file(path: &Path) -> io::Result<Vec<Job>> {
     Ok(jobs)
 }
 
-// UI Components
 fn draw_command_mode(state: &AppState, frame: &mut ratatui::Frame, area: Rect) {
     let prompt = "Add job > ";
     let input = format!("{}{}", prompt, state.command_input);
@@ -591,13 +572,11 @@ fn draw_command_mode(state: &AppState, frame: &mut ratatui::Frame, area: Rect) {
 fn draw_log_view(path: &Path, frame: &mut ratatui::Frame, area: Rect) -> io::Result<()> {
     let mut content = String::new();
 
-    // Read stdout
     if let Ok(mut file) = File::open(path.join("stdout.log")) {
         file.read_to_string(&mut content)?;
     }
     content.push_str("\n\n=== STDERR ===\n\n");
 
-    // Read stderr
     if let Ok(mut file) = File::open(path.join("stderr.log")) {
         file.read_to_string(&mut content)?;
     }
@@ -610,7 +589,6 @@ fn draw_log_view(path: &Path, frame: &mut ratatui::Frame, area: Rect) -> io::Res
     Ok(())
 }
 
-// Enhanced Event Handling
 fn handle_command_mode(state: &mut AppState) -> io::Result<bool> {
     if let Event::Key(key) = event::read()? {
         match key.code {
@@ -624,7 +602,7 @@ fn handle_command_mode(state: &mut AppState) -> io::Result<bool> {
                 if !command.is_empty() {
                     add_to_history(&mut state.command_history, &command);
                     state.jobs.push(create_job(command));
-                    save_jobs_to_file(&state.jobs, &state.base_path.join("jobs.txt"))?;
+                    save_jobs_to_file(&state.jobs, &state.config.jobs_file)?;
                 }
                 state.is_command_mode = false;
                 state.command_input.clear();
@@ -664,9 +642,6 @@ fn handle_command_mode(state: &mut AppState) -> io::Result<bool> {
     Ok(false)
 }
 
-// Main application initialization and loop
-
-// Update init_app to use ListState and Config
 fn init_app() -> io::Result<AppState> {
     let home = dirs::home_dir()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Could not find home directory"))?;
@@ -675,7 +650,6 @@ fn init_app() -> io::Result<AppState> {
     fs::create_dir_all(base_path.join("logs"))?;
 
     let config = Config {
-        log_dir: base_path.join("logs"),
         jobs_file: base_path.join("jobs.txt"),
     };
 
@@ -707,13 +681,11 @@ fn check_completed_jobs(state: &mut AppState) -> io::Result<()> {
     for job in state.jobs.iter_mut() {
         if matches!(job.status, JobStatus::Running) {
             if let Some(session) = &job.screen_session {
-                // Check if screen session exists
                 let output = Command::new("screen").args(["-ls", session]).output()?;
 
                 if !String::from_utf8_lossy(&output.stdout).contains(&format!(".{}", session)) {
                     job.status = JobStatus::Completed;
 
-                    // Archive logs if they exist
                     if let Some(log_dir) = &job.log_dir {
                         if log_dir.exists() {
                             let archive_dir = state.base_path.join("logs").join("archived");
@@ -727,7 +699,6 @@ fn check_completed_jobs(state: &mut AppState) -> io::Result<()> {
                             let archive_path = archive_dir
                                 .join(format!("job_{}_{}.tar.gz", timestamp, job.command_hash));
 
-                            // Create tar archive of logs
                             Command::new("tar")
                                 .args([
                                     "czf",
@@ -744,48 +715,9 @@ fn check_completed_jobs(state: &mut AppState) -> io::Result<()> {
     Ok(())
 }
 
-// Configuration file handling
-fn load_config(base_path: &Path) -> io::Result<toml::Value> {
-    let config_path = base_path.join("config.toml");
-    if !config_path.exists() {
-        let default_config = format!(
-            r#"[paths]
-log_dir = "{}"
-jobs_file = "{}"
-"#,
-            base_path.join("logs").display(),
-            base_path.join("jobs.txt").display()
-        );
-        fs::write(&config_path, default_config)?;
-    }
-
-    let config_str = fs::read_to_string(&config_path)?;
-    toml::from_str(&config_str).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Failed to parse config.toml: {}", e),
-        )
-    })
-}
-
-// Update the elapsed() error handling
-fn check_gpu_update(state: &mut AppState) -> io::Result<()> {
-    if let Ok(elapsed) = state.last_gpu_check.elapsed() {
-        if elapsed.as_secs() >= 5 {
-            if let Ok(info) = get_gpu_info() {
-                state.gpu_info = info;
-                state.last_gpu_check = SystemTime::now();
-            }
-        }
-    }
-    Ok(())
-}
-
 fn main() -> io::Result<()> {
-    // Check if running in screen session
     let screen_session = std::env::var("STY").unwrap_or_default();
     if screen_session.is_empty() {
-        // Start new screen session
         Command::new("screen")
             .args(["-dmS", "nexus", std::env::current_exe()?.to_str().unwrap()])
             .output()?;
@@ -793,7 +725,6 @@ fn main() -> io::Result<()> {
         return Ok(());
     }
 
-    // Set up panic handler
     std::panic::set_hook(Box::new(|panic_info| {
         let _ = crossterm::terminal::disable_raw_mode();
         let mut stdout = io::stdout();
@@ -801,10 +732,8 @@ fn main() -> io::Result<()> {
         eprintln!("Nexus crashed: {}", panic_info);
     }));
 
-    // Initialize the application state
     let app_state = init_app()?;
 
-    // Run the application
     if let Err(e) = run_app(app_state) {
         eprintln!("Application error: {}", e);
         std::process::exit(1);
