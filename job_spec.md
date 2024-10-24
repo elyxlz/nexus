@@ -18,7 +18,7 @@ A minimal, reliable CLI tool for managing ML experiment jobs across GPUs.
 1. When `nexus` is run:
    - Check if 'nexus' screen session exists
      - If not: Create new session and start service
-     - If exists: Show status view
+     - If exists: Show status snapshot
    - On first run, create ~/.nexus directory structure
    - Initialize empty jobs.txt if not present
    - Start service in screen session showing service logs
@@ -26,11 +26,10 @@ A minimal, reliable CLI tool for managing ML experiment jobs across GPUs.
 ### Basic Commands
 
 ```bash
-nexus                    # Start service if not running, then show status view
+nexus                    # Show status snapshot (non-interactive)
 nexus stop              # Stop the nexus service
 nexus restart           # Restart the nexus service
-nexus -n                # Non-interactive status (single snapshot)
-nexus add "command"      # Add job to queue
+nexus add "command"     # Add job to queue
 nexus queue             # Show pending jobs
 nexus history           # Show completed jobs
 nexus kill <id|gpu>     # Kill job by ID or GPU number
@@ -72,7 +71,7 @@ The nexus service:
 Service Commands:
 
 ```bash
-nexus                # Start service if not running, show status
+nexus                # Show status snapshot
 nexus stop          # Stop service and all running jobs
 nexus restart       # Restart service (preserves running jobs)
 nexus attach service # View service logs
@@ -88,11 +87,9 @@ Service Log Format:
 [2024-10-24 15:35:30] Queue paused by user
 ```
 
-[Rest of the spec remains the same]
-
 ### Status View Format
 
-The main status view (shown by `nexus` command) displays:
+The status snapshot (shown by `nexus` command) displays:
 
 ```
 Queue: 3 jobs pending [PAUSED]     # Shows queue status and processing state
@@ -145,19 +142,15 @@ ENV_VAR=value python eval.py --dataset imagenet
 [paths]
 log_dir = "~/.nexus/logs"
 jobs_file = "~/.nexus/jobs.txt"
-
-[display]
-refresh_rate = 5  # Status view refresh in seconds
 ```
 
 ## 4. Command Details
 
 ### nexus
 
-- Live monitoring view with 5-second refresh
+- Shows non-interactive status snapshot
 - Shows all GPUs, running jobs, and queue status
-- Supports Ctrl+C to exit
-- -n flag for non-interactive single snapshot
+- One-time display, exits after showing status
 
 ### nexus add <command>
 
@@ -236,13 +229,6 @@ refresh_rate = 5  # Status view refresh in seconds
 - Monitor screen sessions for job status
 - Capture stdout/stderr to log files
 - Track runtime and start time for all jobs
-
-### Screen Session Management
-
-- Each job runs in screen session named 'nexus_job_<id>'
-- Screen sessions persist across terminal disconnects
-- Auto-cleanup of job screen sessions on completion
-- Ctrl+A+D returns to shell when attached to job
 
 ### Environment Variables
 

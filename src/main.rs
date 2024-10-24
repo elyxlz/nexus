@@ -1,16 +1,22 @@
-use chrono;
+use chrono::{DateTime, Local};
+use colored::*;
+use humantime::format_duration;
 use sha2::{Digest, Sha256};
+use signal_hook::{consts::SIGTERM, iterator::Signals};
 use std::{
     env,
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, Write},
-    path::{PathBuf},
+    path::PathBuf,
     process::Command,
+    sync::atomic::{AtomicBool, Ordering},
+    sync::Arc,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 // Data structures
+#[derive(Clone, Debug)]
 struct Job {
     id: String,
     command: String,
@@ -23,11 +29,14 @@ struct Job {
 }
 
 struct Config {
+    _colors_enabled: bool, // This indicates it's currently unused
     log_dir: PathBuf,
     jobs_file: PathBuf,
     refresh_rate: u64,
+    datetime_format: String,
 }
 
+#[derive(Debug)]
 struct GpuInfo {
     index: usize,
     name: String,
@@ -35,7 +44,7 @@ struct GpuInfo {
     memory_used: u64,
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum JobStatus {
     Queued,
     Running,
@@ -57,6 +66,8 @@ jobs_file = "~/.nexus/jobs.txt"
 
 [display]
 refresh_rate = 5  # Status view refresh in seconds
+colors_enabled = true
+datetime_format = "%Y-%m-%d %H:%M:%S"
 "#;
         fs::write(&config_path, default_config)?;
     }
@@ -95,6 +106,19 @@ refresh_rate = 5  # Status view refresh in seconds
         .map(|r| r as u64)
         .unwrap_or(5);
 
+    let colors_enabled = config
+        .get("display")
+        .and_then(|d| d.get("colors_enabled"))
+        .and_then(|c| c.as_bool())
+        .unwrap_or(true);
+
+    let datetime_format = config
+        .get("display")
+        .and_then(|d| d.get("datetime_format"))
+        .and_then(|f| f.as_str())
+        .unwrap_or("%Y-%m-%d %H:%M:%S")
+        .to_string();
+
     // Ensure directories exist
     fs::create_dir_all(&log_dir)?;
     if !jobs_file.exists() {
@@ -105,6 +129,8 @@ refresh_rate = 5  # Status view refresh in seconds
         log_dir,
         jobs_file,
         refresh_rate,
+        colors_enabled,
+        datetime_format,
     })
 }
 
@@ -143,7 +169,7 @@ fn start_job(job: &mut Job, gpu_index: usize, config: &Config) -> io::Result<()>
         ("NEXUS_JOB_ID".to_string(), job.id.clone()),
         ("NEXUS_GPU_ID".to_string(), gpu_index.to_string()),
     ];
-    env_vars.extend(std::env::vars());
+    env_vars.extend(std::env::vars().filter(|(k, _)| !k.starts_with("SCREEN_")));
 
     let command = format!(
         "exec 1> {} 2> {}; {}",
@@ -154,7 +180,7 @@ fn start_job(job: &mut Job, gpu_index: usize, config: &Config) -> io::Result<()>
 
     let env_vars_str = env_vars
         .iter()
-        .map(|(k, v)| format!("export {}=\"{}\";", k, v))
+        .map(|(k, v)| format!("export {}=\"{}\";", k, v.replace("\"", "\\\"")))
         .collect::<Vec<_>>()
         .join(" ");
 
@@ -190,6 +216,11 @@ fn load_jobs(config: &Config) -> io::Result<Vec<Job>> {
             jobs.push(create_job(command));
         }
     }
+
+    // Load running jobs from screen sessions
+    let running_jobs = recover_running_jobs()?;
+    jobs.extend(running_jobs);
+
     Ok(jobs)
 }
 
@@ -263,6 +294,48 @@ fn is_job_running(session: &str) -> bool {
         .unwrap_or(false)
 }
 
+// Recovery
+fn recover_running_jobs() -> io::Result<Vec<Job>> {
+    let output = Command::new("screen").args(["-ls"]).output()?;
+    let screen_output = String::from_utf8_lossy(&output.stdout);
+    let mut jobs = Vec::new();
+
+    for line in screen_output.lines() {
+        if let Some(session_name) = line
+            .split_whitespace()
+            .find(|&s| s.starts_with("nexus_job_"))
+        {
+            let job_id = session_name.trim_start_matches("nexus_job_");
+            let gpu_index = Command::new("ps")
+                .args(["aux"])
+                .output()
+                .ok()
+                .and_then(|output| {
+                    String::from_utf8_lossy(&output.stdout)
+                        .lines()
+                        .find(|line| line.contains(session_name))
+                        .and_then(|line| {
+                            line.split_whitespace()
+                                .find(|&s| s.starts_with("CUDA_VISIBLE_DEVICES="))
+                                .and_then(|s| s.split('=').nth(1))
+                                .and_then(|s| s.parse().ok())
+                        })
+                });
+
+            if let Some(gpu_idx) = gpu_index {
+                let mut job = create_job(String::new()); // Command will be empty for recovered jobs
+                job.id = job_id.to_string();
+                job.gpu_index = Some(gpu_idx);
+                job.screen_session = Some(session_name.to_string());
+                job.status = JobStatus::Running;
+                jobs.push(job);
+            }
+        }
+    }
+
+    Ok(jobs)
+}
+
 // Service management
 fn log_service_event(config: &Config, message: &str) -> io::Result<()> {
     let log_path = config.log_dir.join("service.log");
@@ -271,8 +344,13 @@ fn log_service_event(config: &Config, message: &str) -> io::Result<()> {
         .append(true)
         .open(log_path)?;
 
-    let now = chrono::Local::now();
-    writeln!(file, "[{}] {}", now.format("%Y-%m-%d %H:%M:%S"), message)?;
+    let now = Local::now();
+    writeln!(
+        file,
+        "[{}] {}",
+        now.format(&config.datetime_format),
+        message
+    )?;
     Ok(())
 }
 
@@ -289,9 +367,9 @@ fn start_service(config: &Config) -> io::Result<()> {
                 &format!("exec 1> {}; nexus daemon", service_log.display()),
             ])
             .output()?;
-        println!("Nexus service started");
+        println!("{}", "Nexus service started".green());
     } else {
-        println!("Nexus service is already running");
+        println!("{}", "Nexus service is already running".yellow());
     }
     Ok(())
 }
@@ -300,8 +378,89 @@ fn stop_service() -> io::Result<()> {
     Command::new("screen")
         .args(["-S", "nexus", "-X", "quit"])
         .output()?;
-    println!("Nexus service stopped");
+    println!("{}", "Nexus service stopped".green());
     Ok(())
+}
+
+// Status display
+fn render_status(config: &Config) -> io::Result<()> {
+    let jobs = load_jobs(config)?;
+    let gpus = get_gpu_info()?;
+
+    let queued_count = jobs
+        .iter()
+        .filter(|j| j.status == JobStatus::Queued)
+        .count();
+    let completed_count = jobs
+        .iter()
+        .filter(|j| j.status == JobStatus::Completed)
+        .count();
+
+    let is_paused = config.log_dir.join("paused").exists();
+    let queue_status = if is_paused {
+        "PAUSED".yellow()
+    } else {
+        "RUNNING".green()
+    };
+
+    println!(
+        "{}: {} jobs pending [{}]",
+        "Queue".blue().bold(),
+        queued_count,
+        queue_status
+    );
+    println!(
+        "{}: {} jobs completed\n",
+        "History".blue().bold(),
+        completed_count
+    );
+
+    println!("{}:", "GPUs".white().bold());
+    for gpu in gpus {
+        let mem_usage = (gpu.memory_used as f64 / gpu.memory_total as f64 * 100.0) as u64;
+        println!(
+            "GPU {} ({}, {}MB/{}MB, {}%):",
+            gpu.index.to_string().white(),
+            gpu.name,
+            gpu.memory_used,
+            gpu.memory_total,
+            mem_usage
+        );
+
+        if let Some(job) = jobs
+            .iter()
+            .find(|j| j.status == JobStatus::Running && j.gpu_index == Some(gpu.index))
+        {
+            let runtime = job.start_time.map(|t| t.elapsed().unwrap_or_default());
+            let start_time = job
+                .start_time
+                .map(|t| {
+                    DateTime::<Local>::from(t)
+                        .format(&config.datetime_format)
+                        .to_string()
+                })
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            println!("  {}: {}", "Job ID".magenta(), job.id);
+            println!("  {}: {}", "Command".white().bold(), job.command);
+            println!(
+                "  {}: {}",
+                "Runtime".cyan(),
+                format_duration(runtime.expect("Expected runtime"))
+                    .to_string()
+                    .cyan()
+            );
+            println!("  {}: {}", "Started".cyan(), start_time.cyan());
+        } else {
+            println!("  {}", "Available".bright_green());
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_status(config: &Config) -> io::Result<()> {
+    render_status(config)
 }
 
 // Job processing
@@ -318,28 +477,6 @@ fn process_jobs(config: &Config) -> io::Result<()> {
                     config,
                     &format!("Job {} completed on GPU {}", job.id, job.gpu_index.unwrap()),
                 )?;
-
-                // Archive logs
-                if let Some(log_dir) = &job.log_dir {
-                    let archive_dir = config.log_dir.join("archived");
-                    fs::create_dir_all(&archive_dir)?;
-
-                    let timestamp = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs();
-
-                    let archive_path =
-                        archive_dir.join(format!("job_{}_{}.tar.gz", timestamp, job.id));
-
-                    Command::new("tar")
-                        .args([
-                            "czf",
-                            archive_path.to_str().unwrap(),
-                            log_dir.to_str().unwrap(),
-                        ])
-                        .output()?;
-                }
             }
         }
     }
@@ -359,7 +496,7 @@ fn process_jobs(config: &Config) -> io::Result<()> {
     for gpu_index in available_gpus {
         if let Some(job) = jobs.iter_mut().find(|j| j.status == JobStatus::Queued) {
             if let Err(e) = start_job(job, gpu_index, config) {
-                eprintln!("Failed to start job {}: {}", job.id, e);
+                eprintln!("{}", format!("Failed to start job {}: {}", job.id, e).red());
                 job.status = JobStatus::Failed;
                 log_service_event(
                     config,
@@ -381,14 +518,270 @@ fn process_jobs(config: &Config) -> io::Result<()> {
     Ok(())
 }
 
+// Command handlers
+fn handle_add(command: &str, config: &Config) -> io::Result<()> {
+    let mut jobs = load_jobs(config)?;
+    let job = create_job(command.to_string());
+    println!(
+        "{} {}",
+        "Added job".green(),
+        job.id.to_string().magenta().bold()
+    );
+    jobs.push(job);
+    save_jobs(&jobs, config)
+}
+
+fn handle_queue(config: &Config) -> io::Result<()> {
+    let jobs = load_jobs(config)?;
+    let queued_jobs: Vec<_> = jobs
+        .iter()
+        .filter(|j| j.status == JobStatus::Queued)
+        .collect();
+
+    println!("{}", "Pending Jobs:".blue().bold());
+    for (pos, job) in queued_jobs.iter().enumerate() {
+        println!(
+            "{}. {} - {}",
+            (pos + 1).to_string().blue(),
+            job.id.magenta(),
+            job.command.white()
+        );
+    }
+    Ok(())
+}
+
+fn handle_history(config: &Config) -> io::Result<()> {
+    let jobs = load_jobs(config)?;
+    println!("{}", "Completed Jobs:".blue().bold());
+    for job in jobs.iter().filter(|j| j.status == JobStatus::Completed) {
+        let runtime = job
+            .start_time
+            .map(|t| t.elapsed().unwrap_or_default())
+            .unwrap_or_default();
+        println!(
+            "{}: {} (Runtime: {}, GPU: {})",
+            job.id.magenta(),
+            job.command.white(),
+            format_duration(runtime).to_string().cyan(),
+            job.gpu_index
+                .map(|i| i.to_string())
+                .unwrap_or_else(|| "Unknown".to_string())
+                .yellow()
+        );
+    }
+    Ok(())
+}
+
+fn handle_kill(target: &str, config: &Config) -> io::Result<()> {
+    let mut jobs = load_jobs(config)?;
+
+    // Try as GPU index first
+    if let Ok(gpu_index) = target.parse::<usize>() {
+        if let Some(job) = jobs
+            .iter_mut()
+            .find(|j| j.status == JobStatus::Running && j.gpu_index == Some(gpu_index))
+        {
+            if let Some(session) = &job.screen_session {
+                Command::new("screen")
+                    .args(["-S", session, "-X", "quit"])
+                    .output()?;
+                job.status = JobStatus::Completed;
+                println!(
+                    "{} {} {}",
+                    "Killed job".green(),
+                    job.id.magenta(),
+                    format!("on GPU {}", gpu_index).yellow()
+                );
+                save_jobs(&jobs, config)?;
+                return Ok(());
+            }
+        }
+    }
+
+    // Try as job ID
+    if let Some(job) = jobs.iter_mut().find(|j| j.id == target) {
+        if let Some(session) = &job.screen_session {
+            Command::new("screen")
+                .args(["-S", session, "-X", "quit"])
+                .output()?;
+            job.status = JobStatus::Completed;
+            println!("{} {}", "Killed job".green(), job.id.magenta());
+            save_jobs(&jobs, config)?;
+            return Ok(());
+        }
+    }
+
+    println!(
+        "{}",
+        format!("No running job found with ID or GPU: {}", target).red()
+    );
+    Ok(())
+}
+
+fn handle_remove(id: &str, config: &Config) -> io::Result<()> {
+    let mut jobs = load_jobs(config)?;
+    if let Some(pos) = jobs
+        .iter()
+        .position(|j| j.id == id && j.status == JobStatus::Queued)
+    {
+        jobs.remove(pos);
+        println!("{} {}", "Removed job".green(), id.magenta());
+        save_jobs(&jobs, config)?;
+    } else {
+        println!("{}", format!("No queued job found with ID: {}", id).red());
+    }
+    Ok(())
+}
+
+fn handle_logs(id: &str, config: &Config, follow: bool) -> io::Result<()> {
+    let jobs = load_jobs(config)?;
+    if let Some(job) = jobs.iter().find(|j| j.id == id) {
+        if let Some(log_dir) = &job.log_dir {
+            if follow && job.status == JobStatus::Running {
+                // Use tail -f for following logs
+                Command::new("tail")
+                    .args([
+                        "-f",
+                        log_dir.join("stdout.log").to_str().unwrap(),
+                        log_dir.join("stderr.log").to_str().unwrap(),
+                    ])
+                    .status()?;
+            } else {
+                println!("{}", "=== STDOUT ===".blue().bold());
+                if let Ok(content) = fs::read_to_string(log_dir.join("stdout.log")) {
+                    println!("{}", content);
+                }
+
+                println!("\n{}", "=== STDERR ===".red().bold());
+                if let Ok(content) = fs::read_to_string(log_dir.join("stderr.log")) {
+                    println!("{}", content);
+                }
+            }
+        } else {
+            println!("{}", format!("No logs found for job {}", id).red());
+        }
+    } else {
+        println!("{}", format!("No job found with ID: {}", id).red());
+    }
+    Ok(())
+}
+
+fn handle_attach(target: &str) -> io::Result<()> {
+    let session_name = if target == "service" {
+        "nexus".to_string()
+    } else if let Ok(gpu_index) = target.parse::<usize>() {
+        format!("nexus_job_gpu_{}", gpu_index)
+    } else {
+        format!("nexus_job_{}", target)
+    };
+
+    if is_job_running(&session_name) {
+        Command::new("screen")
+            .args(["-r", &session_name])
+            .status()?;
+        Ok(())
+    } else {
+        println!(
+            "{}",
+            format!("No running session found for {}", target).red()
+        );
+        Ok(())
+    }
+}
+
+fn handle_config(_config: &Config) -> io::Result<()> {
+    let home = dirs::home_dir().unwrap();
+    let config_path = home.join(".nexus/config.toml");
+    let content = fs::read_to_string(&config_path)?;
+    println!("{}:\n{}", "Current configuration".blue().bold(), content);
+    Ok(())
+}
+
+fn handle_config_edit() -> io::Result<()> {
+    let home = dirs::home_dir().unwrap();
+    let config_path = home.join(".nexus/config.toml");
+    let editor = env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
+    Command::new(editor).arg(&config_path).status()?;
+    Ok(())
+}
+
+fn print_help() {
+    println!(
+        "{}
+
+{}:
+    nexus                     Show status
+    nexus -n                 Non-interactive status
+    nexus stop               Stop the nexus service
+    nexus restart            Restart the nexus service
+    nexus add \"command\"      Add job to queue
+    nexus queue              Show pending jobs
+    nexus history            Show completed jobs
+    nexus kill <id|gpu>      Kill job by ID or GPU number
+    nexus remove <id>        Remove job from queue
+    nexus pause              Pause queue processing
+    nexus resume             Resume queue processing
+    nexus logs <id> [-f]     View logs for job
+    nexus attach <id|gpu>    Attach to running job's screen session
+    nexus edit               Open jobs.txt in $EDITOR
+    nexus config             View current config
+    nexus config edit        Edit config.toml in $EDITOR
+    nexus help               Show this help
+    nexus help <command>     Show detailed help for command",
+        "Nexus: GPU Job Management CLI".green().bold(),
+        "USAGE".blue().bold()
+    );
+}
+
+fn print_command_help(command: &str) {
+    match command {
+        "add" => println!(
+            "{}\nAdd a new job to the queue. Enclose command in quotes.",
+            "nexus add \"command\"".green()
+        ),
+        "kill" => println!(
+            "{}\nKill a running job by its ID or GPU number.",
+            "nexus kill <id|gpu>".green()
+        ),
+        "attach" => println!(
+            "{}\nAttach to a running job's screen session. Use Ctrl+A+D to detach.",
+            "nexus attach <id|gpu>".green()
+        ),
+        "config" => println!(
+            "{}\n{}\nView current configuration.\n{}\nEdit configuration in $EDITOR.",
+            "Configuration:".blue().bold(),
+            "nexus config".green(),
+            "nexus config edit".green()
+        ),
+        _ => println!(
+            "{}",
+            format!("No detailed help available for: {}", command).red()
+        ),
+    }
+}
+
 fn run_daemon(config: &Config) -> io::Result<()> {
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    // Set up signal handler
+    let mut signals = Signals::new(&[SIGTERM])?;
+    thread::spawn(move || {
+        for _ in signals.forever() {
+            r.store(false, Ordering::SeqCst);
+        }
+    });
+
     log_service_event(config, "Service started")?;
 
     let gpus = get_gpu_info()?;
     log_service_event(config, &format!("Found {} GPUs", gpus.len()))?;
 
+    // Recover any running jobs from previous sessions
+    recover_running_jobs()?;
+
     let mut last_check = SystemTime::now();
-    loop {
+    while running.load(Ordering::SeqCst) {
         // Check if paused
         if config.log_dir.join("paused").exists() {
             thread::sleep(Duration::from_secs(1));
@@ -410,235 +803,13 @@ fn run_daemon(config: &Config) -> io::Result<()> {
         // Process jobs
         if let Err(e) = process_jobs(config) {
             log_service_event(config, &format!("Error processing jobs: {}", e))?;
-        }
-    }
-}
-
-// Command handlers
-fn handle_status(config: &Config) -> io::Result<()> {
-    let jobs = load_jobs(config)?;
-    let gpus = get_gpu_info()?;
-
-    println!(
-        "Queue: {} jobs pending {}",
-        jobs.iter()
-            .filter(|j| j.status == JobStatus::Queued)
-            .count(),
-        if config.log_dir.join("paused").exists() {
-            "[PAUSED]"
-        } else {
-            "[RUNNING]"
-        }
-    );
-    println!(
-        "History: {} jobs completed\n",
-        jobs.iter()
-            .filter(|j| j.status == JobStatus::Completed)
-            .count()
-    );
-
-    println!("GPUs:");
-    for gpu in gpus {
-        println!("GPU {} ({}, {}MB):", gpu.index, gpu.name, gpu.memory_total);
-        if let Some(job) = jobs
-            .iter()
-            .find(|j| j.status == JobStatus::Running && j.gpu_index == Some(gpu.index))
-        {
-            let runtime = job
-                .start_time
-                .map(|t| t.elapsed().unwrap_or_default())
-                .unwrap_or_default();
-            println!(
-                "  Job ID: {}\n  Command: {}\n  Runtime: {}m {}s",
-                job.id,
-                job.command,
-                runtime.as_secs() / 60,
-                runtime.as_secs() % 60
-            );
-        } else {
-            println!("  Available");
-        }
-    }
-    Ok(())
-}
-
-fn handle_add(command: &str, config: &Config) -> io::Result<()> {
-    let mut jobs = load_jobs(config)?;
-    let job = create_job(command.to_string());
-    println!("Added job {} to queue", job.id);
-    jobs.push(job);
-    save_jobs(&jobs, config)
-}
-
-fn handle_queue(config: &Config) -> io::Result<()> {
-    let jobs = load_jobs(config)?;
-    for job in jobs.iter().filter(|j| j.status == JobStatus::Queued) {
-        println!("{}: {}", job.id, job.command);
-    }
-    Ok(())
-}
-
-fn handle_history(config: &Config) -> io::Result<()> {
-    let jobs = load_jobs(config)?;
-    for job in jobs.iter().filter(|j| j.status == JobStatus::Completed) {
-        let runtime = job
-            .start_time
-            .map(|t| t.elapsed().unwrap_or_default())
-            .unwrap_or_default();
-        println!(
-            "{}: {} (Runtime: {}m {}s, GPU: {})",
-            job.id,
-            job.command,
-            runtime.as_secs() / 60,
-            runtime.as_secs() % 60,
-            job.gpu_index.unwrap_or(0)
-        );
-    }
-    Ok(())
-}
-
-fn handle_kill(target: &str, config: &Config) -> io::Result<()> {
-    let mut jobs = load_jobs(config)?;
-
-    // Try as GPU index first
-    if let Ok(gpu_index) = target.parse::<usize>() {
-        if let Some(job) = jobs
-            .iter_mut()
-            .find(|j| j.status == JobStatus::Running && j.gpu_index == Some(gpu_index))
-        {
-            if let Some(session) = &job.screen_session {
-                Command::new("screen")
-                    .args(["-S", session, "-X", "quit"])
-                    .output()?;
-                job.status = JobStatus::Completed;
-                println!("Killed job {} on GPU {}", job.id, gpu_index);
-                save_jobs(&jobs, config)?;
-                return Ok(());
-            }
+            // Add small delay to prevent rapid error logging
+            thread::sleep(Duration::from_secs(1));
         }
     }
 
-    // Try as job ID
-    if let Some(job) = jobs.iter_mut().find(|j| j.id == target) {
-        if let Some(session) = &job.screen_session {
-            Command::new("screen")
-                .args(["-S", session, "-X", "quit"])
-                .output()?;
-            job.status = JobStatus::Completed;
-            println!("Killed job {}", job.id);
-            save_jobs(&jobs, config)?;
-            return Ok(());
-        }
-    }
-
-    println!("No running job found with ID or GPU: {}", target);
+    log_service_event(config, "Service stopped")?;
     Ok(())
-}
-
-fn handle_remove(id: &str, config: &Config) -> io::Result<()> {
-    let mut jobs = load_jobs(config)?;
-    if let Some(pos) = jobs
-        .iter()
-        .position(|j| j.id == id && j.status == JobStatus::Queued)
-    {
-        jobs.remove(pos);
-        println!("Removed job {} from queue", id);
-        save_jobs(&jobs, config)?;
-    } else {
-        println!("No queued job found with ID: {}", id);
-    }
-    Ok(())
-}
-
-fn handle_logs(id: &str, config: &Config) -> io::Result<()> {
-    let jobs = load_jobs(config)?;
-    if let Some(job) = jobs.iter().find(|j| j.id == id) {
-        if let Some(log_dir) = &job.log_dir {
-            println!("=== STDOUT ===");
-            if let Ok(content) = fs::read_to_string(log_dir.join("stdout.log")) {
-                println!("{}", content);
-            }
-
-            println!("\n=== STDERR ===");
-            if let Ok(content) = fs::read_to_string(log_dir.join("stderr.log")) {
-                println!("{}", content);
-            }
-        } else {
-            println!("No logs found for job {}", id);
-        }
-    } else {
-        println!("No job found with ID: {}", id);
-    }
-    Ok(())
-}
-
-fn handle_attach(target: &str) -> io::Result<()> {
-    let session_name = if let Ok(gpu_index) = target.parse::<usize>() {
-        format!("nexus_job_gpu_{}", gpu_index)
-    } else {
-        format!("nexus_job_{}", target)
-    };
-
-    if is_job_running(&session_name) {
-        Command::new("screen")
-            .args(["-r", &session_name])
-            .status()?;
-        Ok(())
-    } else {
-        println!("No running job found for {}", target);
-        Ok(())
-    }
-}
-
-fn handle_config(config: &Config) -> io::Result<()> {
-    let home = dirs::home_dir().unwrap();
-    let config_path = home.join(".nexus/config.toml");
-    let content = fs::read_to_string(&config_path)?;
-    println!("Current configuration:\n{}", content);
-    Ok(())
-}
-
-fn handle_config_edit() -> io::Result<()> {
-    let home = dirs::home_dir().unwrap();
-    let config_path = home.join(".nexus/config.toml");
-    let editor = env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
-    Command::new(editor).arg(&config_path).status()?;
-    Ok(())
-}
-
-fn print_help() {
-    println!(
-        r#"Nexus: GPU Job Management CLI
-
-USAGE:
-    nexus                     Show status
-    nexus stop               Stop the nexus service
-    nexus restart            Restart the nexus service
-    nexus add "command"      Add job to queue
-    nexus queue              Show pending jobs
-    nexus history            Show completed jobs
-    nexus kill <id|gpu>      Kill job by ID or GPU number
-    nexus remove <id>        Remove job from queue
-    nexus pause              Pause queue processing
-    nexus resume             Resume queue processing
-    nexus logs <id>          View logs for job
-    nexus attach <id|gpu>    Attach to running job's screen session
-    nexus edit               Open jobs.txt in $EDITOR
-    nexus config             View current config
-    nexus config edit        Edit config.toml in $EDITOR
-    nexus help               Show this help
-    nexus help <command>     Show detailed help for command"#
-    );
-}
-
-fn print_command_help(command: &str) {
-    match command {
-        "add" => println!("nexus add \"command\"\nAdd a new job to the queue. Enclose command in quotes."),
-        "kill" => println!("nexus kill <id|gpu>\nKill a running job by its ID or GPU number."),
-        "attach" => println!("nexus attach <id|gpu>\nAttach to a running job's screen session. Use Ctrl+A+D to detach."),
-        "config" => println!("nexus config\nView current configuration.\nnexus config edit\nEdit configuration in $EDITOR."),
-        _ => println!("No detailed help available for: {}", command),
-    }
 }
 
 fn main() -> io::Result<()> {
@@ -647,10 +818,10 @@ fn main() -> io::Result<()> {
 
     match args.get(1).map(|s| s.as_str()) {
         None => {
-            // Check/start service first
             start_service(&config)?;
             handle_status(&config)
         }
+        Some("-n") => handle_status(&config),
         Some("stop") => stop_service(),
         Some("restart") => {
             stop_service()?;
@@ -659,7 +830,7 @@ fn main() -> io::Result<()> {
         }
         Some("add") => {
             if args.len() < 3 {
-                println!("Usage: nexus add \"command\"");
+                println!("{}", "Usage: nexus add \"command\"".red());
                 Ok(())
             } else {
                 handle_add(&args[2..].join(" "), &config)
@@ -669,7 +840,7 @@ fn main() -> io::Result<()> {
         Some("history") => handle_history(&config),
         Some("kill") => {
             if args.len() < 3 {
-                println!("Usage: nexus kill <id|gpu>");
+                println!("{}", "Usage: nexus kill <id|gpu>".red());
                 Ok(())
             } else {
                 handle_kill(&args[2], &config)
@@ -677,7 +848,7 @@ fn main() -> io::Result<()> {
         }
         Some("remove") => {
             if args.len() < 3 {
-                println!("Usage: nexus remove <id>");
+                println!("{}", "Usage: nexus remove <id>".red());
                 Ok(())
             } else {
                 handle_remove(&args[2], &config)
@@ -685,25 +856,26 @@ fn main() -> io::Result<()> {
         }
         Some("pause") => {
             fs::write(config.log_dir.join("paused"), "")?;
-            println!("Queue processing paused");
+            println!("{}", "Queue processing paused".yellow());
             Ok(())
         }
         Some("resume") => {
             fs::remove_file(config.log_dir.join("paused"))?;
-            println!("Queue processing resumed");
+            println!("{}", "Queue processing resumed".green());
             Ok(())
         }
         Some("logs") => {
             if args.len() < 3 {
-                println!("Usage: nexus logs <id>");
+                println!("{}", "Usage: nexus logs <id> [-f]".red());
                 Ok(())
             } else {
-                handle_logs(&args[2], &config)
+                let follow = args.get(3).map_or(false, |arg| arg == "-f");
+                handle_logs(&args[2], &config, follow)
             }
         }
         Some("attach") => {
             if args.len() < 3 {
-                println!("Usage: nexus attach <id|gpu>");
+                println!("{}", "Usage: nexus attach <id|gpu|service>".red());
                 Ok(())
             } else {
                 handle_attach(&args[2])
@@ -721,7 +893,10 @@ fn main() -> io::Result<()> {
                 handle_config(&config)
             }
         }
-        Some("daemon") => run_daemon(&config),
+        Some("daemon") => {
+            println!("{}", "Starting Nexus daemon...".blue());
+            run_daemon(&config)
+        }
         Some("help") => {
             if args.len() > 2 {
                 print_command_help(&args[2]);
@@ -731,7 +906,7 @@ fn main() -> io::Result<()> {
             Ok(())
         }
         Some(cmd) => {
-            println!("Unknown command: {}", cmd);
+            println!("{}", format!("Unknown command: {}", cmd).red());
             print_help();
             Ok(())
         }
