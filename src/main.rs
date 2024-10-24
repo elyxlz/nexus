@@ -1,12 +1,10 @@
 use chrono;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::VecDeque,
     env,
     fs::{self, File, OpenOptions},
-    io::{self, BufRead, BufReader, Read, Write},
-    path::{Path, PathBuf},
+    io::{self, BufRead, BufReader, Write},
+    path::{PathBuf},
     process::Command,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
