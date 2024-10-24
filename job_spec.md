@@ -1,40 +1,129 @@
-# Nexus: GPU Job Management TUI
+# Nexus: GPU Job Management CLI
 
-A minimal, reliable TUI tool for managing ML experiment jobs across GPUs.
+A minimal, reliable CLI tool for managing ML experiment jobs across GPUs.
 
 ## 1. Core Design Philosophy
 
-- Three distinct views: Home, Queue, and History
-- Minimal interaction: Simple controls and navigation
-- Always-on: Runs in a persistent screen session
+- Simple command structure: Intuitive commands without nested subcommands
+- Minimal interaction: Clear, single-purpose commands
+- Always-on: Runs job management daemon in background
 - Single responsibility: One job per GPU
 - Complete history: Infinite job logging
-- Quick job addition: Fast command entry without leaving TUI
+- Quick job addition: Simple command to queue jobs
 
 ## 2. Command Line Interface
 
-### Basic Usage
-
-```bash
-nexus    # Start nexus TUI or reattach if running
-```
-
 ### Startup Behavior
 
-1. Check if 'nexus' screen session exists
-   - If exists: Attach to existing session
-   - If not: Create new session and launch TUI
-2. On first run, create ~/.nexus directory structure
-3. Initialize empty jobs.txt if not present
-4. Scan GPUs using nvidia-smi
-5. Start in Home view
+1. When `nexus` is run:
+   - Check if 'nexus' screen session exists
+     - If not: Create new session and start service
+     - If exists: Show status view
+   - On first run, create ~/.nexus directory structure
+   - Initialize empty jobs.txt if not present
+   - Start service in screen session showing service logs
+
+### Basic Commands
+
+```bash
+nexus                    # Start service if not running, then show status view
+nexus stop              # Stop the nexus service
+nexus restart           # Restart the nexus service
+nexus -n                # Non-interactive status (single snapshot)
+nexus add "command"      # Add job to queue
+nexus queue             # Show pending jobs
+nexus history           # Show completed jobs
+nexus kill <id|gpu>     # Kill job by ID or GPU number
+nexus remove <id>       # Remove job from queue
+nexus pause             # Pause queue processing
+nexus resume            # Resume queue processing
+nexus logs <id>         # View logs for job (running or completed)
+nexus attach <id|gpu>   # Attach to running job's screen session
+nexus edit              # Open jobs.txt in $EDITOR
+nexus config            # View current config
+nexus config edit       # Edit config.toml in $EDITOR
+nexus help              # Show command help and usage
+nexus help <command>    # Show detailed help for specific command
+```
+
+### Screen Session Management
+
+- Nexus service runs in screen session named 'nexus'
+  - Shows continuous service logs
+  - Logs include job starts, completions, errors
+  - Use `nexus attach service` to view service logs
+- Each job runs in screen session named 'nexus_job_<id>'
+- Screen sessions persist across terminal disconnects
+- Auto-cleanup of job screen sessions on completion
+- Ctrl+A+D returns to shell when attached to job/service
+
+### Service Management
+
+The nexus service:
+
+- Runs in a screen session named 'nexus'
+- Manages job queue and GPU assignments
+- Monitors GPU status via nvidia-smi
+- Starts/stops jobs as GPUs become available
+- Maintains log of all operations
+- Survives terminal disconnects
+- Auto-recovers running jobs on service restart
+
+Service Commands:
+
+```bash
+nexus                # Start service if not running, show status
+nexus stop          # Stop service and all running jobs
+nexus restart       # Restart service (preserves running jobs)
+nexus attach service # View service logs
+```
+
+Service Log Format:
+
+```
+[2024-10-24 15:30:15] Service started
+[2024-10-24 15:30:16] Found 4 GPUs
+[2024-10-24 15:30:20] Started job abc on GPU 0: python train.py
+[2024-10-24 15:35:25] Job def completed successfully on GPU 1
+[2024-10-24 15:35:30] Queue paused by user
+```
+
+[Rest of the spec remains the same]
+
+### Status View Format
+
+The main status view (shown by `nexus` command) displays:
+
+```
+Queue: 3 jobs pending [PAUSED]     # Shows queue status and processing state
+History: 25 jobs completed         # Shows total completed jobs
+
+GPUs:
+GPU 0 (RTX 3090, 24GB): Available
+GPU 1 (RTX 3090, 24GB):
+  Job ID: abc                      # Short letter-based ID (base58)
+  Command: python train.py --model gpt2
+  Runtime: 2h 15m
+  Started: 15:30
+GPU 2 (RTX 3090, 24GB): Available
+```
+
+Color and Formatting:
+
+- GPU headers in white
+- "Available" in bright green
+- Job commands in bright white
+- Runtime and timestamps in cyan
+- Queue status in blue, PAUSE/RUNNING state in yellow
+- Error messages in red
+- Job IDs in magenta
 
 ## 3. File Structure
 
 ```
 ~/.nexus/
 ├── logs/
-│   └── job_<timestamp>_<command_hash>/
+│   └── job_<id>/           # Uses letter-based ID (e.g., abc)
 │       ├── stdout.log
 │       └── stderr.log
 ├── jobs.txt
@@ -56,100 +145,90 @@ ENV_VAR=value python eval.py --dataset imagenet
 [paths]
 log_dir = "~/.nexus/logs"
 jobs_file = "~/.nexus/jobs.txt"
+
+[display]
+refresh_rate = 5  # Status view refresh in seconds
 ```
 
-## 4. Views and Navigation
+## 4. Command Details
 
-### Global Elements
+### nexus
 
-- Status line at top: "NEXUS - [RUNNING/PAUSED]"
-- Control help at bottom showing available commands
-- Tab cycles between views
-- Up/Down arrows for scrolling in all views
-- Ctrl+C returns to nexus TUI when attached to job
-- Space toggles pause/resume of job queue
-- A opens command entry mode at bottom of screen
-- V opens jobs.txt in $EDITOR
+- Live monitoring view with 5-second refresh
+- Shows all GPUs, running jobs, and queue status
+- Supports Ctrl+C to exit
+- -n flag for non-interactive single snapshot
 
-### Command Entry Mode
+### nexus add <command>
 
-Description:
+- Adds new job to queue
+- Preserves environment variables in command
+- Returns job ID on success
+- Example: `nexus add "python train.py --model gpt2"`
 
-- Activated with 'A' key from any view
-- Shows command prompt at bottom of screen: "Add job > "
-- Full-line editing with cursor movement
-- Enter submits command to queue
-- Esc cancels command entry
-- Command is appended to jobs.txt on submit
-- Returns to previous view after submit/cancel
+### nexus queue
 
-### Home View (Default)
+- Lists all pending jobs with IDs
+- Shows position in queue
+- Displays full command for each job
 
-Description:
+### nexus history
 
-- Lists all available GPUs with their specs (name, memory)
-- Shows running job on each GPU if present
-- For each running job displays:
-  - Command being executed
-  - Runtime (e.g., "2h 15m")
-  - Time started (e.g., "Started: 15:30")
-  - GPU index it's running on
+- Shows completed jobs chronologically
+- Includes runtime, completion status, and GPU used
+- Displays job ID and command
 
-Controls:
+### nexus kill <id|gpu>
 
-- K: Kill selected running job
-- Enter: Attach to selected job's screen session
+- Accepts either job ID or GPU number
+- Terminates running job
+- Cleans up screen session
+- Example: `nexus kill abc` or `nexus kill 0`
 
-### Queue View
+### nexus remove <id>
 
-Description:
+- Removes job from queue before execution
+- Example: `nexus remove abc`
 
-- Shows all pending jobs in order
-- Each entry shows full command to be executed
-- Scrollable list if more jobs than screen height
+### nexus logs <id>
 
-Controls:
+- Views logs for any job (running or completed)
+- Shows both stdout and stderr
+- Supports real-time following for running jobs
+- Example: `nexus logs abc`
 
-- K: Remove selected job from queue
-- Enter: Edit selected job's command
+### nexus attach <id|gpu>
 
-### History View
+- Attaches to running job's screen session
+- Supports both job ID and GPU number
+- Use Ctrl+A+D to detach
+- Example: `nexus attach abc` or `nexus attach 0`
 
-Description:
+### nexus edit
 
-- Chronological list of completed jobs
-- Each entry shows:
-  - Command that was executed
-  - Runtime
-  - Time started
-  - GPU it ran on
-- Scrollable with infinite history
+- Opens jobs.txt in $EDITOR
+- Reloads queue after saving
 
-Controls:
+### nexus config
 
-- Enter: View full logs of selected completed job
-- K: Delete job from history and remove logs
+- Shows current configuration
+- `nexus config edit` opens config.toml in $EDITOR
+
+### nexus help
+
+- Shows general help and command list
+- `nexus help <command>` shows detailed help for specific command
 
 ## 5. Core Functionality
 
 ### Job Queue Management
 
 - Jobs are processed FIFO (First In, First Out)
-- Jobs start automatically when a GPU becomes available
+- Jobs start automatically when GPU becomes available
 - One job per GPU - no multi-GPU support
 - Jobs inherit current environment variables
-- CUDA_VISIBLE_DEVICES is automatically set based on assigned GPU
-- Queue can be paused/resumed with Space key
-- Jobs can be added via command entry mode or jobs.txt
-
-### Command Entry
-
-- Single-line editor for quick job addition
-- Supports cursor movement (left/right arrows)
-- Basic line editing (backspace, delete)
-- Command history navigation (up/down arrows)
-- Environment variables allowed in commands
-- Auto-appends to jobs.txt on submit
+- CUDA_VISIBLE_DEVICES is automatically set
+- Queue can be paused/resumed
 
 ### Job Monitoring
 
@@ -160,26 +239,35 @@ Controls:
 
 ### Screen Session Management
 
-- Main nexus TUI runs in screen session named 'nexus'
-- Each job runs in screen session named 'nexus_job_<timestamp>'
+- Each job runs in screen session named 'nexus_job_<id>'
 - Screen sessions persist across terminal disconnects
 - Auto-cleanup of job screen sessions on completion
-- Ctrl+C returns to nexus TUI when attached to job
+- Ctrl+A+D returns to shell when attached to job
+
+### Environment Variables
+
+Automatically set for each job:
+
+```bash
+CUDA_VISIBLE_DEVICES=${gpu_index}
+NEXUS_JOB_ID=${id}
+NEXUS_GPU_ID=${gpu_index}
+```
 
 ### Error Handling
 
 - Corrupted jobs.txt: Continue with remaining valid entries
 - GPU unavailable: Skip and try next job
-- Screen session dies: Mark job as completed
-- System reboot: Restart from clean state, don't recover jobs
-- Invalid command entry: Show error and return to entry mode
+- Screen session dies: Mark job as failed
+- System reboot: Restart from clean state
+- Invalid command: Show error and usage
 
 ## 6. Implementation Notes
 
 ### GPU Detection
 
-```rust
-// Use nvidia-smi for GPU detection
+```bash
+# Use nvidia-smi for GPU detection
 nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
 ```
 
@@ -187,22 +275,18 @@ nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
 
 ```bash
 # Start new session
-screen -dmS nexus_job_${timestamp} bash -c "${command}"
+screen -dmS nexus_job_${id} bash -c "${command}"
 
 # Attach to session
-screen -r nexus_job_${timestamp}
+screen -r nexus_job_${id}
 
 # Kill session
-screen -S nexus_job_${timestamp} -X quit
+screen -S nexus_job_${id} -X quit
 ```
 
-### Environment Variables
+### Job ID Generation
 
-- Inherit all current environment variables
-- Automatically set:
-
-  ```bash
-  CUDA_VISIBLE_DEVICES=${gpu_index}
-  NEXUS_JOB_ID=${timestamp}
-  NEXUS_GPU_ID=${gpu_index}
-  ```
+- Use base58 encoding for readable, short IDs
+- Format: 3-4 letters (e.g., 'abc', 'xyz')
+- Generated from timestamp + random component
+- Must be unique across running and historical jobs
