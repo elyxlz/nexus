@@ -1,7 +1,8 @@
-import hashlib
-import datetime as dt
-import json
 import dataclasses as dc
+import warnings
+import datetime as dt
+import hashlib
+import json
 import os
 import pathlib
 import subprocess
@@ -42,11 +43,11 @@ def is_screen_session_alive(screen_session: str | None) -> bool:
 
 
 def get_gpu_info(config: Config, state: NexusState) -> list[GpuInfo]:
-    if os.environ.get("NEXUS_DEV"):
-        return [
-            GpuInfo(0, "Mock GPU 0", 8192, 2048),
-            GpuInfo(1, "Mock GPU 1", 16384, 4096),
-        ]
+    # Mock GPU configuration
+    MOCK_GPUS = [
+        GpuInfo(0, "Mock GPU 0", 8192, 2048),
+        GpuInfo(1, "Mock GPU 1", 16384, 4096),
+    ]
 
     try:
         output = subprocess.check_output(
@@ -57,9 +58,15 @@ def get_gpu_info(config: Config, state: NexusState) -> list[GpuInfo]:
             ],
             text=True,
         )
-    except subprocess.CalledProcessError as e:
-        log_service_event(config, f"Failed to get GPU info: {e}")
-        return []
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        warnings.warn(
+            "nvidia-smi not available or failed to execute. Using mock GPU information.",
+            RuntimeWarning,
+        )
+        log_service_event(
+            config, f"Falling back to mock GPUs due to nvidia-smi failure: {e}"
+        )
+        return MOCK_GPUS
 
     gpus = []
     for line in output.strip().split("\n"):
@@ -77,7 +84,7 @@ def get_gpu_info(config: Config, state: NexusState) -> list[GpuInfo]:
             log_service_event(config, f"Error parsing GPU info: {e}")
             continue
 
-    return gpus
+    return gpus if gpus else MOCK_GPUS
 
 
 def log_service_event(config: Config, message: str) -> None:
@@ -90,10 +97,13 @@ def log_service_event(config: Config, message: str) -> None:
         print(colored(f"Failed to write to service log: {e}", "red"))
 
 
-def load_state(state: NexusState, config: Config) -> NexusState:
+def load_state(config: Config) -> NexusState:
     state_path = config.log_dir / "state.json"
 
     try:
+        if not state_path.exists():
+            return create_default_state()
+
         with open(state_path) as f:
             data = json.load(f)
             # Convert JobStatus strings back to enum

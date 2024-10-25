@@ -9,9 +9,8 @@ import humanize
 import toml
 from termcolor import colored
 
-from nexus.main import create_default_state
 from nexus.models import Config, JobStatus
-from nexus.service import create_job, nexus_service, start_service
+from nexus.service import create_job, nexus_service, start_service_in_screen
 from nexus.utils import (
     get_gpu_info,
     load_state,
@@ -60,7 +59,6 @@ blacklist = []  # list of GPU indices to exclude
 
 def print_help() -> None:
     print(f"""{colored('Nexus: GPU Job Management CLI', 'green', attrs=['bold'])}
-
 {colored('USAGE', 'blue', attrs=['bold'])}:
     nexus                     Show status
     nexus stop               Stop the nexus service
@@ -85,7 +83,6 @@ def print_help() -> None:
 
 def print_command_help(command: str) -> None:
     help_text = {
-        "add": f"{colored('nexus add \"command\"', 'green')}\nAdd a new job to the queue. Enclose command in quotes.",
         "kill": f"{colored('nexus kill <id|gpu>', 'green')}\nKill a running job by its ID or GPU number.",
         "attach": f"{colored('nexus attach <id|gpu>', 'green')}\nAttach to a running job's screen session. Use Ctrl+A+D to detach.",
         "blacklist": f"{colored('nexus blacklist', 'green')}\nManage GPU blacklist:\n  nexus blacklist         Show blacklisted GPUs\n  nexus blacklist add    Add GPU to blacklist\n  nexus blacklist remove Remove GPU from blacklist",
@@ -106,7 +103,7 @@ def print_command_help(command: str) -> None:
     )
 
 
-def handle_status(config: Config, args: list[str]) -> None:
+def handle_status(config: Config) -> None:
     state = load_state(config)
     gpus = get_gpu_info(config, state)
 
@@ -183,7 +180,7 @@ def handle_restart(config: Config) -> None:
     try:
         subprocess.run(["screen", "-S", "nexus", "-X", "quit"], check=True)
         time.sleep(1)
-        start_service(config)
+        start_service_in_screen(config)
     except subprocess.CalledProcessError:
         print(colored("Failed to restart service", "red"))
 
@@ -459,8 +456,8 @@ def main():
         args = sys.argv[1:]
 
         if not args:
-            start_service(config)
-            handle_status(config, args=args)
+            start_service_in_screen(config)
+            handle_status(config)
             return
 
         command = args[0]

@@ -1,11 +1,10 @@
 import os
 import subprocess
 import time
+
 import termcolor as tc
 
-
-from nexus import models
-from nexus import utils
+from nexus import models, utils
 
 
 def create_job(command: str, config: models.Config) -> models.Job:
@@ -84,17 +83,20 @@ exec 1> "{stdout_log}" 2> "{stderr_log}"
         raise
 
 
-def start_service(config: models.Config) -> None:
+def start_service_in_screen(config: models.Config) -> None:
     session_name = "nexus"
 
     if not utils.is_screen_session_alive("nexus"):
         service_log = config.log_dir / "service.log"
         command = f"exec 1> {service_log} 2>&1; python {__file__} service"
+        breakpoint()
 
         try:
             subprocess.run(
                 ["screen", "-dmS", session_name, "bash", "-c", command], check=True
             )
+            time.sleep(1)
+            assert utils.is_screen_session_alive(session_name)
             print(tc.colored("Nexus service started", "green"))
             utils.log_service_event(config, "Nexus service started")
         except subprocess.CalledProcessError as e:
@@ -104,13 +106,9 @@ def start_service(config: models.Config) -> None:
 
 
 def nexus_service(config: models.Config) -> None:
-    state = utils.create_default_state()
-
-    state_path = config.log_dir / "state.json"
-    if state_path.exists():
-        state = utils.load_state(state, config=config)
-
+    breakpoint()
     utils.log_service_event(config, "Service starting")
+    state = utils.load_state(config=config)
 
     while True:
         try:
