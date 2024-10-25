@@ -10,6 +10,7 @@ dependencies = [
     "humanize>=4.11.0",
     "base58>=2.1.1",
     "psutil>=6.1.0",
+    "pyright>=1.1.386",
 ]
 
 [build-system]
