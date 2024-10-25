@@ -1,14 +1,14 @@
 import dataclasses as dc
 import datetime as dt
+import enum
 import hashlib
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import time
 import typing
-from enum import Enum
-from pathlib import Path
 
 import base58
 import humanize
@@ -16,7 +16,7 @@ import toml
 from termcolor import colored
 
 
-class JobStatus(Enum):
+class JobStatus(enum.Enum):
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -36,12 +36,12 @@ class Job:
     env_vars: list[tuple[str, str]]
     exit_code: int | None
     error_message: str | None
-    log_dir: Path | None
+    log_dir: pathlib.Path | None
 
 
 @dc.dataclass
 class Config:
-    log_dir: Path
+    log_dir: pathlib.Path
     refresh_rate: int
     history_limit: int
 
@@ -119,7 +119,7 @@ def attach_screen_session(session: str) -> None:
 
 
 def load_config() -> Config:
-    home = Path.home()
+    home = pathlib.Path.home()
     base_dir = home / ".nexus"
     config_path = base_dir / "config.toml"
 
@@ -144,7 +144,7 @@ blacklist = []  # list of GPU indices to exclude
     content = config_path.read_text()
     config_data = toml.loads(content)
 
-    log_dir = Path(
+    log_dir = pathlib.Path(
         os.path.expanduser(config_data.get("paths", {}).get("log_dir", "~/.nexus/logs"))
     )
     refresh_rate = config_data.get("display", {}).get("refresh_rate", 5)
@@ -183,7 +183,7 @@ def load_state(config: Config) -> NexusState:
             for job in data["jobs"]:
                 job["status"] = JobStatus(job["status"])
                 if job.get("log_dir"):
-                    job["log_dir"] = Path(job["log_dir"])
+                    job["log_dir"] = pathlib.Path(job["log_dir"])
             state = NexusState(**data)
 
             # Convert dict jobs back to Job objects
@@ -532,302 +532,329 @@ def main():
         command = args[0]
         state = load_state(config)
 
-        if command == "service":
-            nexus_service(config)
+        match command:
+            case "service":
+                nexus_service(config)
 
-        elif command == "stop":
-            try:
-                subprocess.run(["screen", "-S", "nexus", "-X", "quit"], check=True)
-                print(colored("Nexus service stopped", "green"))
-                log_service_event(config, "Nexus service stopped")
-            except subprocess.CalledProcessError:
-                print(colored("Failed to stop service", "red"))
-
-        elif command == "restart":
-            try:
-                subprocess.run(["screen", "-S", "nexus", "-X", "quit"], check=True)
-                time.sleep(1)
-                start_service(config)
-            except subprocess.CalledProcessError:
-                print(colored("Failed to restart service", "red"))
-
-        elif command == "add":
-            if len(args) < 2:
-                print(colored('Usage: nexus add "command"', "red"))
-                return
-            command_str = " ".join(args[1:])
-            job = create_job(command_str, config)
-
-            print(
-                f"{colored('Added job', 'green')} {colored(job.id, 'magenta', attrs=['bold'])}"
-            )
-            print(
-                f"{colored('Command', 'white', attrs=['bold'])}: {colored(job.command, 'cyan')}"
-            )
-            print(
-                f"{colored('Time Added', 'white', attrs=['bold'])}: {colored(dt.datetime.fromtimestamp(job.created_at), 'cyan')}"
-            )
-            print(colored("The job has been added to the queue.", "green"))
-
-            log_service_event(config, f"Job {job.id} added to queue: {job.command}")
-            state.jobs.append(job)
-            save_state(state, config)
-
-        elif command == "queue":
-            queued_jobs = [j for j in state.jobs if j.status == JobStatus.QUEUED]
-            print(colored("Pending Jobs:", "blue", attrs=["bold"]))
-            for pos, job in enumerate(queued_jobs, 1):
-                print(
-                    f"{colored(str(pos), 'blue')}. {colored(job.id, 'magenta')} - {colored(job.command, 'white')}"
-                )
-
-        elif command == "history":
-            completed_jobs = [
-                j
-                for j in state.jobs
-                if j.status in (JobStatus.COMPLETED, JobStatus.FAILED)
-            ]
-            completed_jobs.sort(key=lambda x: x.completed_at or 0, reverse=True)
-
-            print(colored("Completed Jobs:", "blue", attrs=["bold"]))
-            for job in completed_jobs:
-                runtime = (job.completed_at or 0) - (job.started_at or 0)
-                status_color = "red" if job.status == JobStatus.FAILED else "green"
-                status_text = colored(job.status.name, status_color)
-                gpu_str = str(job.gpu_index) if job.gpu_index is not None else "Unknown"
-
-                print(
-                    f"{colored(job.id, 'magenta')}: {colored(job.command, 'white')} "
-                    f"(Status: {status_text}, "
-                    f"Runtime: {colored(humanize.naturaldelta(runtime), 'cyan')}, "
-                    f"GPU: {colored(gpu_str, 'yellow')})"
-                )
-                if job.error_message:
-                    print(f"  Error: {colored(job.error_message, 'red')}")
-
-        elif command == "kill":
-            if len(args) < 2:
-                print(colored("Usage: nexus kill <id|gpu>", "red"))
-                return
-
-            target = args[1]
-            killed = False
-
-            try:
-                # Try as GPU index
-                gpu_index = int(target)
-                for job in state.jobs:
-                    if job.status == JobStatus.RUNNING and job.gpu_index == gpu_index:
-                        assert job.screen_session is not None
-                        attach_screen_session(job.screen_session)
-                        job.status = JobStatus.FAILED
-                        job.completed_at = time.time()
-                        job.error_message = "Killed by user"
-                        print(
-                            f"{colored('Killed job', 'green')} {colored(job.id, 'magenta')} "
-                            f"{colored(f'on GPU {gpu_index}', 'yellow')}"
-                        )
-                        killed = True
-                        break
-            except ValueError:
-                # Try as job ID
-                for job in state.jobs:
-                    if job.id == target and job.screen_session:
-                        subprocess.run(
-                            ["screen", "-S", job.screen_session, "-X", "quit"],
-                            check=True,
-                        )
-                        job.status = JobStatus.FAILED
-                        job.completed_at = time.time()
-                        job.error_message = "Killed by user"
-                        print(
-                            f"{colored('Killed job', 'green')} {colored(job.id, 'magenta')}"
-                        )
-                        killed = True
-                        break
-
-            if not killed:
-                print(colored(f"No running job found with ID or GPU: {target}", "red"))
-            else:
-                save_state(state, config)
-
-        elif command == "remove":
-            if len(args) < 2:
-                print(colored("Usage: nexus remove <id>", "red"))
-                return
-
-            job_id = args[1]
-            original_len = len(state.jobs)
-            state.jobs = [
-                j
-                for j in state.jobs
-                if not (j.id == job_id and j.status == JobStatus.QUEUED)
-            ]
-
-            if len(state.jobs) != original_len:
-                print(f"{colored('Removed job', 'green')} {colored(job_id, 'magenta')}")
-                save_state(state, config)
-            else:
-                print(colored(f"No queued job found with ID: {job_id}", "red"))
-
-        elif command == "pause":
-            state.is_paused = True
-            save_state(state, config)
-            print(colored("Queue processing paused", "yellow"))
-
-        elif command == "resume":
-            state.is_paused = False
-            save_state(state, config)
-            print(colored("Queue processing resumed", "green"))
-
-        elif command == "logs":
-            if len(args) < 2:
-                print(colored("Usage: nexus logs <id|service>", "red"))
-                return
-
-            if args[1] == "service":
-                log_path = config.log_dir / "service.log"
-                if log_path.exists():
-                    print(log_path.read_text())
-                else:
-                    print(colored("No service log found.", "red"))
-            else:
-                job = next((j for j in state.jobs if j.id == args[1]), None)
-                if job and job.log_dir:
-                    print(colored("=== STDOUT ===", "blue", attrs=["bold"]))
-                    stdout_path = job.log_dir / "stdout.log"
-                    if stdout_path.exists():
-                        print(stdout_path.read_text())
-
-                    print(f"\n{colored('=== STDERR ===', 'red', attrs=['bold'])}")
-                    stderr_path = job.log_dir / "stderr.log"
-                    if stderr_path.exists():
-                        print(stderr_path.read_text())
-                else:
-                    print(colored(f"No logs found for job {args[1]}", "red"))
-
-        elif command == "attach":
-            if len(args) < 2:
-                print(colored("Usage: nexus attach <id|gpu|service>", "red"))
-                return
-
-            target = args[1]
-            session_name = "nexus"
-
-            if target == "service":
-                dummy_job = Job(
-                    "",
-                    "",
-                    JobStatus.RUNNING,
-                    0,
-                    None,
-                    None,
-                    None,
-                    session_name,
-                    [],
-                    None,
-                    None,
-                    None,
-                )
-                if is_job_alive(dummy_job):
-                    subprocess.run(["screen", "-r", session_name])
-                else:
-                    print(colored("No running nexus service found.", "red"))
-            else:
+            case "stop":
                 try:
-                    gpu_index = int(target)
-                    running_job = next(
-                        (
-                            j
-                            for j in state.jobs
-                            if j.status == JobStatus.RUNNING
-                            and j.gpu_index == gpu_index
-                        ),
-                        None,
+                    subprocess.run(["screen", "-S", "nexus", "-X", "quit"], check=True)
+                    print(colored("Nexus service stopped", "green"))
+                    log_service_event(config, "Nexus service stopped")
+                except subprocess.CalledProcessError:
+                    print(colored("Failed to stop service", "red"))
+
+            case "restart":
+                try:
+                    subprocess.run(["screen", "-S", "nexus", "-X", "quit"], check=True)
+                    time.sleep(1)
+                    start_service(config)
+                except subprocess.CalledProcessError:
+                    print(colored("Failed to restart service", "red"))
+
+            case "add":
+                if len(args) < 2:
+                    print(colored('Usage: nexus add "command"', "red"))
+                    return
+                command_str = " ".join(args[1:])
+                job = create_job(command_str, config)
+
+                print(
+                    f"{colored('Added job', 'green')} {colored(job.id, 'magenta', attrs=['bold'])}"
+                )
+                print(
+                    f"{colored('Command', 'white', attrs=['bold'])}: {colored(job.command, 'cyan')}"
+                )
+                print(
+                    f"{colored('Time Added', 'white', attrs=['bold'])}: {colored(dt.datetime.fromtimestamp(job.created_at), 'cyan')}"
+                )
+                print(colored("The job has been added to the queue.", "green"))
+
+                log_service_event(config, f"Job {job.id} added to queue: {job.command}")
+                state.jobs.append(job)
+                save_state(state, config)
+
+            case "queue":
+                queued_jobs = [j for j in state.jobs if j.status == JobStatus.QUEUED]
+                print(colored("Pending Jobs:", "blue", attrs=["bold"]))
+                for pos, job in enumerate(queued_jobs, 1):
+                    print(
+                        f"{colored(str(pos), 'blue')}. {colored(job.id, 'magenta')} - {colored(job.command, 'white')}"
                     )
-                    if running_job and running_job.screen_session:
-                        subprocess.run(["screen", "-r", running_job.screen_session])
-                    else:
-                        print(
-                            colored(f"No running job found on GPU {gpu_index}", "red")
-                        )
+
+            case "history":
+                completed_jobs = [
+                    j
+                    for j in state.jobs
+                    if j.status in (JobStatus.COMPLETED, JobStatus.FAILED)
+                ]
+                completed_jobs.sort(key=lambda x: x.completed_at or 0, reverse=True)
+
+                print(colored("Completed Jobs:", "blue", attrs=["bold"]))
+                for job in completed_jobs:
+                    runtime = (job.completed_at or 0) - (job.started_at or 0)
+                    status_color = "red" if job.status == JobStatus.FAILED else "green"
+                    status_text = colored(job.status.name, status_color)
+                    gpu_str = (
+                        str(job.gpu_index) if job.gpu_index is not None else "Unknown"
+                    )
+
+                    print(
+                        f"{colored(job.id, 'magenta')}: {colored(job.command, 'white')} "
+                        f"(Status: {status_text}, "
+                        f"Runtime: {colored(humanize.naturaldelta(runtime), 'cyan')}, "
+                        f"GPU: {colored(gpu_str, 'yellow')})"
+                    )
+                    if job.error_message:
+                        print(f"  Error: {colored(job.error_message, 'red')}")
+
+            case "kill":
+                if len(args) < 2:
+                    print(colored("Usage: nexus kill <id|gpu>", "red"))
+                    return
+
+                target = args[1]
+                killed = False
+
+                try:
+                    # Try as GPU index
+                    gpu_index = int(target)
+                    for job in state.jobs:
+                        if (
+                            job.status == JobStatus.RUNNING
+                            and job.gpu_index == gpu_index
+                        ):
+                            assert job.screen_session is not None
+                            attach_screen_session(job.screen_session)
+                            job.status = JobStatus.FAILED
+                            job.completed_at = time.time()
+                            job.error_message = "Killed by user"
+                            print(
+                                f"{colored('Killed job', 'green')} {colored(job.id, 'magenta')} "
+                                f"{colored(f'on GPU {gpu_index}', 'yellow')}"
+                            )
+                            killed = True
+                            break
                 except ValueError:
                     # Try as job ID
-                    job = next(
-                        (
-                            j
-                            for j in state.jobs
-                            if j.id == target and j.status == JobStatus.RUNNING
-                        ),
+                    for job in state.jobs:
+                        if job.id == target and job.screen_session:
+                            subprocess.run(
+                                ["screen", "-S", job.screen_session, "-X", "quit"],
+                                check=True,
+                            )
+                            job.status = JobStatus.FAILED
+                            job.completed_at = time.time()
+                            job.error_message = "Killed by user"
+                            print(
+                                f"{colored('Killed job', 'green')} {colored(job.id, 'magenta')}"
+                            )
+                            killed = True
+                            break
+
+                if not killed:
+                    print(
+                        colored(f"No running job found with ID or GPU: {target}", "red")
+                    )
+                else:
+                    save_state(state, config)
+
+            case "remove":
+                if len(args) < 2:
+                    print(colored("Usage: nexus remove <id>", "red"))
+                    return
+
+                job_id = args[1]
+                original_len = len(state.jobs)
+                state.jobs = [
+                    j
+                    for j in state.jobs
+                    if not (j.id == job_id and j.status == JobStatus.QUEUED)
+                ]
+
+                if len(state.jobs) != original_len:
+                    print(
+                        f"{colored('Removed job', 'green')} {colored(job_id, 'magenta')}"
+                    )
+                    save_state(state, config)
+                else:
+                    print(colored(f"No queued job found with ID: {job_id}", "red"))
+
+            case "pause":
+                state.is_paused = True
+                save_state(state, config)
+                print(colored("Queue processing paused", "yellow"))
+
+            case "resume":
+                state.is_paused = False
+                save_state(state, config)
+                print(colored("Queue processing resumed", "green"))
+
+            case "logs":
+                if len(args) < 2:
+                    print(colored("Usage: nexus logs <id|service>", "red"))
+                    return
+
+                if args[1] == "service":
+                    log_path = config.log_dir / "service.log"
+                    if log_path.exists():
+                        print(log_path.read_text())
+                    else:
+                        print(colored("No service log found.", "red"))
+                else:
+                    job = next((j for j in state.jobs if j.id == args[1]), None)
+                    if job and job.log_dir:
+                        print(colored("=== STDOUT ===", "blue", attrs=["bold"]))
+                        stdout_path = job.log_dir / "stdout.log"
+                        if stdout_path.exists():
+                            print(stdout_path.read_text())
+
+                        print(f"\n{colored('=== STDERR ===', 'red', attrs=['bold'])}")
+                        stderr_path = job.log_dir / "stderr.log"
+                        if stderr_path.exists():
+                            print(stderr_path.read_text())
+                    else:
+                        print(colored(f"No logs found for job {args[1]}", "red"))
+
+            case "attach":
+                if len(args) < 2:
+                    print(colored("Usage: nexus attach <id|gpu|service>", "red"))
+                    return
+
+                target = args[1]
+                session_name = "nexus"
+
+                if target == "service":
+                    dummy_job = Job(
+                        "",
+                        "",
+                        JobStatus.RUNNING,
+                        0,
+                        None,
+                        None,
+                        None,
+                        session_name,
+                        [],
+                        None,
+                        None,
                         None,
                     )
-                    if job and job.screen_session:
-                        subprocess.run(["screen", "-r", job.screen_session])
+                    if is_job_alive(dummy_job):
+                        subprocess.run(["screen", "-r", session_name])
                     else:
-                        print(colored(f"No running job found with ID: {target}", "red"))
-
-        elif command == "blacklist":
-            if len(args) > 1:
-                subcommand = args[1]
-                if subcommand == "add":
-                    if len(args) < 3:
-                        print(
-                            colored("Usage: nexus blacklist add <idx[,idx...]>", "red")
+                        print(colored("No running nexus service found.", "red"))
+                else:
+                    try:
+                        gpu_index = int(target)
+                        running_job = next(
+                            (
+                                j
+                                for j in state.jobs
+                                if j.status == JobStatus.RUNNING
+                                and j.gpu_index == gpu_index
+                            ),
+                            None,
                         )
-                        return
-                    indices = [int(x) for x in args[2].split(",")]
-                    state.blacklisted_gpus.extend(indices)
-                    state.blacklisted_gpus = list(set(state.blacklisted_gpus))  # dedupe
-                    save_state(state, config)
-                    print(colored(f"Added GPUs to blacklist: {indices}", "green"))
+                        if running_job and running_job.screen_session:
+                            subprocess.run(["screen", "-r", running_job.screen_session])
+                        else:
+                            print(
+                                colored(
+                                    f"No running job found on GPU {gpu_index}", "red"
+                                )
+                            )
+                    except ValueError:
+                        # Try as job ID
+                        job = next(
+                            (
+                                j
+                                for j in state.jobs
+                                if j.id == target and j.status == JobStatus.RUNNING
+                            ),
+                            None,
+                        )
+                        if job and job.screen_session:
+                            subprocess.run(["screen", "-r", job.screen_session])
+                        else:
+                            print(
+                                colored(
+                                    f"No running job found with ID: {target}", "red"
+                                )
+                            )
 
-                elif subcommand == "remove":
-                    if len(args) < 3:
+            case "blacklist":
+                if len(args) > 1:
+                    subcommand = args[1]
+                    if subcommand == "add":
+                        if len(args) < 3:
+                            print(
+                                colored(
+                                    "Usage: nexus blacklist add <idx[,idx...]>", "red"
+                                )
+                            )
+                            return
+                        indices = [int(x) for x in args[2].split(",")]
+                        state.blacklisted_gpus.extend(indices)
+                        state.blacklisted_gpus = list(
+                            set(state.blacklisted_gpus)
+                        )  # dedupe
+                        save_state(state, config)
+                        print(colored(f"Added GPUs to blacklist: {indices}", "green"))
+
+                    elif subcommand == "remove":
+                        if len(args) < 3:
+                            print(
+                                colored(
+                                    "Usage: nexus blacklist remove <idx[,idx...]>",
+                                    "red",
+                                )
+                            )
+                            return
+                        indices = [int(x) for x in args[2].split(",")]
+                        state.blacklisted_gpus = [
+                            x for x in state.blacklisted_gpus if x not in indices
+                        ]
+                        save_state(state, config)
+                        print(
+                            colored(f"Removed GPUs from blacklist: {indices}", "green")
+                        )
+                    else:
                         print(
                             colored(
-                                "Usage: nexus blacklist remove <idx[,idx...]>", "red"
+                                f"Unknown blacklist subcommand: {subcommand}", "red"
                             )
                         )
-                        return
-                    indices = [int(x) for x in args[2].split(",")]
-                    state.blacklisted_gpus = [
-                        x for x in state.blacklisted_gpus if x not in indices
-                    ]
-                    save_state(state, config)
-                    print(colored(f"Removed GPUs from blacklist: {indices}", "green"))
                 else:
-                    print(colored(f"Unknown blacklist subcommand: {subcommand}", "red"))
-            else:
-                if state.blacklisted_gpus:
-                    print(colored("Blacklisted GPUs:", "blue", attrs=["bold"]))
-                    gpus = get_gpu_info(config, state)
-                    for idx in state.blacklisted_gpus:
-                        gpu = next((g for g in gpus if g.index == idx), None)
-                        if gpu:
-                            print(f"GPU {colored(str(idx), 'yellow')}: {gpu.name}")
+                    if state.blacklisted_gpus:
+                        print(colored("Blacklisted GPUs:", "blue", attrs=["bold"]))
+                        gpus = get_gpu_info(config, state)
+                        for idx in state.blacklisted_gpus:
+                            gpu = next((g for g in gpus if g.index == idx), None)
+                            if gpu:
+                                print(f"GPU {colored(str(idx), 'yellow')}: {gpu.name}")
+                    else:
+                        print(colored("No GPUs are blacklisted", "green"))
+
+            case "config":
+                if len(args) > 1 and args[1] == "edit":
+                    editor = os.environ.get("EDITOR", "vim")
+                    config_path = pathlib.Path.home() / ".nexus/config.toml"
+                    subprocess.run([editor, str(config_path)])
                 else:
-                    print(colored("No GPUs are blacklisted", "green"))
+                    config_path = pathlib.Path.home() / ".nexus/config.toml"
+                    print(
+                        f"{colored('Current configuration', 'blue', attrs=['bold'])}:\n{config_path.read_text()}"
+                    )
 
-        elif command == "config":
-            if len(args) > 1 and args[1] == "edit":
-                editor = os.environ.get("EDITOR", "vim")
-                config_path = Path.home() / ".nexus/config.toml"
-                subprocess.run([editor, str(config_path)])
-            else:
-                config_path = Path.home() / ".nexus/config.toml"
-                print(
-                    f"{colored('Current configuration', 'blue', attrs=['bold'])}:\n{config_path.read_text()}"
-                )
+            case "help":
+                if len(args) > 1:
+                    print_command_help(args[1])
+                else:
+                    print_help()
 
-        elif command == "help":
-            if len(args) > 1:
-                print_command_help(args[1])
-            else:
+            case _:
+                print(colored(f"Unknown command: {command}", "red"))
                 print_help()
-
-        else:
-            print(colored(f"Unknown command: {command}", "red"))
-            print_help()
 
     except KeyboardInterrupt:
         print("\nExiting...")
