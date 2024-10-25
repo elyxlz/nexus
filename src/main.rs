@@ -29,7 +29,6 @@ struct Config {
     log_dir: PathBuf,
     jobs_file: PathBuf,
     refresh_rate: u64,
-    _colors_enabled: bool, // This indicates it's currently unused
     datetime_format: String,
 }
 
@@ -63,7 +62,6 @@ jobs_file = "~/.nexus/jobs.txt"
 
 [display]
 refresh_rate = 10  # Status view refresh in seconds
-colors_enabled = true
 datetime_format = "%Y-%m-%d %H:%M:%S"
 "#;
         fs::write(&config_path, default_config)?;
@@ -103,12 +101,6 @@ datetime_format = "%Y-%m-%d %H:%M:%S"
         .map(|r| r as u64)
         .unwrap_or(5);
 
-    let colors_enabled = config
-        .get("display")
-        .and_then(|d| d.get("colors_enabled"))
-        .and_then(|c| c.as_bool())
-        .unwrap_or(true);
-
     let datetime_format = config
         .get("display")
         .and_then(|d| d.get("datetime_format"))
@@ -126,7 +118,6 @@ datetime_format = "%Y-%m-%d %H:%M:%S"
         log_dir,
         jobs_file,
         refresh_rate,
-        _colors_enabled: colors_enabled, // Updated to match the field name
         datetime_format,
     })
 }
@@ -390,7 +381,7 @@ fn start_service(config: &Config) -> io::Result<()> {
 
 fn nexus_service(config: &Config) -> io::Result<()> {
     loop {
-        // Poll nvidia-smi every 5 seconds to check for available GPUs
+        // Poll nvidia-smi to check for available GPUs
         let gpus = get_gpu_info()?;
 
         // Load jobs from the queue
@@ -434,8 +425,9 @@ fn stop_service(config: &Config) -> io::Result<()> {
     Ok(())
 }
 
-// Status display
-fn render_status(config: &Config) -> io::Result<()> {
+// Handles
+fn handle_status(config: &Config) -> io::Result<()> {
+    // Show the queue, history, and current GPU status without starting the service
     let jobs = load_jobs(config)?;
     let gpus = get_gpu_info()?;
 
@@ -509,11 +501,6 @@ fn render_status(config: &Config) -> io::Result<()> {
     }
 
     Ok(())
-}
-
-fn handle_status(config: &Config) -> io::Result<()> {
-    // Show the queue, history, and current GPU status without starting the service
-    render_status(config)
 }
 
 // Command handlers
@@ -644,29 +631,18 @@ fn handle_remove(id: &str, config: &Config) -> io::Result<()> {
     Ok(())
 }
 
-fn handle_logs(id: &str, config: &Config, follow: bool) -> io::Result<()> {
+fn handle_logs(id: &str, config: &Config) -> io::Result<()> {
     let jobs = load_jobs(config)?;
     if let Some(job) = jobs.iter().find(|j| j.id == id) {
         if let Some(log_dir) = &job.log_dir {
-            if follow && job.status == JobStatus::Running {
-                // Use tail -f for following logs
-                Command::new("tail")
-                    .args([
-                        "-f",
-                        log_dir.join("stdout.log").to_str().unwrap(),
-                        log_dir.join("stderr.log").to_str().unwrap(),
-                    ])
-                    .status()?;
-            } else {
-                println!("{}", "=== STDOUT ===".blue().bold());
-                if let Ok(content) = fs::read_to_string(log_dir.join("stdout.log")) {
-                    println!("{}", content);
-                }
+            println!("{}", "=== STDOUT ===".blue().bold());
+            if let Ok(content) = fs::read_to_string(log_dir.join("stdout.log")) {
+                println!("{}", content);
+            }
 
-                println!("\n{}", "=== STDERR ===".red().bold());
-                if let Ok(content) = fs::read_to_string(log_dir.join("stderr.log")) {
-                    println!("{}", content);
-                }
+            println!("\n{}", "=== STDERR ===".red().bold());
+            if let Ok(content) = fs::read_to_string(log_dir.join("stderr.log")) {
+                println!("{}", content);
             }
         } else {
             println!("{}", format!("No logs found for job {}", id).red());
@@ -757,8 +733,8 @@ fn print_help() {
     nexus remove <id>        Remove job from queue
     nexus pause              Pause queue processing
     nexus resume             Resume queue processing
-    nexus logs <id> [-f]     View logs for job
-    nexus logs service [-f]   View or follow service logs
+    nexus logs <id>          View logs for job
+    nexus logs service       View or follow service logs
     nexus attach <id|gpu>    Attach to running job's screen session
     nexus attach service     Attach to the nexus service session
     nexus edit               Open jobs.txt in $EDITOR
@@ -860,8 +836,7 @@ fn main() -> io::Result<()> {
             } else if args[2] == "service" {
                 handle_service_logs(&config)
             } else {
-                let follow = args.get(3).map_or(false, |arg| arg == "-f");
-                handle_logs(&args[2], &config, follow)
+                handle_logs(&args[2], &config)
             }
         }
         Some("attach") => {
