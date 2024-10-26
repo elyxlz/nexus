@@ -7,7 +7,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 
 from nexus.service.config import load_config
-from nexus.service.gpu import get_gpus
+from nexus.service.gpu import get_available_gpus, get_gpus
 from nexus.service.job import (
     create_job,
     get_job_logs,
@@ -18,12 +18,12 @@ from nexus.service.job import (
 from nexus.service.logger import logger
 from nexus.service.models import GpuInfo, Job, ServiceStatus
 from nexus.service.state import (
-    add_job_to_state,
+    add_jobs_to_state,
     clean_old_completed_jobs_in_state,
     load_state,
-    remove_job_from_state,
+    remove_jobs_from_state,
     save_state,
-    update_job_in_state,
+    update_jobs_in_state,
 )
 
 config = load_config()
@@ -36,15 +36,18 @@ async def job_scheduler():
         if not state.is_paused:
             try:
                 # update running job statuses
+                jobs_to_update = []
                 for job in state.jobs:
-                    if job.status == "running":
-                        if not is_job_running(job):
-                            job.status = "completed"
-                            job.completed_at = time.time()
-                            update_job_in_state(
-                                state, job=job, state_path=config.state_path
-                            )
-                            logger.info(f"Job {job.id} completed")
+                    if job.status == "running" and not is_job_running(job):
+                        job.status = "completed"
+                        job.completed_at = time.time()
+                        jobs_to_update.append(job)
+                        logger.info(f"Job {job.id} completed")
+
+                if jobs_to_update:
+                    update_jobs_in_state(
+                        state, jobs=jobs_to_update, state_path=config.state_path
+                    )
 
                 # Clean old completed jobs
                 clean_old_completed_jobs_in_state(
@@ -54,30 +57,18 @@ async def job_scheduler():
                 )
 
                 # Get available GPUs and running jobs
-                gpus = get_gpus()
-                running_jobs = {
-                    j.gpu_index: j.id for j in state.jobs if j.status == "running"
-                }
-
-                # Filter available GPUs
-                available_gpus = [
-                    g
-                    for g in gpus
-                    if not g.is_blacklisted
-                    and g.index not in running_jobs
-                    and g.memory_used == 0
-                ]
+                available_gpus = get_available_gpus(state)
 
                 # Start new jobs
+                jobs_to_update = []
                 for gpu in available_gpus:
                     queued_jobs = [j for j in state.jobs if j.status == "queued"]
                     if queued_jobs:
                         job = queued_jobs[0]
                         try:
                             start_job(job, gpu_index=gpu.index, log_dir=config.log_dir)
-                            update_job_in_state(
-                                state, job=job, state_path=config.state_path
-                            )
+                            job.status = "running"
+                            jobs_to_update.append(job)
                             logger.info(
                                 f"Started job {job.id} with command '{job.command}' on GPU {gpu.index}"
                             )
@@ -85,10 +76,13 @@ async def job_scheduler():
                             job.status = "failed"
                             job.error_message = str(e)
                             job.completed_at = time.time()
-                            update_job_in_state(
-                                state, job=job, state_path=config.state_path
-                            )
+                            jobs_to_update.append(job)
                             logger.error(f"Failed to start job {job.id}: {e}")
+
+                if jobs_to_update:
+                    update_jobs_in_state(
+                        state, jobs=jobs_to_update, state_path=config.state_path
+                    )
 
             except Exception as e:
                 logger.error(f"Scheduler error: {e}")
@@ -183,13 +177,17 @@ async def list_jobs(
     return filtered_jobs
 
 
-@app.post("/v1/jobs", response_model=Job)
-async def add_job(command: str):
-    """Add a new job to the queue"""
-    job = create_job(command)
-    add_job_to_state(state, job=job, state_path=config.state_path)
-    logger.info(f"Added job {job.id} with command '{job.command}' to queue")
-    return job
+@app.post("/v1/jobs", response_model=list[Job])
+async def add_jobs(commands: list[str]):
+    """Add new jobs to the queue"""
+    jobs = []
+    for command in commands:
+        job = create_job(command)
+        jobs.append(job)
+
+    add_jobs_to_state(state, jobs=jobs, state_path=config.state_path)
+    logger.info(f"Added {len(jobs)} jobs to queue")
+    return jobs
 
 
 @app.get("/v1/jobs/{job_id}", response_model=Job)
@@ -212,31 +210,62 @@ async def get_job_logs_endpoint(job_id: str):
     return {"stdout": stdout or "", "stderr": stderr or ""}
 
 
-@app.delete("/v1/jobs/{job_id}")
-async def delete_job(job_id: str):
-    """Remove a job from the queue or kill if running"""
-    job = next((j for j in state.jobs if j.id == job_id), None)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+@app.post("/v1/jobs/kill")
+async def kill_jobs(job_ids: list[str]):
+    """Kill running jobs by their IDs"""
+    killed = []
+    failed = []
+    killed_jobs = []
 
-    if job.status == "running":
+    for job_id in job_ids:
+        job = next((j for j in state.jobs if j.id == job_id), None)
+        if not job:
+            failed.append({"id": job_id, "error": "Job not found"})
+            continue
+
+        if job.status != "running":
+            failed.append({"id": job_id, "error": "Job is not running"})
+            continue
+
         try:
             kill_job(job)
             job.status = "failed"
             job.completed_at = time.time()
             job.error_message = "Killed by user"
-            update_job_in_state(state, job=job, state_path=config.state_path)
-            logger.info(f"Killed running job {job.id}")
+            killed.append(job.id)
+            killed_jobs.append(job)
         except Exception as e:
             logger.error(f"Failed to kill job {job.id}: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-    elif job.status == "queued":
-        if remove_job_from_state(state, job_id=job.id, state_path=config.state_path):
-            logger.info(f"Removed queued job {job.id}")
-        else:
-            raise HTTPException(status_code=404, detail="Job not found")
+            failed.append({"id": job_id, "error": str(e)})
 
-    return {"status": "success"}
+    if killed_jobs:
+        update_jobs_in_state(state, jobs=killed_jobs, state_path=config.state_path)
+
+    return {"killed": killed, "failed": failed}
+
+
+@app.post("/v1/jobs/remove_from_queue")
+async def remove_jobs_from_queue(job_ids: list[str]):
+    """Remove jobs from queue by their IDs"""
+    removed = []
+    failed = []
+
+    for job_id in job_ids:
+        job = next((j for j in state.jobs if j.id == job_id), None)
+        if not job:
+            failed.append({"id": job_id, "error": "Job not found"})
+            continue
+
+        if job.status != "queued":
+            failed.append({"id": job_id, "error": "Job is not queued"})
+            continue
+
+        removed.append(job_id)
+
+    if removed:
+        remove_jobs_from_state(state, job_ids=removed, state_path=config.state_path)
+
+    return {"removed": removed, "failed": failed}
 
 
 # GPU Management Endpoints

@@ -65,31 +65,33 @@ def remove_completed_jobs(
         save_state(state, state_path)
 
 
-def update_job_in_state(
-    state: ServiceState, job: Job, state_path: pathlib.Path
+def update_jobs_in_state(
+    state: ServiceState, jobs: list[Job], state_path: pathlib.Path
 ) -> None:
-    """Update a job in the state"""
+    """Update multiple jobs in the state"""
+    job_dict = {job.id: job for job in jobs}
     for i, existing_job in enumerate(state.jobs):
-        if existing_job.id == job.id:
-            state.jobs[i] = job
-            break
+        if existing_job.id in job_dict:
+            state.jobs[i] = job_dict[existing_job.id]
     state.last_updated = time.time()
     save_state(state, state_path)
 
 
-def add_job_to_state(state: ServiceState, job: Job, state_path: pathlib.Path) -> None:
-    """Add a new job to the state"""
-    state.jobs.append(job)
+def add_jobs_to_state(
+    state: ServiceState, jobs: list[Job], state_path: pathlib.Path
+) -> None:
+    """Add new jobs to the state"""
+    state.jobs.extend(jobs)
     state.last_updated = time.time()
     save_state(state, state_path)
 
 
-def remove_job_from_state(
-    state: ServiceState, job_id: str, state_path: pathlib.Path
+def remove_jobs_from_state(
+    state: ServiceState, job_ids: list[str], state_path: pathlib.Path
 ) -> bool:
-    """Remove a job from the state"""
+    """Remove multiple jobs from the state"""
     original_length = len(state.jobs)
-    state.jobs = [j for j in state.jobs if j.id != job_id]
+    state.jobs = [j for j in state.jobs if j.id not in job_ids]
 
     if len(state.jobs) != original_length:
         state.last_updated = time.time()

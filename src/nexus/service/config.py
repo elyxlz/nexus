@@ -15,7 +15,7 @@ class NexusConfig(pyds.BaseSettings):
     refresh_rate: int = pyd.Field(default=10)
     history_limit: int = pyd.Field(default=1000)
     host: str = pyd.Field(default="localhost")
-    port: int = pyd.Field(default=8000)
+    port: int = pyd.Field(default=54322)
 
     model_config = pyds.SettingsConfigDict(
         toml_file=str(pathlib.Path.home() / ".nexus" / "config.toml")
@@ -60,12 +60,3 @@ port = {config.port}
         config.state_path.touch(exist_ok=True)
 
     return config
-
-
-if __name__ == "__main__":
-    config = load_config()
-    print(f"Log directory: {config.log_dir}")
-    print(f"State file: {config.state_path}")
-    print(f"Refresh rate: {config.refresh_rate}")
-    print(f"Host: {config.host}")
-    print(f"Port: {config.port}")
