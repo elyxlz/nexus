@@ -34,7 +34,6 @@ def load_config(config_path: pathlib.Path) -> dict:
 CONFIG = load_config(DEFAULT_CONFIG_PATH)
 API_BASE_URL = f"http://{CONFIG['host']}:{CONFIG['port']}/v1"
 
-
 # Define allowed colors as typing.Literal types
 Color = typing.Literal[
     "grey", "red", "green", "yellow", "blue", "magenta", "cyan", "white"
@@ -49,9 +48,34 @@ def colored_text(text: str, color: Color, attrs: list[Attribute] | None = None) 
     return colored(text, color, attrs=attrs)
 
 
-def print_status_snapshot() -> None:
-    """Show status snapshot"""
+def start_nexus_service() -> None:
+    """Start the Nexus service in a screen session if it doesn't already exist."""
     try:
+        result = subprocess.run(["screen", "-ls"], capture_output=True, text=True)
+        if "nexus" not in result.stdout:
+            print(
+                colored("Starting Nexus service in a new screen session...", "yellow")
+            )
+            subprocess.run(
+                ["screen", "-S", "nexus", "-dm", "nexus-service"], check=True
+            )
+        else:
+            print(
+                colored(
+                    "Nexus service is already running in a screen session.", "green"
+                )
+            )
+    except subprocess.CalledProcessError as e:
+        print(colored(f"Error starting Nexus service: {e}", "red"))
+
+
+def print_status_snapshot() -> None:
+    """Show status snapshot."""
+    try:
+        # Ensure the service is running
+        start_nexus_service()
+
+        # Fetch status from the API
         response = requests.get(f"{API_BASE_URL}/service/status")
         response.raise_for_status()
         status = response.json()
@@ -489,6 +513,13 @@ def main():
     help_parser.add_argument("command", nargs="?", help="Command to show detailed help")
 
     args = parser.parse_args()
+
+    if args.command is None:
+        # Default behavior when no command is provided
+        start_nexus_service()  # Start service if not already running
+        print_status_snapshot()  # Show status
+        return
+
     command_handlers = {
         "status": lambda: print_status_snapshot(),
         "stop": lambda: stop_service(),
@@ -508,7 +539,3 @@ def main():
 
     handler = command_handlers.get(args.command, parser.print_help)
     handler()
-
-
-if __name__ == "__main__":
-    main()

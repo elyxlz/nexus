@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import datetime as dt
+import os
 import pathlib
 import typing
 
@@ -297,6 +298,21 @@ async def remove_gpu_blacklist(gpu_index: int):
     save_state(state, state_path=config.state_path)
     logger.info(f"Removed GPU {gpu_index} from blacklist")
     return models.GpuActionResponse(status="success")
+
+
+@app.post("/v1/service/stop", response_model=models.ServiceActionResponse)
+async def stop_service():
+    logger.info("Service shutdown initiated by API request")
+
+    # Schedule shutdown after a brief delay to allow response completion
+    asyncio.create_task(shutdown_service())
+
+    return models.ServiceActionResponse(status="stopping")
+
+
+async def shutdown_service():
+    await asyncio.sleep(1)  # Delay to allow response to complete
+    os._exit(0)  # Forcefully terminate the service
 
 
 @app.exception_handler(Exception)
