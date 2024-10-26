@@ -6,6 +6,7 @@ import time
 
 import base58
 
+from nexus.service.logging import logger
 from nexus.service.models import Job
 
 
@@ -78,13 +79,13 @@ exec 1> "{stdout_log}" 2> "{stderr_log}"
         job.screen_session = session_name
         job.status = "running"
 
-        log_service_event(state_path, f"Job {job.id} started on GPU {gpu_index}")
+        logger.info(f"Job {job.id} started on GPU {gpu_index}")
 
     except subprocess.CalledProcessError as e:
         job.status = "failed"
         job.error_message = str(e)
         job.completed_at = time.time()
-        log_service_event(state_path, f"Failed to start job {job.id}: {e}")
+        logger.info(f"Failed to start job {job.id}: {e}")
         raise
 
 
@@ -116,14 +117,16 @@ def kill_job(job: Job) -> None:
             raise RuntimeError(f"Failed to kill job: {e}")
 
 
-def get_job_logs(job: Job) -> tuple[str | None, str | None]:
+def get_job_logs(job: Job, log_dir: pathlib.Path) -> tuple[str | None, str | None]:
     """Get stdout and stderr logs for a job"""
-    if not job.log_dir:
+
+    job_log_dir = log_dir / "jobs" / job.id
+
+    if not job_log_dir:
         return None, None
 
-    log_dir = pathlib.Path(job.log_dir)
-    stdout_path = log_dir / "stdout.log"
-    stderr_path = log_dir / "stderr.log"
+    stdout_path = job_log_dir / "stdout.log"
+    stderr_path = job_log_dir / "stderr.log"
 
     stdout = stdout_path.read_text() if stdout_path.exists() else None
     stderr = stderr_path.read_text() if stderr_path.exists() else None

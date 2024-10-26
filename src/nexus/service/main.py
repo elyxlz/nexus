@@ -1,34 +1,31 @@
 # nexus/service/main.py
+from fastapi import FastAPI, HTTPException
 import asyncio
-import pathlib
 import time
+import pathlib
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
-
 from nexus.service.config import load_config
+from nexus.service.logging import logger
+from nexus.service.models import Job, GpuInfo
 from nexus.service.gpu import get_gpu_info
-from nexus.service.logging import create_service_logger
-from nexus.service.models import GpuInfo, Job
-from nexus.service.state import (
-    add_job,
-    clean_completed_jobs,
-    load_state,
-    remove_job,
-    save_state,
-    update_job,
-)
-
 from .job import (
     create_job,
-    get_job_logs,
+    start_job,
     is_job_running,
     kill_job,
-    start_job,
+    get_job_logs,
+)
+from nexus.service.state import (
+    load_state,
+    save_state,
+    update_job,
+    add_job,
+    remove_job,
+    clean_completed_jobs,
 )
 
 config = load_config()
-logger = create_service_logger(str(config.log_dir))
 state = load_state(config.state_path)
 
 
@@ -253,7 +250,7 @@ async def get_job_logs_endpoint(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    stdout, stderr = get_job_logs(job)
+    stdout, stderr = get_job_logs(job, log_dir=config.log_dir)
     return {"stdout": stdout or "", "stderr": stderr or ""}
 
 

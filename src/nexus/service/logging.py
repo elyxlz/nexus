@@ -1,4 +1,6 @@
 import glob
+
+from nexus.service.config import load_config
 import logging
 import logging.handlers
 import os
@@ -70,3 +72,7 @@ def read_latest_service_logs(
     if sort_order == "newest":
         all_lines.reverse()
     return [line.strip() for line in all_lines]
+
+
+config = load_config()
+logger = create_service_logger(str(config.log_dir))
