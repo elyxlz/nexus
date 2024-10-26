@@ -1,0 +1,34 @@
+
+name: Pyright
+on: [pull_request]
+jobs:
+  pyright:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Set up uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Cache uv packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/setup.py') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Install package
+        env:
+          UV_SYSTEM_PYTHON: 1
+        run: |
+          uv pip install -e .
+
+      - uses: jakebailey/pyright-action@v2.3.1
+
+      - name: Minimize uv cache
+        run: uv cache prune --ci
