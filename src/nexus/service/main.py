@@ -1,7 +1,7 @@
 import asyncio
 import contextlib
+import datetime as dt
 import pathlib
-import time
 import typing
 
 import fastapi as fa
@@ -40,7 +40,7 @@ async def job_scheduler():
                 for job in state.jobs:
                     if job.status == "running" and not is_job_running(job):
                         job.status = "completed"
-                        job.completed_at = time.time()
+                        job.completed_at = dt.datetime.now().timestamp()
                         jobs_to_update.append(job)
                         logger.info(f"Job {job.id} completed")
 
@@ -72,7 +72,7 @@ async def job_scheduler():
                         except Exception as e:
                             job.status = "failed"
                             job.error_message = str(e)
-                            job.completed_at = time.time()
+                            job.completed_at = dt.datetime.now().timestamp()
                             jobs_to_update.append(job)
                             logger.error(f"Failed to start job {job.id}: {e}")
 
@@ -222,7 +222,7 @@ async def kill_running_jobs(job_ids: list[str]):
         try:
             kill_job(job)
             job.status = "failed"
-            job.completed_at = time.time()
+            job.completed_at = dt.datetime.now().timestamp()
             job.error_message = "Killed by user"
             killed.append(job.id)
             killed_jobs.append(job)

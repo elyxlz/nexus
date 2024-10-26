@@ -1,3 +1,4 @@
+import datetime as dt
 import hashlib
 import os
 import pathlib
@@ -6,8 +7,8 @@ import time
 
 import base58
 
+from nexus.service import models
 from nexus.service.logger import logger
-from nexus.service.models import Job
 
 
 def generate_job_id() -> str:
@@ -19,15 +20,15 @@ def generate_job_id() -> str:
     return base58.b58encode(hash_bytes).decode()[:6].lower()
 
 
-def create_job(command: str, working_dir: pathlib.Path) -> Job:
+def create_job(command: str, working_dir: pathlib.Path) -> models.Job:
     """Create a new job with the given command"""
     job_id = generate_job_id()
 
-    return Job(
+    return models.Job(
         id=job_id,
         command=command.strip(),
         status="queued",
-        created_at=time.time(),
+        created_at=dt.datetime.now().timestamp(),
         started_at=None,
         completed_at=None,
         gpu_index=None,
@@ -38,7 +39,7 @@ def create_job(command: str, working_dir: pathlib.Path) -> Job:
     )
 
 
-def start_job(job: Job, gpu_index: int, log_dir: pathlib.Path) -> None:
+def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path) -> models.Job:
     """Start a job on a specific GPU"""
     session_name = f"nexus_job_{job.id}"
 
@@ -52,7 +53,7 @@ def start_job(job: Job, gpu_index: int, log_dir: pathlib.Path) -> None:
             "CUDA_VISIBLE_DEVICES": str(gpu_index),
             "NEXUS_JOB_ID": job.id,
             "NEXUS_GPU_ID": str(gpu_index),
-            "NEXUS_START_TIME": str(time.time()),
+            "NEXUS_START_TIME": str(dt.datetime.now().timestamp()),
         }
     )
 
@@ -77,7 +78,7 @@ exec 1> "{stdout_log}" 2> "{stderr_log}"
             ["screen", "-dmS", session_name, str(script_path)], env=env, check=True
         )
 
-        job.started_at = time.time()
+        job.started_at = dt.datetime.now().timestamp()
         job.gpu_index = gpu_index
         job.screen_session = session_name
         job.status = "running"
@@ -85,12 +86,14 @@ exec 1> "{stdout_log}" 2> "{stderr_log}"
     except subprocess.CalledProcessError as e:
         job.status = "failed"
         job.error_message = str(e)
-        job.completed_at = time.time()
+        job.completed_at = dt.datetime.now().timestamp()
         logger.info(f"Failed to start job {job.id}: {e}")
         raise
 
+    return job
 
-def is_job_running(job: Job) -> bool:
+
+def is_job_running(job: models.Job) -> bool:
     """Check if a job's screen session is still running"""
     if not job.screen_session:
         return False
@@ -104,7 +107,7 @@ def is_job_running(job: Job) -> bool:
         return False
 
 
-def kill_job(job: Job) -> None:
+def kill_job(job: models.Job) -> None:
     """Kill a running job"""
     if job.screen_session:
         try:
@@ -112,13 +115,15 @@ def kill_job(job: Job) -> None:
                 ["screen", "-S", job.screen_session, "-X", "quit"], check=True
             )
             job.status = "failed"
-            job.completed_at = time.time()
+            job.completed_at = dt.datetime.now().timestamp()
             job.error_message = "Killed by user"
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Failed to kill job: {e}")
 
 
-def get_job_logs(job: Job, log_dir: pathlib.Path) -> tuple[str | None, str | None]:
+def get_job_logs(
+    job: models.Job, log_dir: pathlib.Path
+) -> tuple[str | None, str | None]:
     """Get stdout and stderr logs for a job"""
 
     job_log_dir = log_dir / "jobs" / job.id

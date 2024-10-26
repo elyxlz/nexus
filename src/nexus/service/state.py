@@ -1,14 +1,15 @@
+import datetime as dt
 import json
 import pathlib
 import time
 
-from nexus.service.models import Job, ServiceState
+from nexus.service import models
 
 
-def load_state(state_path: pathlib.Path) -> ServiceState:
+def load_state(state_path: pathlib.Path) -> models.ServiceState:
     """Load service state from disk"""
 
-    default_state = ServiceState(
+    default_state = models.ServiceState(
         status="running",
         jobs=[],
         blacklisted_gpus=[],
@@ -21,7 +22,7 @@ def load_state(state_path: pathlib.Path) -> ServiceState:
 
     try:
         data = json.loads(state_path.read_text())
-        state = ServiceState.model_validate(data)
+        state = models.ServiceState.model_validate(data)
         return state
     except (json.JSONDecodeError, ValueError):
         if state_path.exists():
@@ -30,11 +31,11 @@ def load_state(state_path: pathlib.Path) -> ServiceState:
         return default_state
 
 
-def save_state(state: ServiceState, state_path: pathlib.Path) -> None:
+def save_state(state: models.ServiceState, state_path: pathlib.Path) -> None:
     """Save service state to disk"""
     temp_path = state_path.with_suffix(".json.tmp")
 
-    state.last_updated = time.time()
+    state.last_updated = dt.datetime.now().timestamp()
 
     try:
         json_data = state.model_dump_json(indent=2)
@@ -47,13 +48,13 @@ def save_state(state: ServiceState, state_path: pathlib.Path) -> None:
         raise
 
 
-def get_job_by_id(state: ServiceState, job_id: str) -> Job | None:
+def get_job_by_id(state: models.ServiceState, job_id: str) -> models.Job | None:
     """Get a job by its ID"""
     return next((job for job in state.jobs if job.id == job_id), None)
 
 
 def remove_completed_jobs(
-    state: ServiceState, history_limit: int, state_path: pathlib.Path
+    state: models.ServiceState, history_limit: int, state_path: pathlib.Path
 ) -> None:
     """Remove old completed jobs keeping only the most recent ones"""
     completed = [j for j in state.jobs if j.status in ("completed", "failed")]
@@ -66,7 +67,7 @@ def remove_completed_jobs(
 
 
 def update_jobs_in_state(
-    state: ServiceState, jobs: list[Job], state_path: pathlib.Path
+    state: models.ServiceState, jobs: list[models.Job], state_path: pathlib.Path
 ) -> None:
     """Update multiple jobs in the state"""
     job_dict = {job.id: job for job in jobs}
@@ -78,23 +79,23 @@ def update_jobs_in_state(
 
 
 def add_jobs_to_state(
-    state: ServiceState, jobs: list[Job], state_path: pathlib.Path
+    state: models.ServiceState, jobs: list[models.Job], state_path: pathlib.Path
 ) -> None:
     """Add new jobs to the state"""
     state.jobs.extend(jobs)
-    state.last_updated = time.time()
+    state.last_updated = dt.datetime.now().timestamp()
     save_state(state, state_path)
 
 
 def remove_jobs_from_state(
-    state: ServiceState, job_ids: list[str], state_path: pathlib.Path
+    state: models.ServiceState, job_ids: list[str], state_path: pathlib.Path
 ) -> bool:
     """Remove multiple jobs from the state"""
     original_length = len(state.jobs)
     state.jobs = [j for j in state.jobs if j.id not in job_ids]
 
     if len(state.jobs) != original_length:
-        state.last_updated = time.time()
+        state.last_updated = dt.datetime.now().timestamp()
         save_state(state, state_path)
         return True
 
@@ -102,7 +103,7 @@ def remove_jobs_from_state(
 
 
 def clean_old_completed_jobs_in_state(
-    state: ServiceState, max_completed: int, state_path: pathlib.Path
+    state: models.ServiceState, max_completed: int, state_path: pathlib.Path
 ) -> None:
     """Remove old completed jobs keeping only the most recent ones"""
     completed_jobs = [j for j in state.jobs if j.status in ["completed", "failed"]]
@@ -122,5 +123,5 @@ def clean_old_completed_jobs_in_state(
             if j.status not in ["completed", "failed"] or j.id in job_ids_to_keep
         ]
 
-        state.last_updated = time.time()
+        state.last_updated = dt.datetime.now().timestamp()
         save_state(state, state_path)

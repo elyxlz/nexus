@@ -13,14 +13,12 @@ def create_service_logger(
     max_bytes: int = 10 * 1024 * 1024,
     backup_count: int = 5,
     console_output: bool = True,
-    log_format: str | None = None,
 ) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(log_level)
     logger.handlers = []
-    if log_format is None:
-        log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    formatter = logging.Formatter(log_format)
+    log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
     file_handler = RotatingFileHandler(
         filename=os.path.join(log_dir, log_file),
         maxBytes=max_bytes,
