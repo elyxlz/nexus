@@ -6,7 +6,7 @@ import time
 
 import base58
 
-from nexus.service.logging import logger
+from nexus.service.logger import logger
 from nexus.service.models import Job
 
 

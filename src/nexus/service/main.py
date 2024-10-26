@@ -1,28 +1,31 @@
-# nexus/service/main.py
-from fastapi import FastAPI, HTTPException
+import uvicorn
+import typing
 import asyncio
-import time
 import pathlib
+import time
 from contextlib import asynccontextmanager
 
+from fastapi import FastAPI, HTTPException
+
 from nexus.service.config import load_config
-from nexus.service.logging import logger
-from nexus.service.models import Job, GpuInfo, ServiceStatus, CreateJobRequest
 from nexus.service.gpu import get_gpu_info
-from .job import (
-    create_job,
-    start_job,
-    is_job_running,
-    kill_job,
-    get_job_logs,
-)
+from nexus.service.logger import logger
+from nexus.service.models import GpuInfo, Job, ServiceStatus
 from nexus.service.state import (
+    add_job,
+    clean_completed_jobs,
     load_state,
+    remove_job,
     save_state,
     update_job,
-    add_job,
-    remove_job,
-    clean_completed_jobs,
+)
+
+from nexus.service.job import (
+    create_job,
+    get_job_logs,
+    is_job_running,
+    kill_job,
+    start_job,
 )
 
 config = load_config()
@@ -132,7 +135,10 @@ async def get_status():
 
 # Job Management Endpoints
 @app.get("/jobs", response_model=list[Job])
-async def list_jobs(status: str | None = None, gpu_index: int | None = None):
+async def list_jobs(
+    status: typing.Literal["queued", "running", "completed"] | None = None,
+    gpu_index: int | None = None,
+):
     """Get all jobs with optional filtering"""
     filtered_jobs = state.jobs
 
@@ -145,11 +151,11 @@ async def list_jobs(status: str | None = None, gpu_index: int | None = None):
 
 
 @app.post("/jobs", response_model=Job)
-async def create_new_job(job_request: CreateJobRequest):
+async def create_new_job(command: str):
     """Add a new job to the queue"""
-    job = create_job(job_request.command)
+    job = create_job(command)
     add_job(state, job=job, state_path=config.state_path)
-    logger.info(f"Added job {job.id} to queue")
+    logger.info(f"Added job {job.id} with command {job.command} to queue")
     return job
 
 
@@ -242,18 +248,6 @@ async def resume_service():
     return {"status": "resumed"}
 
 
-# Log Management Endpoints
-@app.get("/logs/{job_id}")
-async def get_job_logs_endpoint(job_id: str):
-    """Get logs for a specific job"""
-    job = next((j for j in state.jobs if j.id == job_id), None)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    stdout, stderr = get_job_logs(job, log_dir=config.log_dir)
-    return {"stdout": stdout or "", "stderr": stderr or ""}
-
-
 @app.get("/logs/service")
 async def get_service_logs():
     """Get service logs"""
@@ -266,6 +260,18 @@ async def get_service_logs():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Log Management Endpoints
+@app.get("/logs/{job_id}")
+async def get_job_logs_endpoint(job_id: str):
+    """Get logs for a specific job"""
+    job = next((j for j in state.jobs if j.id == job_id), None)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    stdout, stderr = get_job_logs(job, log_dir=config.log_dir)
+    return {"stdout": stdout or "", "stderr": stderr or ""}
+
+
 # Error Handlers
 @app.exception_handler(Exception)
 async def generic_exception_handler(request, exc):
@@ -274,7 +280,9 @@ async def generic_exception_handler(request, exc):
     return {"detail": str(exc)}, 500
 
 
-if __name__ == "__main__":
-    import uvicorn
+def main():
+    uvicorn.run(app, host=config.host, port=config.port, log_level="info")
 
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
+
+if __name__ == "__main__":
+    main()

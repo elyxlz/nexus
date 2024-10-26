@@ -38,7 +38,3 @@ class ServiceStatus(pyd.BaseModel):
     queued_jobs: int
     running_jobs: int
     is_paused: bool
-
-
-class CreateJobRequest(pyd.BaseModel):
-    command: str
