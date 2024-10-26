@@ -1,14 +1,21 @@
-import uvicorn
-import typing
 import asyncio
 import pathlib
 import time
+import typing
 from contextlib import asynccontextmanager
 
+import uvicorn
 from fastapi import FastAPI, HTTPException
 
 from nexus.service.config import load_config
 from nexus.service.gpu import get_gpu_info
+from nexus.service.job import (
+    create_job,
+    get_job_logs,
+    is_job_running,
+    kill_job,
+    start_job,
+)
 from nexus.service.logger import logger
 from nexus.service.models import GpuInfo, Job, ServiceStatus
 from nexus.service.state import (
@@ -18,14 +25,6 @@ from nexus.service.state import (
     remove_job,
     save_state,
     update_job,
-)
-
-from nexus.service.job import (
-    create_job,
-    get_job_logs,
-    is_job_running,
-    kill_job,
-    start_job,
 )
 
 config = load_config()
