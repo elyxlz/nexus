@@ -1,5 +1,4 @@
 import asyncio
-import pathlib
 import time
 import typing
 import contextlib
@@ -97,22 +96,19 @@ async def job_scheduler():
         await asyncio.sleep(config.refresh_rate)
 
 
+# Startup and Shutdown
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage service lifecycle"""
     # Startup
     scheduler_task = asyncio.create_task(job_scheduler())
     logger.info("Nexus service started")
-
     yield
-
     # Shutdown
     scheduler_task.cancel()
     try:
         await scheduler_task
     except asyncio.CancelledError:
         pass
-
     save_state(state, state_path=config.state_path)
     logger.info("Nexus service stopped")
 
@@ -125,8 +121,8 @@ app = FastAPI(
 )
 
 
-# Status Endpoints
-@app.get("/status", response_model=ServiceStatus)
+# System Status Endpoints
+@app.get("/v1/service/status", response_model=ServiceStatus)
 async def get_status():
     """Get current service status"""
     gpus = get_gpus()
@@ -142,24 +138,52 @@ async def get_status():
     )
 
 
+@app.get("/v1/service/logs")
+async def get_service_logs():
+    """Get service logs"""
+    try:
+        log_path = config.log_dir / "service.log"
+        if log_path.exists():
+            return {"logs": log_path.read_text()}
+        return {"logs": ""}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/service/pause")
+async def pause_service():
+    """Pause job processing"""
+    state.is_paused = True
+    save_state(state, state_path=config.state_path)
+    logger.info("Service paused")
+    return {"status": "paused"}
+
+
+@app.post("/v1/service/resume")
+async def resume_service():
+    """Resume job processing"""
+    state.is_paused = False
+    save_state(state, state_path=config.state_path)
+    logger.info("Service resumed")
+    return {"status": "resumed"}
+
+
 # Job Management Endpoints
-@app.get("/jobs", response_model=list[Job])
+@app.get("/v1/jobs", response_model=list[Job])
 async def list_jobs(
     status: typing.Literal["queued", "running", "completed"] | None = None,
     gpu_index: int | None = None,
 ):
     """Get all jobs with optional filtering"""
     filtered_jobs = state.jobs
-
     if status:
         filtered_jobs = [j for j in filtered_jobs if j.status == status]
     if gpu_index is not None:
         filtered_jobs = [j for j in filtered_jobs if j.gpu_index == gpu_index]
-
     return filtered_jobs
 
 
-@app.post("/jobs", response_model=Job)
+@app.post("/v1/jobs", response_model=Job)
 async def add_job(command: str):
     """Add a new job to the queue"""
     job = create_job(command)
@@ -168,7 +192,7 @@ async def add_job(command: str):
     return job
 
 
-@app.get("/jobs/{job_id}", response_model=Job)
+@app.get("/v1/jobs/{job_id}", response_model=Job)
 async def get_job(job_id: str):
     """Get details for a specific job"""
     job = next((j for j in state.jobs if j.id == job_id), None)
@@ -177,7 +201,18 @@ async def get_job(job_id: str):
     return job
 
 
-@app.delete("/jobs/{job_id}")
+@app.get("/v1/jobs/{job_id}/logs")
+async def get_job_logs_endpoint(job_id: str):
+    """Get logs for a specific job"""
+    job = next((j for j in state.jobs if j.id == job_id), None)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    stdout, stderr = get_job_logs(job, log_dir=config.log_dir)
+    return {"stdout": stdout or "", "stderr": stderr or ""}
+
+
+@app.delete("/v1/jobs/{job_id}")
 async def delete_job(job_id: str):
     """Remove a job from the queue or kill if running"""
     job = next((j for j in state.jobs if j.id == job_id), None)
@@ -205,14 +240,12 @@ async def delete_job(job_id: str):
 
 
 # GPU Management Endpoints
-@app.get("/gpus", response_model=list[GpuInfo])
+@app.get("/v1/gpus", response_model=list[GpuInfo])
 async def list_gpus():
     """Get information about all GPUs"""
     gpus = get_gpus()
     for gpu in gpus:
         gpu.is_blacklisted = gpu.index in state.blacklisted_gpus
-
-    for gpu in gpus:
         running_job = next(
             (
                 j
@@ -225,7 +258,7 @@ async def list_gpus():
     return gpus
 
 
-@app.post("/gpus/{gpu_index}/blacklist")
+@app.post("/v1/gpus/{gpu_index}/blacklist")
 async def blacklist_gpu(gpu_index: int):
     """Add a GPU to the blacklist"""
     if gpu_index in state.blacklisted_gpus:
@@ -237,7 +270,7 @@ async def blacklist_gpu(gpu_index: int):
     return {"status": "success"}
 
 
-@app.delete("/gpus/{gpu_index}/blacklist")
+@app.delete("/v1/gpus/{gpu_index}/blacklist")
 async def remove_gpu_blacklist(gpu_index: int):
     """Remove a GPU from the blacklist"""
     if gpu_index not in state.blacklisted_gpus:
@@ -247,49 +280,6 @@ async def remove_gpu_blacklist(gpu_index: int):
     save_state(state, state_path=config.state_path)
     logger.info(f"Removed GPU {gpu_index} from blacklist")
     return {"status": "success"}
-
-
-# Service Control Endpoints
-@app.post("/service/pause")
-async def pause_service():
-    """Pause job processing"""
-    state.is_paused = True
-    save_state(state, state_path=config.state_path)
-    logger.info("Service paused")
-    return {"status": "paused"}
-
-
-@app.post("/service/resume")
-async def resume_service():
-    """Resume job processing"""
-    state.is_paused = False
-    save_state(state, state_path=config.state_path)
-    logger.info("Service resumed")
-    return {"status": "resumed"}
-
-
-@app.get("/logs/service")
-async def get_service_logs():
-    """Get service logs"""
-    try:
-        log_path = pathlib.Path.home() / ".nexus" / "logs" / "service.log"
-        if log_path.exists():
-            return {"logs": log_path.read_text()}
-        return {"logs": ""}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# Log Management Endpoints
-@app.get("/logs/{job_id}")
-async def get_job_logs_endpoint(job_id: str):
-    """Get logs for a specific job"""
-    job = next((j for j in state.jobs if j.id == job_id), None)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    stdout, stderr = get_job_logs(job, log_dir=config.log_dir)
-    return {"stdout": stdout or "", "stderr": stderr or ""}
 
 
 # Error Handlers
