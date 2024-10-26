@@ -19,7 +19,7 @@ def generate_job_id() -> str:
     return base58.b58encode(hash_bytes).decode()[:6].lower()
 
 
-def create_job(command: str) -> Job:
+def create_job(command: str, working_dir: pathlib.Path) -> Job:
     """Create a new job with the given command"""
     job_id = generate_job_id()
 
@@ -34,6 +34,7 @@ def create_job(command: str) -> Job:
         screen_session=None,
         exit_code=None,
         error_message=None,
+        working_dir=working_dir,
     )
 
 
@@ -61,8 +62,10 @@ def start_job(job: Job, gpu_index: int, log_dir: pathlib.Path) -> None:
     stdout_log = job_log_dir / "stdout.log"
     stderr_log = job_log_dir / "stderr.log"
 
+    # Create a script that changes to the working directory before running the command
     script_path = job_log_dir / "run.sh"
     script_content = f"""#!/bin/bash
+cd "{job.working_dir}"
 exec 1> "{stdout_log}" 2> "{stderr_log}"
 {job.command}
 """
