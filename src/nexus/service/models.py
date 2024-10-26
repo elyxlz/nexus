@@ -30,3 +30,15 @@ class ServiceState(pyd.BaseModel):
     blacklisted_gpus: list[int] = []
     is_paused: bool = False
     last_updated: float = 0.0
+
+
+class ServiceStatus(pyd.BaseModel):
+    running: bool
+    gpu_count: int
+    queued_jobs: int
+    running_jobs: int
+    is_paused: bool
+
+
+class CreateJobRequest(pyd.BaseModel):
+    command: str

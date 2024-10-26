@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 from nexus.service.config import load_config
 from nexus.service.logging import logger
-from nexus.service.models import Job, GpuInfo
+from nexus.service.models import Job, GpuInfo, ServiceStatus, CreateJobRequest
 from nexus.service.gpu import get_gpu_info
 from .job import (
     create_job,
@@ -132,7 +132,7 @@ async def get_status():
 
 # Job Management Endpoints
 @app.get("/jobs", response_model=list[Job])
-async def list_jobs(status: JobStatus | None = None, gpu_index: int | None = None):
+async def list_jobs(status: str | None = None, gpu_index: int | None = None):
     """Get all jobs with optional filtering"""
     filtered_jobs = state.jobs
 
