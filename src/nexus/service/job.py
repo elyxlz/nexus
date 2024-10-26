@@ -3,13 +3,10 @@ import os
 import pathlib
 import subprocess
 import time
-from typing import Optional
 import base58
 
 
-from pathlib import Path
-
-from nexus.service.models import Job, ServiceState, JobStatus
+from nexus.service.models import Job, ServiceState
 
 
 def generate_job_id() -> str:
@@ -21,10 +18,10 @@ def generate_job_id() -> str:
     return base58.b58encode(hash_bytes).decode()
 
 
-def create_job(command: str, config_log_dir: Path) -> Job:
+def create_job(command: str, state_path: pathlib.Path) -> Job:
     """Create a new job with the given command"""
     job_id = generate_job_id()
-    log_dir = config_log_dir / "jobs" / job_id
+    log_dir = state_path / "jobs" / job_id
 
     return Job(
         id=job_id,
@@ -35,21 +32,18 @@ def create_job(command: str, config_log_dir: Path) -> Job:
         completed_at=None,
         gpu_index=None,
         screen_session=None,
-        env_vars=[],
         exit_code=None,
         error_message=None,
         log_dir=log_dir,
     )
 
 
-def start_job(
-    job: Job, gpu_index: int, state: ServiceState, config_log_dir: Path
-) -> None:
+def start_job(job: Job, gpu_index: int, state_path: pathlib.Path) -> None:
     """Start a job on a specific GPU"""
     session_name = f"nexus_job_{job.id}"
 
     if job.log_dir is None:
-        job.log_dir = config_log_dir / "jobs" / job.id
+        job.log_dir = state_path / "jobs" / job.id
 
     job.log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -87,15 +81,14 @@ exec 1> "{stdout_log}" 2> "{stderr_log}"
         job.gpu_index = gpu_index
         job.screen_session = session_name
         job.status = "running"
-        job.env_vars = list(env.items())
 
-        log_service_event(config_log_dir, f"Job {job.id} started on GPU {gpu_index}")
+        log_service_event(state_path, f"Job {job.id} started on GPU {gpu_index}")
 
     except subprocess.CalledProcessError as e:
         job.status = "failed"
         job.error_message = str(e)
         job.completed_at = time.time()
-        log_service_event(config_log_dir, f"Failed to start job {job.id}: {e}")
+        log_service_event(state_path, f"Failed to start job {job.id}: {e}")
         raise
 
 
@@ -120,14 +113,14 @@ def kill_job(job: Job) -> None:
             subprocess.run(
                 ["screen", "-S", job.screen_session, "-X", "quit"], check=True
             )
-            job.status = JobStatus.FAILED
+            job.status = "failed"
             job.completed_at = time.time()
             job.error_message = "Killed by user"
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Failed to kill job: {e}")
 
 
-def get_job_logs(job: Job) -> tuple[Optional[str], Optional[str]]:
+def get_job_logs(job: Job) -> tuple[str | None, str | None]:
     """Get stdout and stderr logs for a job"""
     if not job.log_dir:
         return None, None

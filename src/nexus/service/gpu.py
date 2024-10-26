@@ -1,8 +1,7 @@
-from typing import List
 import subprocess
 import warnings
 
-from .models import GpuInfo
+from nexus.service.models import GpuInfo, Job
 
 # Mock GPUs for testing/development
 MOCK_GPUS = [
@@ -23,7 +22,7 @@ MOCK_GPUS = [
 ]
 
 
-def get_gpu_info() -> List[GpuInfo]:
+def get_gpu_info() -> list[GpuInfo]:
     """Query nvidia-smi for GPU information"""
     try:
         output = subprocess.check_output(
@@ -60,12 +59,12 @@ def get_gpu_info() -> List[GpuInfo]:
     return gpus if gpus else MOCK_GPUS
 
 
-def is_gpu_available(gpu: GpuInfo, running_jobs: List[str]) -> bool:
+def is_gpu_available(gpu: GpuInfo, running_jobs: list[Job]) -> bool:
     """Check if a GPU is available for new jobs"""
     if gpu.is_blacklisted:
         return False
 
     # Check if any job is using this GPU
-    gpu_in_use = any(job_id in running_jobs for job_id in running_jobs)
+    gpu_in_use = any(job.gpu_index == gpu.index for job in running_jobs)
 
     return not gpu_in_use

@@ -187,7 +187,6 @@ fn start_job(job: &mut Job, gpu_index: usize, config: &Config) -> io::Result<()>
     job.screen_session = Some(session_name);
     job.status = JobStatus::Running;
     job.log_dir = Some(log_dir);
-    job.env_vars = env_vars;
 
     // Log job start
     log_service_event(
