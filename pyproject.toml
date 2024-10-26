@@ -1,5 +1,5 @@
 [project]
-name = "nexus"
+name = "nexusai"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -16,9 +16,9 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project.scripts]
-nexus = "nexus.cli:main"
+nexus = "nexus.cli.main:main"
 nexus-service = "nexus.service.main:main"

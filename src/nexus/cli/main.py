@@ -32,7 +32,7 @@ def load_config(config_path: pathlib.Path) -> dict:
 
 
 CONFIG = load_config(DEFAULT_CONFIG_PATH)
-API_BASE_URL = f"http://{CONFIG['service']['host']}:{CONFIG['service']['port']}/v1"
+API_BASE_URL = f"http://{CONFIG['host']}:{CONFIG['port']}/v1"
 
 
 # Define allowed colors as typing.Literal types
@@ -49,8 +49,8 @@ def colored_text(text: str, color: Color, attrs: list[Attribute] | None = None) 
     return colored(text, color, attrs=attrs)
 
 
-def print_status_snapshot():
-    """Show status snapshot (non-interactive)."""
+def print_status_snapshot() -> None:
+    """Show status snapshot"""
     try:
         response = requests.get(f"{API_BASE_URL}/service/status")
         response.raise_for_status()
@@ -111,7 +111,7 @@ def format_timestamp(timestamp: float | None) -> str:
     return time.strftime("%H:%M", time.localtime(timestamp))
 
 
-def stop_service():
+def stop_service() -> None:
     """Stop the Nexus service."""
     try:
         response = requests.post(f"{API_BASE_URL}/service/stop")
@@ -121,18 +121,18 @@ def stop_service():
         print(colored(f"Error stopping service: {e}", "red"))
 
 
-def restart_service():
+def restart_service() -> None:
     """Restart the Nexus service."""
     try:
         stop_service()
         time.sleep(2)  # Wait for service to stop
-        subprocess.run(["nexus", "start"], check=True)
+        subprocess.run(["nexus-service"], check=True)
         print(colored("Nexus service restarted.", "green"))
     except subprocess.CalledProcessError as e:
         print(colored(f"Error restarting service: {e}", "red"))
 
 
-def add_jobs(commands: list[str], repeat: int = 1):
+def add_jobs(commands: list[str], repeat: int = 1) -> None:
     """Add job(s) to the queue."""
     expanded_commands = []
 
@@ -187,7 +187,7 @@ def add_jobs(commands: list[str], repeat: int = 1):
         print(colored(f"Error adding jobs: {e}", "red"))
 
 
-def show_queue():
+def show_queue() -> None:
     """Show pending jobs."""
     try:
         response = requests.get(f"{API_BASE_URL}/jobs", params={"status": "queued"})
@@ -205,7 +205,7 @@ def show_queue():
         print(colored(f"Error fetching queue: {e}", "red"))
 
 
-def show_history():
+def show_history() -> None:
     """Show completed jobs."""
     try:
         response = requests.get(f"{API_BASE_URL}/jobs", params={"status": "completed"})
@@ -225,7 +225,7 @@ def show_history():
         print(colored(f"Error fetching history: {e}", "red"))
 
 
-def kill_jobs(pattern: str):
+def kill_jobs(pattern: str) -> None:
     """Kill job(s) by ID, GPU number, or command regex."""
     try:
         # Determine if pattern is GPU index
@@ -282,7 +282,7 @@ def kill_jobs(pattern: str):
         print(colored(f"Error killing jobs: {e}", "red"))
 
 
-def remove_jobs(pattern: str):
+def remove_jobs(pattern: str) -> None:
     """Remove job(s) from queue by ID or command regex."""
     try:
         response = requests.get(f"{API_BASE_URL}/jobs", params={"status": "queued"})
@@ -317,7 +317,7 @@ def remove_jobs(pattern: str):
         print(colored(f"Error removing jobs: {e}", "red"))
 
 
-def pause_queue():
+def pause_queue() -> None:
     """Pause queue processing."""
     try:
         response = requests.post(f"{API_BASE_URL}/service/pause")
@@ -327,7 +327,7 @@ def pause_queue():
         print(colored(f"Error pausing queue: {e}", "red"))
 
 
-def resume_queue():
+def resume_queue() -> None:
     """Resume queue processing."""
     try:
         response = requests.post(f"{API_BASE_URL}/service/resume")
@@ -337,7 +337,7 @@ def resume_queue():
         print(colored(f"Error resuming queue: {e}", "red"))
 
 
-def view_logs(job_id: str | None):
+def view_logs(job_id: str | None) -> None:
     """View logs for a job or service."""
     try:
         if job_id == "service":
@@ -360,7 +360,7 @@ def view_logs(job_id: str | None):
         print(colored(f"Error fetching logs: {e}", "red"))
 
 
-def attach_to_session(target: str):
+def attach_to_session(target: str) -> None:
     """Attach to running job's screen session or service."""
     if target == "service":
         session_name = "nexus"
@@ -383,7 +383,7 @@ def attach_to_session(target: str):
         print(colored(f"No running session found for {target}.", "red"))
 
 
-def view_config():
+def view_config() -> None:
     """View current configuration."""
     try:
         with open(DEFAULT_CONFIG_PATH, "r") as f:
@@ -394,7 +394,7 @@ def view_config():
         print(colored("Configuration file not found.", "red"))
 
 
-def edit_config():
+def edit_config() -> None:
     """Edit configuration in $EDITOR."""
     editor = os.environ.get("EDITOR", "vim")
     try:
@@ -403,7 +403,7 @@ def edit_config():
         print(colored(f"Error editing config: {e}", "red"))
 
 
-def show_help(command: str | None):
+def show_help(command: str | None) -> None:
     """Show help for a specific command or general help."""
     parser.print_help()
 
@@ -418,7 +418,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # nexus status
-    subparsers.add_parser("status", help="Show status snapshot (non-interactive)")
+    subparsers.add_parser("status", help="Show status snapshot")
 
     # nexus stop
     subparsers.add_parser("stop", help="Stop the Nexus service")
