@@ -1,7 +1,7 @@
 import subprocess
 import warnings
 
-from nexus.service.models import GpuInfo, Job
+from nexus.service.models import GpuInfo
 
 # Mock GPUs for testing/development
 MOCK_GPUS = [

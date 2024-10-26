@@ -1,7 +1,7 @@
 import asyncio
+import contextlib
 import time
 import typing
-import contextlib
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
