@@ -2,13 +2,13 @@ import asyncio
 import pathlib
 import time
 import typing
-from contextlib import asynccontextmanager
+import contextlib
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
 
 from nexus.service.config import load_config
-from nexus.service.gpu import get_gpu_info
+from nexus.service.gpu import get_gpus
 from nexus.service.job import (
     create_job,
     get_job_logs,
@@ -19,12 +19,12 @@ from nexus.service.job import (
 from nexus.service.logger import logger
 from nexus.service.models import GpuInfo, Job, ServiceStatus
 from nexus.service.state import (
-    add_job,
-    clean_completed_jobs,
+    add_job_to_state,
+    clean_old_completed_jobs_in_state,
     load_state,
-    remove_job,
+    remove_job_from_state,
     save_state,
-    update_job,
+    update_job_in_state,
 )
 
 config = load_config()
@@ -42,18 +42,20 @@ async def job_scheduler():
                         if not is_job_running(job):
                             job.status = "completed"
                             job.completed_at = time.time()
-                            update_job(state, job=job, state_path=config.state_path)
+                            update_job_in_state(
+                                state, job=job, state_path=config.state_path
+                            )
                             logger.info(f"Job {job.id} completed")
 
                 # Clean old completed jobs
-                clean_completed_jobs(
+                clean_old_completed_jobs_in_state(
                     state,
                     state_path=config.state_path,
                     max_completed=config.history_limit,
                 )
 
                 # Get available GPUs and running jobs
-                gpus = get_gpu_info()
+                gpus = get_gpus()
                 running_jobs = {
                     j.gpu_index: j.id for j in state.jobs if j.status == "running"
                 }
@@ -62,7 +64,9 @@ async def job_scheduler():
                 available_gpus = [
                     g
                     for g in gpus
-                    if not g.is_blacklisted and g.index not in running_jobs
+                    if not g.is_blacklisted
+                    and g.index not in running_jobs
+                    and g.memory_used == 0
                 ]
 
                 # Start new jobs
@@ -72,13 +76,19 @@ async def job_scheduler():
                         job = queued_jobs[0]
                         try:
                             start_job(job, gpu_index=gpu.index, log_dir=config.log_dir)
-                            update_job(state, job=job, state_path=config.state_path)
-                            logger.info(f"Started job {job.id} on GPU {gpu.index}")
+                            update_job_in_state(
+                                state, job=job, state_path=config.state_path
+                            )
+                            logger.info(
+                                f"Started job {job.id} with command '{job.command}' on GPU {gpu.index}"
+                            )
                         except Exception as e:
                             job.status = "failed"
                             job.error_message = str(e)
                             job.completed_at = time.time()
-                            update_job(state, job=job, state_path=config.state_path)
+                            update_job_in_state(
+                                state, job=job, state_path=config.state_path
+                            )
                             logger.error(f"Failed to start job {job.id}: {e}")
 
             except Exception as e:
@@ -87,7 +97,7 @@ async def job_scheduler():
         await asyncio.sleep(config.refresh_rate)
 
 
-@asynccontextmanager
+@contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage service lifecycle"""
     # Startup
@@ -119,7 +129,7 @@ app = FastAPI(
 @app.get("/status", response_model=ServiceStatus)
 async def get_status():
     """Get current service status"""
-    gpus = get_gpu_info()
+    gpus = get_gpus()
     queued = sum(1 for j in state.jobs if j.status == "queued")
     running = sum(1 for j in state.jobs if j.status == "running")
 
@@ -150,11 +160,11 @@ async def list_jobs(
 
 
 @app.post("/jobs", response_model=Job)
-async def create_new_job(command: str):
+async def add_job(command: str):
     """Add a new job to the queue"""
     job = create_job(command)
-    add_job(state, job=job, state_path=config.state_path)
-    logger.info(f"Added job {job.id} with command {job.command} to queue")
+    add_job_to_state(state, job=job, state_path=config.state_path)
+    logger.info(f"Added job {job.id} with command '{job.command}' to queue")
     return job
 
 
@@ -180,13 +190,13 @@ async def delete_job(job_id: str):
             job.status = "failed"
             job.completed_at = time.time()
             job.error_message = "Killed by user"
-            update_job(state, job=job, state_path=config.state_path)
+            update_job_in_state(state, job=job, state_path=config.state_path)
             logger.info(f"Killed running job {job.id}")
         except Exception as e:
             logger.error(f"Failed to kill job {job.id}: {e}")
             raise HTTPException(status_code=500, detail=str(e))
     elif job.status == "queued":
-        if remove_job(state, job_id=job.id, state_path=config.state_path):
+        if remove_job_from_state(state, job_id=job.id, state_path=config.state_path):
             logger.info(f"Removed queued job {job.id}")
         else:
             raise HTTPException(status_code=404, detail="Job not found")
@@ -198,9 +208,20 @@ async def delete_job(job_id: str):
 @app.get("/gpus", response_model=list[GpuInfo])
 async def list_gpus():
     """Get information about all GPUs"""
-    gpus = get_gpu_info()
+    gpus = get_gpus()
     for gpu in gpus:
         gpu.is_blacklisted = gpu.index in state.blacklisted_gpus
+
+    for gpu in gpus:
+        running_job = next(
+            (
+                j
+                for j in state.jobs
+                if j.status == "running" and j.gpu_index == gpu.index
+            ),
+            None,
+        )
+        gpu.running_job_id = running_job.id if running_job else None
     return gpus
 
 

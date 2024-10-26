@@ -11,6 +11,7 @@ MOCK_GPUS = [
         memory_total=8192,
         memory_used=2048,
         is_blacklisted=False,
+        running_job_id=None,
     ),
     GpuInfo(
         index=1,
@@ -18,11 +19,12 @@ MOCK_GPUS = [
         memory_total=16384,
         memory_used=4096,
         is_blacklisted=False,
+        running_job_id=None,
     ),
 ]
 
 
-def get_gpu_info() -> list[GpuInfo]:
+def get_gpus() -> list[GpuInfo]:
     """Query nvidia-smi for GPU information"""
     try:
         output = subprocess.check_output(
@@ -50,6 +52,7 @@ def get_gpu_info() -> list[GpuInfo]:
                 memory_total=int(float(total)),
                 memory_used=int(float(used)),
                 is_blacklisted=False,  # Updated based on service state
+                running_job_id=None,  # Updated based on running jobs
             )
             gpus.append(gpu)
         except (ValueError, IndexError) as e:
@@ -57,14 +60,3 @@ def get_gpu_info() -> list[GpuInfo]:
             continue
 
     return gpus if gpus else MOCK_GPUS
-
-
-def is_gpu_available(gpu: GpuInfo, running_jobs: list[Job]) -> bool:
-    """Check if a GPU is available for new jobs"""
-    if gpu.is_blacklisted:
-        return False
-
-    # Check if any job is using this GPU
-    gpu_in_use = any(job.gpu_index == gpu.index for job in running_jobs)
-
-    return not gpu_in_use

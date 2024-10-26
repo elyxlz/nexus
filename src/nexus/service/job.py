@@ -15,8 +15,8 @@ def generate_job_id() -> str:
     timestamp = str(time.time()).encode()
     random_bytes = os.urandom(4)
     hash_input = timestamp + random_bytes
-    hash_bytes = hashlib.sha256(hash_input).digest()[:3]
-    return base58.b58encode(hash_bytes).decode().lower()
+    hash_bytes = hashlib.sha256(hash_input).digest()[:4]
+    return base58.b58encode(hash_bytes).decode()[:6].lower()
 
 
 def create_job(command: str) -> Job:
@@ -78,8 +78,6 @@ exec 1> "{stdout_log}" 2> "{stderr_log}"
         job.gpu_index = gpu_index
         job.screen_session = session_name
         job.status = "running"
-
-        logger.info(f"Job {job.id} started on GPU {gpu_index}")
 
     except subprocess.CalledProcessError as e:
         job.status = "failed"

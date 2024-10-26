@@ -3,14 +3,6 @@ import typing
 import pydantic as pyd
 
 
-class GpuInfo(pyd.BaseModel):
-    index: int
-    name: str
-    memory_total: int
-    memory_used: int
-    is_blacklisted: bool
-
-
 class Job(pyd.BaseModel):
     id: str
     command: str
@@ -24,12 +16,13 @@ class Job(pyd.BaseModel):
     error_message: str | None
 
 
-class ServiceState(pyd.BaseModel):
-    status: typing.Literal["running", "stopped", "error"] = "running"
-    jobs: list[Job] = []
-    blacklisted_gpus: list[int] = []
-    is_paused: bool = False
-    last_updated: float = 0.0
+class GpuInfo(pyd.BaseModel):
+    index: int
+    name: str
+    memory_total: int
+    memory_used: int
+    is_blacklisted: bool
+    running_job_id: str | None
 
 
 class ServiceStatus(pyd.BaseModel):
@@ -38,3 +31,11 @@ class ServiceStatus(pyd.BaseModel):
     queued_jobs: int
     running_jobs: int
     is_paused: bool
+
+
+class ServiceState(pyd.BaseModel):
+    status: typing.Literal["running", "stopped", "error"]
+    jobs: list[Job]
+    blacklisted_gpus: list[int]
+    is_paused: bool
+    last_updated: float

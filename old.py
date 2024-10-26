@@ -12,7 +12,7 @@
 # from nexus.models import Config, JobStatus
 # from nexus.service import create_job, nexus_service, start_service_in_screen
 # from nexus.utils import (
-#     get_gpu_info,
+#     get_gpus,
 #     load_state,
 #     log_service_event,
 #     save_state,
@@ -105,7 +105,7 @@
 #
 # def handle_status(config: Config) -> None:
 #     state = load_state(config)
-#     gpus = get_gpu_info(config, state)
+#     gpus = get_gpus(config, state)
 #
 #     queued_count = sum(1 for j in state.jobs if j.status == JobStatus.QUEUED)
 #     completed_count = sum(
@@ -422,7 +422,7 @@
 #     else:
 #         if state.blacklisted_gpus:
 #             print(colored("Blacklisted GPUs:", "blue", attrs=["bold"]))
-#             gpus = get_gpu_info(config, state)
+#             gpus = get_gpus(config, state)
 #             for idx in state.blacklisted_gpus:
 #                 gpu = next((g for g in gpus if g.index == idx), None)
 #                 if gpu:

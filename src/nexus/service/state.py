@@ -8,8 +8,16 @@ from nexus.service.models import Job, ServiceState
 def load_state(state_path: pathlib.Path) -> ServiceState:
     """Load service state from disk"""
 
+    default_state = ServiceState(
+        status="running",
+        jobs=[],
+        blacklisted_gpus=[],
+        is_paused=False,
+        last_updated=0.0,
+    )
+
     if not state_path.exists():
-        return ServiceState()
+        return default_state
 
     try:
         data = json.loads(state_path.read_text())
@@ -19,7 +27,7 @@ def load_state(state_path: pathlib.Path) -> ServiceState:
         if state_path.exists():
             backup_path = state_path.with_suffix(".json.bak")
             state_path.rename(backup_path)
-        return ServiceState()
+        return default_state
 
 
 def save_state(state: ServiceState, state_path: pathlib.Path) -> None:
@@ -29,7 +37,6 @@ def save_state(state: ServiceState, state_path: pathlib.Path) -> None:
     state.last_updated = time.time()
 
     try:
-        # Use pydantic's json serialization
         json_data = state.model_dump_json(indent=2)
         temp_path.write_text(json_data)
         temp_path.replace(state_path)
@@ -58,7 +65,9 @@ def remove_completed_jobs(
         save_state(state, state_path)
 
 
-def update_job(state: ServiceState, job: Job, state_path: pathlib.Path) -> None:
+def update_job_in_state(
+    state: ServiceState, job: Job, state_path: pathlib.Path
+) -> None:
     """Update a job in the state"""
     for i, existing_job in enumerate(state.jobs):
         if existing_job.id == job.id:
@@ -68,14 +77,16 @@ def update_job(state: ServiceState, job: Job, state_path: pathlib.Path) -> None:
     save_state(state, state_path)
 
 
-def add_job(state: ServiceState, job: Job, state_path: pathlib.Path) -> None:
+def add_job_to_state(state: ServiceState, job: Job, state_path: pathlib.Path) -> None:
     """Add a new job to the state"""
     state.jobs.append(job)
     state.last_updated = time.time()
     save_state(state, state_path)
 
 
-def remove_job(state: ServiceState, job_id: str, state_path: pathlib.Path) -> bool:
+def remove_job_from_state(
+    state: ServiceState, job_id: str, state_path: pathlib.Path
+) -> bool:
     """Remove a job from the state"""
     original_length = len(state.jobs)
     state.jobs = [j for j in state.jobs if j.id != job_id]
@@ -88,7 +99,7 @@ def remove_job(state: ServiceState, job_id: str, state_path: pathlib.Path) -> bo
     return False
 
 
-def clean_completed_jobs(
+def clean_old_completed_jobs_in_state(
     state: ServiceState, max_completed: int, state_path: pathlib.Path
 ) -> None:
     """Remove old completed jobs keeping only the most recent ones"""
