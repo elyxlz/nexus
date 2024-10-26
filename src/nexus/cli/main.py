@@ -1,11 +1,11 @@
 import argparse
+import itertools
 import os
 import pathlib
 import re
 import subprocess
 import sys
 import time
-import itertools
 import typing
 
 import requests
@@ -57,7 +57,7 @@ def print_status_snapshot():
         status = response.json()
 
         queued = status.get("queued_jobs", 0)
-        running = status.get("running_jobs", 0)
+        status.get("running_jobs", 0)
         is_paused = status.get("is_paused", False)
 
         queue_status = (
