@@ -22,4 +22,4 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 nexus = "nexus.cli:main"
-nexus-service = "nexus.service:main"
+nexus-service = "nexus.service.main:main"

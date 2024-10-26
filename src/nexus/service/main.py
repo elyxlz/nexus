@@ -280,7 +280,11 @@ async def generic_exception_handler(request, exc):
 
 
 def main():
-    uvicorn.run(app, host=config.host, port=config.port, log_level="info")
+    """Entry point for the nexus-service CLI command"""
+    config = load_config()
+    uvicorn.run(
+        "nexus.service.main:app", host=config.host, port=config.port, log_level="info"
+    )
 
 
 if __name__ == "__main__":
