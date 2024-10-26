@@ -1,7 +1,8 @@
 import pathlib
-import pydantic_settings as pyds
-import pydantic as pyd
 import typing
+
+import pydantic as pyd
+import pydantic_settings as pyds
 
 
 class NexusConfig(pyds.BaseSettings):

@@ -1,29 +1,30 @@
 # nexus/service/main.py
-from fastapi import FastAPI, HTTPException
 import asyncio
-import time
 import pathlib
-import logging
+import time
 from contextlib import asynccontextmanager
 
+from fastapi import FastAPI, HTTPException
+
 from nexus.service.config import load_config
-from nexus.service.logging import create_service_logger
-from nexus.service.models import Job, GpuInfo
 from nexus.service.gpu import get_gpu_info
-from .job import (
-    create_job,
-    start_job,
-    is_job_running,
-    kill_job,
-    get_job_logs,
-)
+from nexus.service.logging import create_service_logger
+from nexus.service.models import GpuInfo, Job
 from nexus.service.state import (
+    add_job,
+    clean_completed_jobs,
     load_state,
+    remove_job,
     save_state,
     update_job,
-    add_job,
-    remove_job,
-    clean_completed_jobs,
+)
+
+from .job import (
+    create_job,
+    get_job_logs,
+    is_job_running,
+    kill_job,
+    start_job,
 )
 
 config = load_config()

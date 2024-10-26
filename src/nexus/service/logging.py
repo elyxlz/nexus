@@ -1,7 +1,7 @@
+import glob
 import logging
 import logging.handlers
 import os
-import glob
 import typing
 
 

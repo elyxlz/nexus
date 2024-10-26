@@ -3,10 +3,10 @@ import os
 import pathlib
 import subprocess
 import time
+
 import base58
 
-
-from nexus.service.models import Job, ServiceState
+from nexus.service.models import Job
 
 
 def generate_job_id() -> str:
