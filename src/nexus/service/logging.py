@@ -6,16 +6,16 @@ import typing
 
 
 def create_service_logger(
-    name: str,
-    log_directory: str = "logs",
-    log_file: str = "app.log",
+    log_dir: str,
+    name: str = "service",
+    log_file: str = "service.log",
     log_level: int = logging.INFO,
     max_bytes: int = 10 * 1024 * 1024,
     backup_count: int = 5,
     console_output: bool = True,
     log_format: str | None = None,
 ) -> logging.Logger:
-    service_log_dir = os.path.join(log_directory, "service")
+    service_log_dir = os.path.join(log_dir, "service")
     os.makedirs(service_log_dir, exist_ok=True)
     logger = logging.getLogger(name)
     logger.setLevel(log_level)
@@ -41,12 +41,12 @@ def create_service_logger(
 
 
 def read_latest_service_logs(
-    log_directory: str,
+    log_dir: str,
     num_lines: int = 50,
-    log_file: str = "app.log",
+    log_file: str = "service.log",
     sort_order: typing.Literal["newest", "oldest"] = "newest",
 ) -> list[str]:
-    service_log_dir = os.path.join(log_directory, "service")
+    service_log_dir = os.path.join(log_dir, "service")
     log_path = os.path.join(service_log_dir, log_file)
     if not os.path.exists(log_path):
         return [f"No log file found at {log_path}"]

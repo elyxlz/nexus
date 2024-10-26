@@ -18,10 +18,9 @@ def generate_job_id() -> str:
     return base58.b58encode(hash_bytes).decode()
 
 
-def create_job(command: str, state_path: pathlib.Path) -> Job:
+def create_job(command: str) -> Job:
     """Create a new job with the given command"""
     job_id = generate_job_id()
-    log_dir = state_path / "jobs" / job_id
 
     return Job(
         id=job_id,
@@ -34,18 +33,15 @@ def create_job(command: str, state_path: pathlib.Path) -> Job:
         screen_session=None,
         exit_code=None,
         error_message=None,
-        log_dir=log_dir,
     )
 
 
-def start_job(job: Job, gpu_index: int, state_path: pathlib.Path) -> None:
+def start_job(job: Job, gpu_index: int, log_dir: pathlib.Path) -> None:
     """Start a job on a specific GPU"""
     session_name = f"nexus_job_{job.id}"
 
-    if job.log_dir is None:
-        job.log_dir = state_path / "jobs" / job.id
-
-    job.log_dir.mkdir(parents=True, exist_ok=True)
+    job_log_dir = log_dir / "jobs" / job.id
+    job_log_dir.mkdir(parents=True, exist_ok=True)
 
     # Prepare environment variables
     env = os.environ.copy()
@@ -61,10 +57,10 @@ def start_job(job: Job, gpu_index: int, state_path: pathlib.Path) -> None:
     # Remove problematic screen variables
     env = {k: v for k, v in env.items() if not k.startswith("SCREEN_")}
 
-    stdout_log = job.log_dir / "stdout.log"
-    stderr_log = job.log_dir / "stderr.log"
+    stdout_log = job_log_dir / "stdout.log"
+    stderr_log = job_log_dir / "stderr.log"
 
-    script_path = job.log_dir / "run.sh"
+    script_path = job_log_dir / "run.sh"
     script_content = f"""#!/bin/bash
 exec 1> "{stdout_log}" 2> "{stderr_log}"
 {job.command}

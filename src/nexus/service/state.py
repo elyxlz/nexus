@@ -44,7 +44,9 @@ def get_job_by_id(state: ServiceState, job_id: str) -> Job | None:
     return next((job for job in state.jobs if job.id == job_id), None)
 
 
-def remove_completed_jobs(state: ServiceState, history_limit: int) -> None:
+def remove_completed_jobs(
+    state: ServiceState, history_limit: int, state_path: pathlib.Path
+) -> None:
     """Remove old completed jobs keeping only the most recent ones"""
     completed = [j for j in state.jobs if j.status in ("completed", "failed")]
     if len(completed) > history_limit:
@@ -52,36 +54,42 @@ def remove_completed_jobs(state: ServiceState, history_limit: int) -> None:
         keep_jobs = completed[:history_limit]
         active_jobs = [j for j in state.jobs if j.status in ("queued", "running")]
         state.jobs = active_jobs + keep_jobs
+        save_state(state, state_path)
 
 
-def update_job(state: ServiceState, job: Job) -> None:
+def update_job(state: ServiceState, job: Job, state_path: pathlib.Path) -> None:
     """Update a job in the state"""
     for i, existing_job in enumerate(state.jobs):
         if existing_job.id == job.id:
             state.jobs[i] = job
             break
     state.last_updated = time.time()
+    save_state(state, state_path)
 
 
-def add_job(state: ServiceState, job: Job) -> None:
+def add_job(state: ServiceState, job: Job, state_path: pathlib.Path) -> None:
     """Add a new job to the state"""
     state.jobs.append(job)
     state.last_updated = time.time()
+    save_state(state, state_path)
 
 
-def remove_job(state: ServiceState, job_id: str) -> bool:
+def remove_job(state: ServiceState, job_id: str, state_path: pathlib.Path) -> bool:
     """Remove a job from the state"""
     original_length = len(state.jobs)
     state.jobs = [j for j in state.jobs if j.id != job_id]
 
     if len(state.jobs) != original_length:
         state.last_updated = time.time()
+        save_state(state, state_path)
         return True
 
     return False
 
 
-def clean_completed_jobs(state: ServiceState, max_completed: int = 1000) -> None:
+def clean_completed_jobs(
+    state: ServiceState, max_completed: int, state_path: pathlib.Path
+) -> None:
     """Remove old completed jobs keeping only the most recent ones"""
     completed_jobs = [j for j in state.jobs if j.status in ["completed", "failed"]]
 
@@ -101,3 +109,4 @@ def clean_completed_jobs(state: ServiceState, max_completed: int = 1000) -> None
         ]
 
         state.last_updated = time.time()
+        save_state(state, state_path)

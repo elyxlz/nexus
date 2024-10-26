@@ -7,11 +7,9 @@ import logging
 from contextlib import asynccontextmanager
 
 from nexus.service.config import load_config
-from nexus.service.models import (
-    Job,
-    GpuInfo,
-)
-from nexus.service.gpu import get_gpu_info, is_gpu_available
+from nexus.service.logging import create_service_logger
+from nexus.service.models import Job, GpuInfo
+from nexus.service.gpu import get_gpu_info
 from .job import (
     create_job,
     start_job,
@@ -28,15 +26,8 @@ from nexus.service.state import (
     clean_completed_jobs,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
-
 config = load_config()
-
-# Global state
+logger = create_service_logger(str(config.log_dir))
 state = load_state(config.state_path)
 
 
@@ -45,17 +36,21 @@ async def job_scheduler():
     while True:
         if not state.is_paused:
             try:
-                # Update running job statuses
+                # update running job statuses
                 for job in state.jobs:
                     if job.status == "running":
                         if not is_job_running(job):
                             job.status = "completed"
                             job.completed_at = time.time()
-                            update_job(state, job)
+                            update_job(state, job=job, state_path=config.state_path)
                             logger.info(f"Job {job.id} completed")
 
                 # Clean old completed jobs
-                clean_completed_jobs(state)
+                clean_completed_jobs(
+                    state,
+                    state_path=config.state_path,
+                    max_completed=config.history_limit,
+                )
 
                 # Get available GPUs and running jobs
                 gpus = get_gpu_info()
@@ -76,34 +71,26 @@ async def job_scheduler():
                     if queued_jobs:
                         job = queued_jobs[0]
                         try:
-                            start_job(
-                                job,
-                                gpu_index=gpu.index,
-                                state=state,
-                                state_path=config.state_path,
-                            )
-                            update_job(state, job)
+                            start_job(job, gpu_index=gpu.index, log_dir=config.log_dir)
+                            update_job(state, job=job, state_path=config.state_path)
                             logger.info(f"Started job {job.id} on GPU {gpu.index}")
                         except Exception as e:
                             job.status = "failed"
                             job.error_message = str(e)
                             job.completed_at = time.time()
-                            update_job(state, job)
+                            update_job(state, job=job, state_path=config.state_path)
                             logger.error(f"Failed to start job {job.id}: {e}")
 
             except Exception as e:
                 logger.error(f"Scheduler error: {e}")
 
-        await asyncio.sleep(5)  # Poll every 5 seconds
+        await asyncio.sleep(config.refresh_rate)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage service lifecycle"""
     # Startup
-    home_dir = pathlib.Path.home() / ".nexus"
-    (home_dir / "logs" / "jobs").mkdir(parents=True, exist_ok=True)
-
     scheduler_task = asyncio.create_task(job_scheduler())
     logger.info("Nexus service started")
 
@@ -133,7 +120,7 @@ app = FastAPI(
 async def get_status():
     """Get current service status"""
     gpus = get_gpu_info()
-    queued = sum(1 for j in state.jobs if j.status == JobStatus.QUEUED)
+    queued = sum(1 for j in state.jobs if j.status == "queued")
     running = sum(1 for j in state.jobs if j.status == "running")
 
     return ServiceStatus(
@@ -162,8 +149,8 @@ async def list_jobs(status: JobStatus | None = None, gpu_index: int | None = Non
 @app.post("/jobs", response_model=Job)
 async def create_new_job(job_request: CreateJobRequest):
     """Add a new job to the queue"""
-    job = create_job(job_request.command, state_path=config.state_path)
-    add_job(state, job)
+    job = create_job(job_request.command)
+    add_job(state, job=job, state_path=config.state_path)
     logger.info(f"Added job {job.id} to queue")
     return job
 
@@ -190,13 +177,13 @@ async def delete_job(job_id: str):
             job.status = "failed"
             job.completed_at = time.time()
             job.error_message = "Killed by user"
-            update_job(state, job)
+            update_job(state, job=job, state_path=config.state_path)
             logger.info(f"Killed running job {job.id}")
         except Exception as e:
             logger.error(f"Failed to kill job {job.id}: {e}")
             raise HTTPException(status_code=500, detail=str(e))
     elif job.status == "queued":
-        if remove_job(state, job.id):
+        if remove_job(state, job_id=job.id, state_path=config.state_path):
             logger.info(f"Removed queued job {job.id}")
         else:
             raise HTTPException(status_code=404, detail="Job not found")
