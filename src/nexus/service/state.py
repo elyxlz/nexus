@@ -63,7 +63,6 @@ def remove_completed_jobs(
         keep_jobs = completed[:history_limit]
         active_jobs = [j for j in state.jobs if j.status in ("queued", "running")]
         state.jobs = active_jobs + keep_jobs
-        save_state(state, state_path)
 
 
 def update_jobs_in_state(
@@ -75,7 +74,6 @@ def update_jobs_in_state(
         if existing_job.id in job_dict:
             state.jobs[i] = job_dict[existing_job.id]
     state.last_updated = time.time()
-    save_state(state, state_path)
 
 
 def add_jobs_to_state(
@@ -84,7 +82,6 @@ def add_jobs_to_state(
     """Add new jobs to the state"""
     state.jobs.extend(jobs)
     state.last_updated = dt.datetime.now().timestamp()
-    save_state(state, state_path)
 
 
 def remove_jobs_from_state(
@@ -96,7 +93,6 @@ def remove_jobs_from_state(
 
     if len(state.jobs) != original_length:
         state.last_updated = dt.datetime.now().timestamp()
-        save_state(state, state_path)
         return True
 
     return False
@@ -124,4 +120,3 @@ def clean_old_completed_jobs_in_state(
         ]
 
         state.last_updated = dt.datetime.now().timestamp()
-        save_state(state, state_path)

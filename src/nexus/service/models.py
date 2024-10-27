@@ -66,8 +66,15 @@ class JobQueueActionResponse(pyd.BaseModel):
     failed: list[dict]
 
 
+class GpuActionError(pyd.BaseModel):
+    index: int
+    error: str
+
+
 class GpuActionResponse(pyd.BaseModel):
-    status: str
+    blacklisted: list[int] | None
+    removed: list[int] | None
+    failed: list[GpuActionError]
 
 
 class ServiceStatusResponse(pyd.BaseModel):
@@ -75,4 +82,5 @@ class ServiceStatusResponse(pyd.BaseModel):
     gpu_count: int
     queued_jobs: int
     running_jobs: int
+    completed_jobs: int
     is_paused: bool

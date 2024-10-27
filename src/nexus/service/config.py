@@ -12,7 +12,7 @@ class NexusConfig(pyds.BaseSettings):
     state_path: pathlib.Path = pyd.Field(
         default_factory=lambda: pathlib.Path.home() / ".nexus" / "state.json"
     )
-    refresh_rate: int = pyd.Field(default=10)
+    refresh_rate: int = pyd.Field(default=5)
     history_limit: int = pyd.Field(default=1000)
     host: str = pyd.Field(default="localhost")
     port: int = pyd.Field(default=54322)

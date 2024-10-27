@@ -4,16 +4,15 @@
 
 ## TODO cli
 
-- [ ] Fix runtime logging in history
-- [ ] Fix command logging in status
-- [ ] Job attach by gpu idx
+- [x] Fix runtime logging in history
+- [x] Fix command logging in status
+- [x] Job attach by gpu idx
 - [ ] fix nexus kill
 - [ ] fix nexus remove
-- [ ] Show right amount of history on status instead of 0
-- [ ] Startup bugs (doesnt show status)
-- [ ] randomized curly combinations
-- [ ] show how long a job has been in the queue
-- [ ] black list gpus
+- [x] Show right amount of history on status instead of 0
+- [x] Startup bugs (doesnt show status)
+- [x] show how long a job has been in the queue
+- [x] black list gpus
 
 ## Longterm TODO
 

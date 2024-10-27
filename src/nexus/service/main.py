@@ -49,12 +49,14 @@ async def job_scheduler():
                     update_jobs_in_state(
                         state, jobs=jobs_to_update, state_path=config.state_path
                     )
+                    save_state(state, state_path=config.state_path)
 
                 clean_old_completed_jobs_in_state(
                     state,
                     state_path=config.state_path,
                     max_completed=config.history_limit,
                 )
+                save_state(state, state_path=config.state_path)
 
                 available_gpus = get_available_gpus(state)
 
@@ -81,6 +83,7 @@ async def job_scheduler():
                     update_jobs_in_state(
                         state, jobs=jobs_to_update, state_path=config.state_path
                     )
+                save_state(state, state_path=config.state_path)
 
             except Exception as e:
                 logger.error(f"Scheduler error: {e}")
@@ -116,12 +119,14 @@ async def get_status():
     gpus = get_gpus()
     queued = sum(1 for j in state.jobs if j.status == "queued")
     running = sum(1 for j in state.jobs if j.status == "running")
+    completed = sum(1 for j in state.jobs if j.status == "completed")
 
     return models.ServiceStatusResponse(
         running=True,
         gpu_count=len(gpus),
         queued_jobs=queued,
         running_jobs=running,
+        completed_jobs=completed,
         is_paused=state.is_paused,
     )
 
@@ -233,8 +238,49 @@ async def kill_running_jobs(job_ids: list[str]):
 
     if killed_jobs:
         update_jobs_in_state(state, jobs=killed_jobs, state_path=config.state_path)
+        save_state(state, state_path=config.state_path)
 
     return models.JobActionResponse(killed=killed, failed=failed)
+
+
+@app.post("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
+async def blacklist_gpus(gpu_indexes: list[int]):
+    blacklisted = []
+    failed = []
+
+    for gpu_index in gpu_indexes:
+        if gpu_index in state.blacklisted_gpus:
+            failed.append({"index": gpu_index, "error": "GPU already blacklisted"})
+        else:
+            state.blacklisted_gpus.append(gpu_index)
+            blacklisted.append(gpu_index)
+            logger.info(f"Blacklisted GPU {gpu_index}")
+
+    if blacklisted:
+        save_state(state, state_path=config.state_path)
+
+    return models.GpuActionResponse(
+        blacklisted=blacklisted, failed=failed, removed=None
+    )
+
+
+@app.delete("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
+async def remove_gpu_blacklist(gpu_indexes: list[int]):
+    removed = []
+    failed = []
+
+    for gpu_index in gpu_indexes:
+        if gpu_index not in state.blacklisted_gpus:
+            failed.append({"index": gpu_index, "error": "GPU not in blacklist"})
+        else:
+            state.blacklisted_gpus.remove(gpu_index)
+            removed.append(gpu_index)
+            logger.info(f"Removed GPU {gpu_index} from blacklist")
+
+    if removed:
+        save_state(state, state_path=config.state_path)
+
+    return models.GpuActionResponse(removed=removed, failed=failed, blacklisted=None)
 
 
 @app.delete("/v1/jobs/queued", response_model=models.JobQueueActionResponse)
@@ -276,28 +322,6 @@ async def list_gpus():
         )
         gpu.running_job_id = running_job.id if running_job else None
     return gpus
-
-
-@app.post("/v1/gpus/{gpu_index}/blacklist", response_model=models.GpuActionResponse)
-async def blacklist_gpu(gpu_index: int):
-    if gpu_index in state.blacklisted_gpus:
-        raise fa.HTTPException(status_code=400, detail="GPU already blacklisted")
-
-    state.blacklisted_gpus.append(gpu_index)
-    save_state(state, state_path=config.state_path)
-    logger.info(f"Blacklisted GPU {gpu_index}")
-    return models.GpuActionResponse(status="success")
-
-
-@app.delete("/v1/gpus/{gpu_index}/blacklist", response_model=models.GpuActionResponse)
-async def remove_gpu_blacklist(gpu_index: int):
-    if gpu_index not in state.blacklisted_gpus:
-        raise fa.HTTPException(status_code=400, detail="GPU not in blacklist")
-
-    state.blacklisted_gpus.remove(gpu_index)
-    save_state(state, state_path=config.state_path)
-    logger.info(f"Removed GPU {gpu_index} from blacklist")
-    return models.GpuActionResponse(status="success")
 
 
 @app.post("/v1/service/stop", response_model=models.ServiceActionResponse)
