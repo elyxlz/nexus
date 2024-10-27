@@ -20,6 +20,10 @@ dependencies = [
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.ruff]
+line-length = 144
+indent-width = 4
+
 [project.scripts]
 nexus = "nexus.cli.main:main"
 nexus-service = "nexus.service.main:main"

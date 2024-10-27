@@ -46,9 +46,7 @@ async def job_scheduler():
                         logger.info(f"Job {job.id} completed")
 
                 if jobs_to_update:
-                    update_jobs_in_state(
-                        state, jobs=jobs_to_update, state_path=config.state_path
-                    )
+                    update_jobs_in_state(state, jobs=jobs_to_update, state_path=config.state_path)
                     save_state(state, state_path=config.state_path)
 
                 clean_old_completed_jobs_in_state(
@@ -69,9 +67,7 @@ async def job_scheduler():
                             start_job(job, gpu_index=gpu.index, log_dir=config.log_dir)
                             job.status = "running"
                             jobs_to_update.append(job)
-                            logger.info(
-                                f"Started job {job.id} with command '{job.command}' on GPU {gpu.index}"
-                            )
+                            logger.info(f"Started job {job.id} with command '{job.command}' on GPU {gpu.index}")
                         except Exception as e:
                             job.status = "failed"
                             job.error_message = str(e)
@@ -80,9 +76,7 @@ async def job_scheduler():
                             logger.error(f"Failed to start job {job.id}: {e}")
 
                 if jobs_to_update:
-                    update_jobs_in_state(
-                        state, jobs=jobs_to_update, state_path=config.state_path
-                    )
+                    update_jobs_in_state(state, jobs=jobs_to_update, state_path=config.state_path)
                 save_state(state, state_path=config.state_path)
 
             except Exception as e:
@@ -135,9 +129,7 @@ async def get_status():
 async def get_service_logs():
     try:
         log_path = config.log_dir / "service.log"
-        return models.ServiceLogsResponse(
-            logs=log_path.read_text() if log_path.exists() else ""
-        )
+        return models.ServiceLogsResponse(logs=log_path.read_text() if log_path.exists() else "")
     except Exception as e:
         raise fa.HTTPException(status_code=500, detail=str(e))
 
@@ -183,9 +175,7 @@ async def add_jobs(job_request: models.JobsRequest):
             detail=f"Working directory '{job_request.working_dir}' must be an absolute path and must exist",
         )
 
-    jobs = [
-        create_job(command, working_dir=working_dir) for command in job_request.commands
-    ]
+    jobs = [create_job(command, working_dir=working_dir) for command in job_request.commands]
     add_jobs_to_state(state, jobs=jobs, state_path=config.state_path)
     logger.info(f"Added {len(jobs)} jobs to queue (working_dir: {working_dir})")
     return jobs
@@ -259,9 +249,7 @@ async def blacklist_gpus(gpu_indexes: list[int]):
     if blacklisted:
         save_state(state, state_path=config.state_path)
 
-    return models.GpuActionResponse(
-        blacklisted=blacklisted, failed=failed, removed=None
-    )
+    return models.GpuActionResponse(blacklisted=blacklisted, failed=failed, removed=None)
 
 
 @app.delete("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
@@ -313,11 +301,7 @@ async def list_gpus():
     for gpu in gpus:
         gpu.is_blacklisted = gpu.index in state.blacklisted_gpus
         running_job = next(
-            (
-                j
-                for j in state.jobs
-                if j.status == "running" and j.gpu_index == gpu.index
-            ),
+            (j for j in state.jobs if j.status == "running" and j.gpu_index == gpu.index),
             None,
         )
         gpu.running_job_id = running_job.id if running_job else None

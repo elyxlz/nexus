@@ -74,9 +74,7 @@ exec 1> "{stdout_log}" 2> "{stderr_log}"
     script_path.chmod(0o755)
 
     try:
-        subprocess.run(
-            ["screen", "-dmS", session_name, str(script_path)], env=env, check=True
-        )
+        subprocess.run(["screen", "-dmS", session_name, str(script_path)], env=env, check=True)
 
         job.started_at = dt.datetime.now().timestamp()
         job.gpu_index = gpu_index
@@ -99,9 +97,7 @@ def is_job_running(job: models.Job) -> bool:
         return False
 
     try:
-        output = subprocess.check_output(
-            ["screen", "-ls", job.screen_session], stderr=subprocess.DEVNULL, text=True
-        )
+        output = subprocess.check_output(["screen", "-ls", job.screen_session], stderr=subprocess.DEVNULL, text=True)
         return job.screen_session in output
     except subprocess.CalledProcessError:
         return False
@@ -111,9 +107,7 @@ def kill_job(job: models.Job) -> None:
     """Kill a running job"""
     if job.screen_session:
         try:
-            subprocess.run(
-                ["screen", "-S", job.screen_session, "-X", "quit"], check=True
-            )
+            subprocess.run(["screen", "-S", job.screen_session, "-X", "quit"], check=True)
             job.status = "failed"
             job.completed_at = dt.datetime.now().timestamp()
             job.error_message = "Killed by user"
@@ -121,9 +115,7 @@ def kill_job(job: models.Job) -> None:
             raise RuntimeError(f"Failed to kill job: {e}")
 
 
-def get_job_logs(
-    job: models.Job, log_dir: pathlib.Path
-) -> tuple[str | None, str | None]:
+def get_job_logs(job: models.Job, log_dir: pathlib.Path) -> tuple[str | None, str | None]:
     """Get stdout and stderr logs for a job"""
 
     job_log_dir = log_dir / "jobs" / job.id

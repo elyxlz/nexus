@@ -36,9 +36,7 @@ def create_service_logger(
 
     if console_output:
         # Colored console handler
-        console_format = (
-            "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s%(reset)s"
-        )
+        console_format = "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s%(reset)s"
         console_formatter = ColoredFormatter(
             console_format,
             datefmt="%Y-%m-%d %H:%M:%S",

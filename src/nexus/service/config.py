@@ -6,20 +6,14 @@ import pydantic_settings as pyds
 
 
 class NexusConfig(pyds.BaseSettings):
-    log_dir: pathlib.Path = pyd.Field(
-        default_factory=lambda: pathlib.Path.home() / ".nexus" / "logs"
-    )
-    state_path: pathlib.Path = pyd.Field(
-        default_factory=lambda: pathlib.Path.home() / ".nexus" / "state.json"
-    )
+    log_dir: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "logs")
+    state_path: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "state.json")
     refresh_rate: int = pyd.Field(default=5)
     history_limit: int = pyd.Field(default=1000)
     host: str = pyd.Field(default="localhost")
     port: int = pyd.Field(default=54322)
 
-    model_config = pyds.SettingsConfigDict(
-        toml_file=str(pathlib.Path.home() / ".nexus" / "config.toml")
-    )
+    model_config = pyds.SettingsConfigDict(toml_file=str(pathlib.Path.home() / ".nexus" / "config.toml"))
 
     @classmethod
     def settings_customise_sources(

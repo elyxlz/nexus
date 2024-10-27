@@ -67,9 +67,5 @@ def get_available_gpus(state: ServiceState) -> list[GpuInfo]:
     running_jobs = {j.gpu_index: j.id for j in state.jobs if j.status == "running"}
 
     # Filter available GPUs
-    available_gpus = [
-        g
-        for g in gpus
-        if not g.is_blacklisted and g.index not in running_jobs and g.memory_used == 0
-    ]
+    available_gpus = [g for g in gpus if not g.is_blacklisted and g.index not in running_jobs and g.memory_used == 0]
     return available_gpus
