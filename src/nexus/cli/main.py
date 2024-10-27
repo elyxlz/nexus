@@ -1,4 +1,5 @@
 import argparse
+import importlib.metadata
 import itertools
 import os
 import pathlib
@@ -7,8 +8,6 @@ import subprocess
 import sys
 import time
 import typing
-
-import importlib.metadata
 
 import requests
 from termcolor import colored
@@ -443,6 +442,7 @@ def kill_jobs(targets: list[str]) -> None:
 
     except requests.RequestException as e:
         if hasattr(e.response, "text"):
+            assert e.response is not None
             print(colored(f"Error killing jobs: {e.response.text}", "red"))
         else:
             print(colored(f"Error killing jobs: {e}", "red"))
@@ -496,6 +496,7 @@ def remove_jobs(job_ids: list[str]) -> None:
 
     except requests.RequestException as e:
         if hasattr(e.response, "text"):
+            assert e.response is not None
             print(colored(f"Error removing jobs: {e.response.text}", "red"))
         else:
             print(colored(f"Error removing jobs: {e}", "red"))
