@@ -12,7 +12,6 @@ class Job(pyd.BaseModel):
     started_at: float | None
     completed_at: float | None
     gpu_index: int | None
-    screen_session: str | None
     exit_code: int | None
     error_message: str | None
     working_dir: pathlib.Path

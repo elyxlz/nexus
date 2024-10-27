@@ -32,16 +32,19 @@ def create_job(command: str, working_dir: pathlib.Path) -> models.Job:
         started_at=None,
         completed_at=None,
         gpu_index=None,
-        screen_session=None,
         exit_code=None,
         error_message=None,
         working_dir=working_dir,
     )
 
 
+def get_job_session_name(job_id: str) -> str:
+    return f"nexus_job_{job_id}"
+
+
 def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path) -> models.Job:
     """Start a job on a specific GPU"""
-    session_name = f"nexus_job_{job.id}"
+    session_name = get_job_session_name(job.id)
 
     job_log_dir = log_dir / "jobs" / job.id
     job_log_dir.mkdir(parents=True, exist_ok=True)
@@ -78,7 +81,6 @@ exec 1> "{stdout_log}" 2> "{stderr_log}"
 
         job.started_at = dt.datetime.now().timestamp()
         job.gpu_index = gpu_index
-        job.screen_session = session_name
         job.status = "running"
 
     except subprocess.CalledProcessError as e:
@@ -93,26 +95,25 @@ exec 1> "{stdout_log}" 2> "{stderr_log}"
 
 def is_job_running(job: models.Job) -> bool:
     """Check if a job's screen session is still running"""
-    if not job.screen_session:
-        return False
+    session_name = get_job_session_name(job.id)
 
     try:
-        output = subprocess.check_output(["screen", "-ls", job.screen_session], stderr=subprocess.DEVNULL, text=True)
-        return job.screen_session in output
+        output = subprocess.check_output(["screen", "-ls", session_name], stderr=subprocess.DEVNULL, text=True)
+        return session_name in output
     except subprocess.CalledProcessError:
         return False
 
 
 def kill_job(job: models.Job) -> None:
     """Kill a running job"""
-    if job.screen_session:
-        try:
-            subprocess.run(["screen", "-S", job.screen_session, "-X", "quit"], check=True)
-            job.status = "failed"
-            job.completed_at = dt.datetime.now().timestamp()
-            job.error_message = "Killed by user"
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to kill job: {e}")
+    session_name = get_job_session_name(job.id)
+    try:
+        subprocess.run(["screen", "-S", session_name, "-X", "quit"], check=True)
+        job.status = "failed"
+        job.completed_at = dt.datetime.now().timestamp()
+        job.error_message = "Killed by user"
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to kill job: {e}")
 
 
 def get_job_logs(job: models.Job, log_dir: pathlib.Path) -> tuple[str | None, str | None]:

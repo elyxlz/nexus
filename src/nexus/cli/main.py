@@ -565,7 +565,7 @@ def show_config() -> None:
 
 def show_version() -> None:
     """Display version information."""
-    print(f"Nexus CLI version: {colored(VERSION, 'cyan')}")
+    print(f"Nexus version: {colored(VERSION, 'cyan')}")
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -578,14 +578,13 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Basic commands
-    subparsers.add_parser("status", help="Show status snapshot")
     subparsers.add_parser("stop", help="Stop the Nexus service")
     subparsers.add_parser("restart", help="Restart the Nexus service")
     subparsers.add_parser("queue", help="Show pending jobs")
     subparsers.add_parser("history", help="Show completed jobs")
     subparsers.add_parser("pause", help="Pause queue processing")
     subparsers.add_parser("resume", help="Resume queue processing")
-    subparsers.add_parser("config", help="Show or edit configuration")
+    subparsers.add_parser("config", help="Show configuration")
     subparsers.add_parser("version", help="Show version information")
 
     # Add jobs
@@ -637,7 +636,6 @@ def main() -> None:
         return
 
     command_handlers = {
-        "status": lambda: print_status_snapshot(),
         "stop": lambda: stop_service(),
         "restart": lambda: restart_service(),
         "add": lambda: add_jobs(args.commands, args.repeat),
