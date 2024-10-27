@@ -544,6 +544,30 @@ def handle_blacklist(args) -> None:
         print(colored(str(e), "red"))
 
 
+def show_config() -> None:
+    """Display current configuration."""
+    try:
+        config = load_config(DEFAULT_CONFIG_PATH)
+        print(colored("Current Configuration:", "blue", attrs=["bold"]))
+
+        # Format and display config entries
+        for key, value in config.items():
+            if isinstance(value, dict):
+                print(f"\n{colored(key, 'white', attrs=['bold'])}:")
+                for subkey, subvalue in value.items():
+                    print(f"  {colored(subkey, 'cyan')}: {subvalue}")
+            else:
+                print(f"{colored(key, 'cyan')}: {value}")
+
+    except Exception as e:
+        print(colored(f"Error displaying config: {e}", "red"))
+
+
+def show_version() -> None:
+    """Display version information."""
+    print(f"Nexus CLI version: {colored(VERSION, 'cyan')}")
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser."""
     parser = argparse.ArgumentParser(
@@ -561,6 +585,8 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("history", help="Show completed jobs")
     subparsers.add_parser("pause", help="Pause queue processing")
     subparsers.add_parser("resume", help="Resume queue processing")
+    subparsers.add_parser("config", help="Show or edit configuration")
+    subparsers.add_parser("version", help="Show version information")
 
     # Add jobs
     add_parser = subparsers.add_parser("add", help="Add job(s) to queue")
@@ -624,6 +650,8 @@ def main() -> None:
         "blacklist": lambda: handle_blacklist(args),
         "logs": lambda: view_logs(args.id),
         "attach": lambda: attach_to_session(args.target),
+        "config": lambda: show_config(),
+        "version": lambda: show_version(),
     }
 
     handler = command_handlers.get(args.command, parser.print_help)
