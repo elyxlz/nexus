@@ -121,6 +121,18 @@ wheels = [
 ]
 
 [[package]]
+name = "colorlog"
+version = "6.8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/db/38/2992ff192eaa7dd5a793f8b6570d6bbe887c4fbbf7e72702eb0a693a01c8/colorlog-6.8.2.tar.gz", hash = "sha256:3e3e079a41feb5a1b64f978b5ea4f46040a94f11f0e8bbb8261e3dbbeca64d44", size = 16529 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/18/3e867ab37a24fdf073c1617b9c7830e06ec270b1ea4694a624038fc40a03/colorlog-6.8.2-py3-none-any.whl", hash = "sha256:4dcbb62368e2800cb3c5abd348da7e53f6c362dda502ec27c560b2e58a66bd33", size = 11357 },
+]
+
+[[package]]
 name = "fastapi"
 version = "0.115.3"
 source = { registry = "https://pypi.org/simple" }
@@ -158,6 +170,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "base58" },
+    { name = "colorlog" },
     { name = "fastapi" },
     { name = "pydantic-settings" },
     { name = "pyright" },
@@ -170,6 +183,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "base58", specifier = ">=2.1.1" },
+    { name = "colorlog", specifier = ">=6.8.2" },
     { name = "fastapi", specifier = ">=0.115.3" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },
     { name = "pyright", specifier = ">=1.1.386" },

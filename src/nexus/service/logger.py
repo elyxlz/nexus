@@ -2,6 +2,8 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
+from colorlog import ColoredFormatter
+
 from nexus.service.config import load_config
 
 
@@ -17,22 +19,44 @@ def create_service_logger(
     logger = logging.getLogger(name)
     logger.setLevel(log_level)
     logger.handlers = []
-    log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
+
+    # File handler with standard formatting
+    file_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    file_formatter = logging.Formatter(file_format, datefmt="%Y-%m-%d %H:%M:%S")
+
     file_handler = RotatingFileHandler(
         filename=os.path.join(log_dir, log_file),
         maxBytes=max_bytes,
         backupCount=backup_count,
         encoding="utf-8",
     )
-    file_handler.setFormatter(formatter)
+    file_handler.setFormatter(file_formatter)
     file_handler.setLevel(log_level)
     logger.addHandler(file_handler)
+
     if console_output:
+        # Colored console handler
+        console_format = (
+            "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s%(reset)s"
+        )
+        console_formatter = ColoredFormatter(
+            console_format,
+            datefmt="%Y-%m-%d %H:%M:%S",
+            reset=True,
+            log_colors={
+                "DEBUG": "cyan",
+                "INFO": "green",
+                "WARNING": "yellow",
+                "ERROR": "red",
+                "CRITICAL": "red,bg_white",
+            },
+        )
+
         console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
+        console_handler.setFormatter(console_formatter)
         console_handler.setLevel(log_level)
         logger.addHandler(console_handler)
+
     return logger
 
 

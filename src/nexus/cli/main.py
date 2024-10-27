@@ -48,32 +48,58 @@ def colored_text(text: str, color: Color, attrs: list[Attribute] | None = None) 
     return colored(text, color, attrs=attrs)
 
 
-def start_nexus_service() -> None:
-    """Start the Nexus service in a screen session if it doesn't already exist."""
+def is_service_running() -> bool:
     try:
-        result = subprocess.run(["screen", "-ls"], capture_output=True, text=True)
-        if "nexus" not in result.stdout:
-            print(
-                colored("Starting Nexus service in a new screen session...", "yellow")
-            )
+        result = subprocess.run(
+            ["screen", "-ls"], capture_output=True, text=True, check=False
+        )
+
+        if result.returncode != 0:
+            return False
+
+        return any(
+            line.strip().split("\t")[0].endswith(".nexus")
+            for line in result.stdout.splitlines()
+            if "\t" in line and not line.startswith("No Sockets")
+        )
+
+    except (subprocess.SubprocessError, OSError, Exception):
+        return False
+
+
+def start_service() -> None:
+    """Start the Nexus service in a screen session if it doesn't already exist."""
+    if not is_service_running():
+        try:
             subprocess.run(
                 ["screen", "-S", "nexus", "-dm", "nexus-service"], check=True
             )
-        else:
+            time.sleep(1)
+            if not is_service_running():
+                raise RuntimeError("Service failed to start")
+            print(colored("Nexus service started successfully.", "green"))
+
+        except subprocess.CalledProcessError as e:
+            print(colored(f"Error starting Nexus service: {e}", "red"))
             print(
                 colored(
-                    "Nexus service is already running in a screen session.", "green"
+                    "Make sure 'screen' and 'nexus-service' are installed and in your PATH.",
+                    "yellow",
                 )
             )
-    except subprocess.CalledProcessError as e:
-        print(colored(f"Error starting Nexus service: {e}", "red"))
+        except RuntimeError as e:
+            print(colored(f"Error: {e}", "red"))
+            print(colored("Check the service logs for more information.", "yellow"))
+    else:
+        return
+        # print(colored("Nexus service is already running in a screen session.", "green"))
 
 
 def print_status_snapshot() -> None:
     """Show status snapshot."""
     try:
         # Ensure the service is running
-        start_nexus_service()
+        assert is_service_running(), "nexus service is not running"
 
         # Fetch status from the API
         response = requests.get(f"{API_BASE_URL}/service/status")
@@ -105,15 +131,27 @@ def print_status_snapshot() -> None:
         for gpu in gpus:
             gpu_info = f"GPU {gpu['index']} ({gpu['name']}, {gpu['memory_total']}MB): "
             if gpu.get("running_job_id"):
-                job_id = colored_text(gpu["running_job_id"], "magenta")
+                job_id = gpu["running_job_id"]
+                job_response = requests.get(f"{API_BASE_URL}/jobs/{job_id}")
+                job_response.raise_for_status()
+                job_details = job_response.json()
+
+                runtime = calculate_runtime(job_details)
+
+                job_id_colored = colored_text(job_id, "magenta")
                 command = colored_text(
-                    gpu.get("command", "N/A"), "white", attrs=["bold"]
+                    job_details.get("command", "N/A"), "white", attrs=["bold"]
                 )
-                runtime = colored_text(format_runtime(gpu.get("runtime", 0)), "cyan")
+                runtime_str = colored_text(format_runtime(runtime), "cyan")
                 start_time = colored_text(
-                    format_timestamp(gpu.get("started_at")), "cyan"
+                    format_timestamp(job_details.get("started_at")), "cyan"
                 )
-                gpu_info += f"{job_id}\n  {colored_text('Command', 'white')}: {command}\n  {colored_text('Runtime', 'cyan')}: {runtime}\n  {colored_text('Started', 'cyan')}: {start_time}"
+                gpu_info += (
+                    f"{job_id_colored}\n"
+                    f"  {colored_text('Command', 'white')}: {command}\n"
+                    f"  {colored_text('Runtime', 'cyan')}: {runtime_str}\n"
+                    f"  {colored_text('Started', 'cyan')}: {start_time}"
+                )
             else:
                 gpu_info += colored_text("Available", "green", attrs=["bold"])
             print(gpu_info)
@@ -128,11 +166,24 @@ def format_runtime(seconds: float) -> str:
     return f"{h}h {m}m {s}s"
 
 
+def calculate_runtime(job: dict) -> float:
+    """Calculate runtime from job timestamps."""
+    if not job.get("started_at"):
+        return 0.0
+
+    if job.get("status") == "completed" and job.get("completed_at"):
+        return job["completed_at"] - job["started_at"]
+    elif job.get("status") == "running":
+        return time.time() - job["started_at"]
+
+    return 0.0
+
+
 def format_timestamp(timestamp: float | None) -> str:
-    """Format timestamp to human-readable string."""
+    """Format timestamp to human-readable string including date."""
     if not timestamp:
         return "Unknown"
-    return time.strftime("%H:%M", time.localtime(timestamp))
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
 
 
 def stop_service() -> None:
@@ -150,8 +201,7 @@ def restart_service() -> None:
     try:
         stop_service()
         time.sleep(2)  # Wait for service to stop
-        subprocess.run(["nexus-service"], check=True)
-        print(colored("Nexus service restarted.", "green"))
+        start_service()
     except subprocess.CalledProcessError as e:
         print(colored(f"Error restarting service: {e}", "red"))
 
@@ -159,7 +209,6 @@ def restart_service() -> None:
 def add_jobs(commands: list[str], repeat: int = 1) -> None:
     """Add job(s) to the queue."""
     expanded_commands = []
-
     for command in commands:
         # Handle repeated commands
         if "-r" in command:
@@ -189,11 +238,9 @@ def add_jobs(commands: list[str], repeat: int = 1) -> None:
             expanded_commands.extend([cmd.strip() for cmd in batched])
         else:
             expanded_commands.append(command)
-
     # Repeat commands if needed
     if repeat > 1:
         expanded_commands = expanded_commands * repeat
-
     # Send to API
     try:
         payload = {
@@ -207,12 +254,18 @@ def add_jobs(commands: list[str], repeat: int = 1) -> None:
             print(
                 f"Added job {colored_text(job['id'], 'magenta', attrs=['bold'])}: {colored_text(job['command'], 'cyan')}"
             )
+        # Add summary of total jobs added
+        print(
+            colored_text(
+                f"\nAdded {len(jobs)} jobs to the queue", "green", attrs=["bold"]
+            )
+        )
     except requests.RequestException as e:
         print(colored(f"Error adding jobs: {e}", "red"))
 
 
 def show_queue() -> None:
-    """Show pending jobs."""
+    """Show pending jobs in reverse order, starting from the last job."""
     try:
         response = requests.get(f"{API_BASE_URL}/jobs", params={"status": "queued"})
         response.raise_for_status()
@@ -221,16 +274,20 @@ def show_queue() -> None:
             print(colored("No pending jobs.", "green"))
             return
         print(colored("Pending Jobs:", "blue", attrs=["bold"]))
-        for idx, job in enumerate(jobs, 1):
+        total_jobs = len(jobs)
+        for idx, job in enumerate(reversed(jobs), 1):
+            created_time = colored_text(format_timestamp(job.get("created_at")), "cyan")
             print(
-                f"{idx}. {colored_text(job['id'], 'magenta')} - {colored_text(job['command'], 'white')}"
+                f"{total_jobs - idx + 1}. {colored_text(job['id'], 'magenta')} - "
+                f"{colored_text(job['command'], 'white')} "
+                f"(Added: {created_time})"
             )
     except requests.RequestException as e:
         print(colored(f"Error fetching queue: {e}", "red"))
 
 
 def show_history() -> None:
-    """Show completed jobs."""
+    """Show completed jobs"""
     try:
         response = requests.get(f"{API_BASE_URL}/jobs", params={"status": "completed"})
         response.raise_for_status()
@@ -240,10 +297,15 @@ def show_history() -> None:
             return
         print(colored("Completed Jobs:", "blue", attrs=["bold"]))
         for job in jobs:
-            runtime = format_runtime(job.get("runtime", 0))
+            runtime = calculate_runtime(job)
             gpu = job.get("gpu_index", "Unknown")
+            started_time = colored_text(format_timestamp(job.get("started_at")), "cyan")
             print(
-                f"{colored_text(job['id'], 'magenta')}: {colored_text(job['command'], 'white')} (Runtime: {colored_text(runtime, 'cyan')}, GPU: {colored_text(str(gpu), 'yellow')})"
+                f"{colored_text(job['id'], 'magenta')}: "
+                f"{colored_text(job['command'], 'white')} "
+                f"(Started: {started_time}, "
+                f"Runtime: {colored_text(format_runtime(runtime), 'cyan')}, "
+                f"GPU: {colored_text(str(gpu), 'yellow')})"
             )
     except requests.RequestException as e:
         print(colored(f"Error fetching history: {e}", "red"))
@@ -516,7 +578,7 @@ def main():
 
     if args.command is None:
         # Default behavior when no command is provided
-        start_nexus_service()  # Start service if not already running
+        start_service()  # Start service if not already running
         print_status_snapshot()  # Show status
         return
 
