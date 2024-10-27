@@ -7,8 +7,8 @@
 - [x] Fix runtime logging in history
 - [x] Fix command logging in status
 - [x] Job attach by gpu idx
-- [ ] fix nexus kill
-- [ ] fix nexus remove
+- [x] fix nexus kill
+- [x] fix nexus remove
 - [x] Show right amount of history on status instead of 0
 - [x] Startup bugs (doesnt show status)
 - [x] show how long a job has been in the queue

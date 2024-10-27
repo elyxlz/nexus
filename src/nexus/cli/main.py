@@ -345,98 +345,160 @@ def show_history() -> None:
         print(colored(f"Error fetching history: {e}", "red"))
 
 
-def kill_jobs(pattern: str) -> None:
-    """Kill job(s) by ID, GPU number, or command regex."""
-    try:
-        # Determine if pattern is GPU index
-        if pattern.isdigit():
-            gpu_index = int(pattern)
-            response = requests.post(
-                f"{get_api_base_url()}/jobs/kill", json={"gpu_index": gpu_index}
-            )
-            response.raise_for_status()
-            result = response.json()
-            killed = result.get("killed", [])
-            failed = result.get("failed", [])
-            for job_id in killed:
-                print(colored(f"Killed job {job_id}", "green"))
-            for fail in failed:
-                print(
-                    colored(f"Failed to kill job {fail['id']}: {fail['error']}", "red")
-                )
+def parse_targets(targets: list[str]) -> tuple[list[int], list[str]]:
+    """Parse a list of targets into GPU indices and job IDs.
+    Handles both space-separated and comma-separated GPU indices."""
+    gpu_indices = []
+    job_ids = []
+
+    # First, handle any comma-separated values by splitting them
+    expanded_targets = []
+    for target in targets:
+        if "," in target:
+            expanded_targets.extend(target.split(","))
         else:
-            # Assume pattern is job ID or regex
+            expanded_targets.append(target)
+
+    # Then process each target
+    for target in expanded_targets:
+        if target.strip().isdigit():
+            gpu_indices.append(int(target.strip()))
+        else:
+            job_ids.append(target.strip())
+
+    return gpu_indices, job_ids
+
+
+def kill_jobs(targets: list[str]) -> None:
+    """Kill job(s) by GPU indices, job IDs, or command regex."""
+    try:
+        gpu_indices, job_ids = parse_targets(targets)
+        jobs_to_kill = set()  # Use set to avoid duplicates
+
+        # Handle GPU indices
+        if gpu_indices:
+            response = requests.get(f"{get_api_base_url()}/gpus")
+            response.raise_for_status()
+            gpus = response.json()
+
+            for gpu_index in gpu_indices:
+                matching_gpu = next(
+                    (gpu for gpu in gpus if gpu["index"] == gpu_index), None
+                )
+                if not matching_gpu:
+                    print(colored(f"No GPU found with index {gpu_index}", "red"))
+                    continue
+
+                job_id = matching_gpu.get("running_job_id")
+                if not job_id:
+                    print(colored(f"No running job found on GPU {gpu_index}", "yellow"))
+                    continue
+
+                jobs_to_kill.add(job_id)
+
+        # Handle job IDs and regex patterns
+        if job_ids:
+            # Get all running jobs for validation and regex matching
             response = requests.get(
                 f"{get_api_base_url()}/jobs", params={"status": "running"}
             )
             response.raise_for_status()
-            jobs = response.json()
-            matched_jobs = []
-            try:
-                regex = re.compile(pattern)
-            except re.error as e:
-                print(colored(f"Invalid regex pattern: {e}", "red"))
-                return
-            for job in jobs:
-                if job["id"] == pattern or regex.search(job["command"]):
-                    matched_jobs.append(job["id"])
+            running_jobs = response.json()
 
-            if not matched_jobs:
-                print(colored("No matching running jobs found.", "yellow"))
-                return
+            for pattern in job_ids:
+                if pattern in [job["id"] for job in running_jobs]:
+                    # Direct job ID match
+                    jobs_to_kill.add(pattern)
+                else:
+                    # Try as regex pattern
+                    try:
+                        regex = re.compile(pattern)
+                        matching_jobs = [
+                            job["id"]
+                            for job in running_jobs
+                            if regex.search(job["command"])
+                        ]
+                        jobs_to_kill.update(matching_jobs)
+                    except re.error as e:
+                        print(colored(f"Invalid regex pattern '{pattern}': {e}", "red"))
 
-            response = requests.post(
-                f"{get_api_base_url()}/jobs/kill", json={"job_ids": matched_jobs}
-            )
-            response.raise_for_status()
-            result = response.json()
-            killed = result.get("killed", [])
-            failed = result.get("failed", [])
-            for job_id in killed:
-                print(colored(f"Killed job {job_id}", "green"))
-            for fail in failed:
-                print(
-                    colored(f"Failed to kill job {fail['id']}: {fail['error']}", "red")
-                )
+        if not jobs_to_kill:
+            print(colored("No matching running jobs found.", "yellow"))
+            return
+
+        # Send kill request with all collected job IDs
+        response = requests.delete(
+            f"{get_api_base_url()}/jobs/running", json=list(jobs_to_kill)
+        )
+        response.raise_for_status()
+
+        result = response.json()
+        killed = result.get("killed", [])
+        failed = result.get("failed", [])
+
+        for job_id in killed:
+            print(colored(f"Killed job {job_id}", "green"))
+        for fail in failed:
+            print(colored(f"Failed to kill job {fail['id']}: {fail['error']}", "red"))
+
     except requests.RequestException as e:
-        print(colored(f"Error killing jobs: {e}", "red"))
+        if hasattr(e.response, "text"):
+            print(colored(f"Error killing jobs: {e.response.text}", "red"))
+        else:
+            print(colored(f"Error killing jobs: {e}", "red"))
 
 
-def remove_jobs(pattern: str) -> None:
-    """Remove job(s) from queue by ID or command regex."""
+def remove_jobs(job_ids: list[str]) -> None:
+    """Remove job(s) from queue by job IDs or command regex."""
     try:
+        # Get all queued jobs
         response = requests.get(
             f"{get_api_base_url()}/jobs", params={"status": "queued"}
         )
         response.raise_for_status()
-        jobs = response.json()
-        matched_jobs = []
-        try:
-            regex = re.compile(pattern)
-        except re.error as e:
-            print(colored(f"Invalid regex pattern: {e}", "red"))
-            return
-        for job in jobs:
-            if job["id"] == pattern or regex.search(job["command"]):
-                matched_jobs.append(job["id"])
+        queued_jobs = response.json()
 
-        if not matched_jobs:
+        jobs_to_remove = set()  # Use set to avoid duplicates
+
+        for pattern in job_ids:
+            if pattern in [job["id"] for job in queued_jobs]:
+                # Direct job ID match
+                jobs_to_remove.add(pattern)
+            else:
+                # Try as regex pattern
+                try:
+                    regex = re.compile(pattern)
+                    matching_jobs = [
+                        job["id"] for job in queued_jobs if regex.search(job["command"])
+                    ]
+                    jobs_to_remove.update(matching_jobs)
+                except re.error as e:
+                    print(colored(f"Invalid regex pattern '{pattern}': {e}", "red"))
+
+        if not jobs_to_remove:
             print(colored("No matching queued jobs found.", "yellow"))
             return
 
+        # Send delete request with all collected job IDs
         response = requests.delete(
-            f"{get_api_base_url()}/jobs/queued", json={"job_ids": matched_jobs}
+            f"{get_api_base_url()}/jobs/queued", json=list(jobs_to_remove)
         )
         response.raise_for_status()
+
         result = response.json()
         removed = result.get("removed", [])
         failed = result.get("failed", [])
+
         for job_id in removed:
             print(colored(f"Removed job {job_id}", "green"))
         for fail in failed:
             print(colored(f"Failed to remove job {fail['id']}: {fail['error']}", "red"))
+
     except requests.RequestException as e:
-        print(colored(f"Error removing jobs: {e}", "red"))
+        if hasattr(e.response, "text"):
+            print(colored(f"Error removing jobs: {e.response.text}", "red"))
+        else:
+            print(colored(f"Error removing jobs: {e}", "red"))
 
 
 def pause_queue() -> None:
@@ -762,16 +824,25 @@ def main():
     subparsers.add_parser("history", help="Show completed jobs")
 
     # nexus kill <pattern>
+    # Update kill parser to accept multiple targets
     kill_parser = subparsers.add_parser(
-        "kill", help="Kill job(s) by ID, GPU number, or command regex"
+        "kill", help="Kill jobs by GPU indices, job IDs, or command regex"
     )
-    kill_parser.add_argument("pattern", help="Job ID, GPU number, or command regex")
+    kill_parser.add_argument(
+        "targets",
+        nargs="+",
+        help="List of GPU indices, job IDs, or command regex patterns",
+    )
 
-    # nexus remove <pattern>
+    # Update remove parser to accept multiple job IDs
     remove_parser = subparsers.add_parser(
-        "remove", help="Remove job(s) from queue by ID or command regex"
+        "remove", help="Remove jobs from queue by job IDs or command regex"
     )
-    remove_parser.add_argument("pattern", help="Job ID or command regex")
+    remove_parser.add_argument(
+        "job_ids",
+        nargs="+",
+        help="List of job IDs or command regex patterns",
+    )
 
     # nexus pause
     subparsers.add_parser("pause", help="Pause queue processing")
@@ -844,8 +915,8 @@ def main():
         "add": lambda: add_jobs(args.commands, repeat=args.repeat),
         "queue": lambda: show_queue(),
         "history": lambda: show_history(),
-        "kill": lambda: kill_jobs(args.pattern),
-        "remove": lambda: remove_jobs(args.pattern),
+        "kill": lambda: kill_jobs(args.targets),
+        "remove": lambda: remove_jobs(args.job_ids),
         "pause": lambda: pause_queue(),
         "resume": lambda: resume_queue(),
         "blacklist": lambda: handle_blacklist(args),
