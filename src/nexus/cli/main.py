@@ -205,7 +205,9 @@ def print_status_snapshot() -> None:
 
         print(colored("GPUs:", "white"))
         for gpu in gpus:
-            gpu_info = f"GPU {gpu['index']} ({gpu['name']}, {gpu['memory_total']}MB): "
+            memory_used = gpu.get("memory_used", 0)
+            gpu_info = f"GPU {gpu['index']} ({gpu['name']}): [{memory_used}/{gpu['memory_total']}MB] "
+
             if gpu.get("is_blacklisted"):
                 gpu_info += colored("[BLACKLISTED] ", "red", attrs=["bold"])
 
@@ -223,8 +225,10 @@ def print_status_snapshot() -> None:
                 print(f"  Command: {colored(job.get('command', 'N/A'), 'white', attrs=['bold'])}")
                 print(f"  Runtime: {colored(runtime_str, 'cyan')}")
                 print(f"  Started: {colored(start_time, 'cyan')}")
-            else:
+            elif gpu.get("process_count", 0) == 0:
                 print(f"{gpu_info}{colored('Available', 'green', attrs=['bold'])}")
+            else:
+                print(f"{gpu_info}{colored('In Use (External Process)', 'yellow', attrs=['bold'])}")
 
     except requests.RequestException as e:
         print(colored(f"Error fetching status: {e}", "red"))
@@ -451,22 +455,44 @@ def restart_service() -> None:
         print(colored(f"Error restarting service: {e}", "red"))
 
 
-def view_logs(job_id: str) -> None:
-    """View logs for a job or service."""
+def view_logs(target: str) -> None:
+    """View logs for a job, GPU, or service."""
+
     try:
-        if job_id == "service":
+        if target == "service":
             response = requests.get(f"{get_api_base_url()}/service/logs")
             response.raise_for_status()
             print(colored("=== Service Logs ===", "blue", attrs=["bold"]))
             print(response.json().get("logs", ""))
-        else:
-            response = requests.get(f"{get_api_base_url()}/jobs/{job_id}/logs")
+            return
+
+        # Check if target is a GPU index
+        if target.isdigit():
+            gpu_index = int(target)
+            response = requests.get(f"{get_api_base_url()}/gpus")
             response.raise_for_status()
-            logs = response.json()
-            print(colored("=== STDOUT ===", "blue", attrs=["bold"]))
-            print(logs.get("stdout", ""))
-            print(colored("\n=== STDERR ===", "red", attrs=["bold"]))
-            print(logs.get("stderr", ""))
+            gpus = response.json()
+
+            matching_gpu = next((gpu for gpu in gpus if gpu["index"] == gpu_index), None)
+            if not matching_gpu:
+                print(colored(f"No GPU found with index {gpu_index}", "red"))
+                return
+
+            job_id = matching_gpu.get("running_job_id")
+            if not job_id:
+                print(colored(f"No running job found on GPU {gpu_index}", "yellow"))
+                return
+
+            target = job_id
+
+        # Get logs for the job
+        response = requests.get(f"{get_api_base_url()}/jobs/{target}/logs")
+        response.raise_for_status()
+        logs = response.json()
+        print(colored("=== STDOUT ===", "blue", attrs=["bold"]))
+        print(logs.get("stdout", ""))
+        print(colored("\n=== STDERR ===", "red", attrs=["bold"]))
+        print(logs.get("stderr", ""))
     except requests.RequestException as e:
         print(colored(f"Error fetching logs: {e}", "red"))
 
