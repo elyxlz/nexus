@@ -1,10 +1,10 @@
 import asyncio
 import contextlib
 import datetime as dt
+import importlib.metadata
 import os
 import pathlib
 import typing
-import importlib.metadata
 
 import fastapi as fa
 import uvicorn
