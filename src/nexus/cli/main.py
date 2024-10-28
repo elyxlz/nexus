@@ -52,13 +52,21 @@ def is_service_running() -> bool:
     try:
         result = subprocess.run(["screen", "-ls"], capture_output=True, text=True, check=False)
         if result.returncode != 0:
+            print(colored(f"Error running 'screen -ls': Return code {result.returncode}", "red"))
+            print(colored(f"STDOUT: {result.stdout}", "yellow"))
+            print(colored(f"STDERR: {result.stderr}", "yellow"))
             return False
-        return any(
+        running = any(
             line.strip().split("\t")[0].endswith(".nexus")
             for line in result.stdout.splitlines()
             if "\t" in line and not line.startswith("No Sockets")
         )
-    except (subprocess.SubprocessError, OSError):
+        if not running:
+            print(colored("No Nexus service found in screen sessions.", "yellow"))
+            print(colored(f"Screen sessions:\n{result.stdout}", "cyan"))
+        return running
+    except (subprocess.SubprocessError, OSError) as e:
+        print(colored(f"Error checking service status: {str(e)}", "red"))
         return False
 
 
@@ -69,7 +77,7 @@ def start_service() -> None:
 
     try:
         subprocess.run(["screen", "-S", "nexus", "-dm", "nexus-service"], check=True)
-        time.sleep(1)
+        time.sleep(2)
         if not is_service_running():
             raise RuntimeError("Service failed to start")
         print(colored("Nexus service started successfully.", "green"))

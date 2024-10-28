@@ -37,18 +37,24 @@ async def job_scheduler():
     while True:
         if not state.is_paused:
             try:
+                # Check and update completed jobs
                 jobs_to_update = []
+                completed_count = 0
                 for job in state.jobs:
                     if job.status == "running" and not is_job_running(job):
                         job.status = "completed"
                         job.completed_at = dt.datetime.now().timestamp()
                         jobs_to_update.append(job)
-                        logger.info(f"Job {job.id} completed")
+                        completed_count += 1
 
-                if jobs_to_update:
+                if completed_count > 0:
+                    logger.info(f"Found {completed_count} completed jobs")
                     update_jobs_in_state(state, jobs=jobs_to_update, state_path=config.state_path)
                     save_state(state, state_path=config.state_path)
+                else:
+                    logger.debug("No running jobs have completed")
 
+                # Clean old jobs
                 clean_old_completed_jobs_in_state(
                     state,
                     state_path=config.state_path,
@@ -56,31 +62,43 @@ async def job_scheduler():
                 )
                 save_state(state, state_path=config.state_path)
 
+                # Process queued jobs
                 available_gpus = get_available_gpus(state)
+                queued_jobs = [j for j in state.jobs if j.status == "queued"]
 
-                jobs_to_update = []
-                for gpu in available_gpus:
-                    queued_jobs = [j for j in state.jobs if j.status == "queued"]
-                    if queued_jobs:
-                        job = queued_jobs[0]
-                        try:
-                            start_job(job, gpu_index=gpu.index, log_dir=config.log_dir)
-                            job.status = "running"
-                            jobs_to_update.append(job)
-                            logger.info(f"Started job {job.id} with command '{job.command}' on GPU {gpu.index}")
-                        except Exception as e:
-                            job.status = "failed"
-                            job.error_message = str(e)
-                            job.completed_at = dt.datetime.now().timestamp()
-                            jobs_to_update.append(job)
-                            logger.error(f"Failed to start job {job.id}: {e}")
+                if not queued_jobs:
+                    logger.info("No jobs in queue")
+                elif not available_gpus:
+                    logger.info(f"No available GPUs. Currently running {len([j for j in state.jobs if j.status == 'running'])} jobs")
+                else:
+                    jobs_to_update = []
+                    started_count = 0
 
-                if jobs_to_update:
-                    update_jobs_in_state(state, jobs=jobs_to_update, state_path=config.state_path)
-                save_state(state, state_path=config.state_path)
+                    for gpu in available_gpus:
+                        if queued_jobs:
+                            job = queued_jobs.pop(0)
+                            try:
+                                start_job(job, gpu_index=gpu.index, log_dir=config.log_dir)
+                                job.status = "running"
+                                jobs_to_update.append(job)
+                                started_count += 1
+                                logger.info(f"Started job {job.id} with command '{job.command}' on GPU {gpu.index}")
+                            except Exception as e:
+                                job.status = "failed"
+                                job.error_message = str(e)
+                                job.completed_at = dt.datetime.now().timestamp()
+                                jobs_to_update.append(job)
+                                logger.error(f"Failed to start job {job.id}: {e}")
+
+                    if started_count > 0:
+                        logger.info(f"Started {started_count} new jobs")
+                        update_jobs_in_state(state, jobs=jobs_to_update, state_path=config.state_path)
+                        save_state(state, state_path=config.state_path)
 
             except Exception as e:
                 logger.error(f"Scheduler error: {e}")
+        else:
+            logger.info("Scheduler is paused")
 
         await asyncio.sleep(config.refresh_rate)
 
