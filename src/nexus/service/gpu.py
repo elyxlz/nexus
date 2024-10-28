@@ -40,8 +40,8 @@ def get_gpu_processes() -> dict[int, list[int]]:
         return {}
 
 
-def get_gpus() -> list[GpuInfo]:
-    """Query nvidia-smi for GPU information"""
+def get_gpus(state: ServiceState) -> list[GpuInfo]:
+    """Query nvidia-smi and state for GPU information"""
     try:
         # Get GPU stats
         output = subprocess.check_output(
@@ -56,6 +56,8 @@ def get_gpus() -> list[GpuInfo]:
         # Get process information
         gpu_processes = get_gpu_processes()
 
+        running_jobs = {j.gpu_index: j.id for j in state.jobs if j.status == "running"}
+
         gpus = []
         for line in output.strip().split("\n"):
             try:
@@ -66,9 +68,9 @@ def get_gpus() -> list[GpuInfo]:
                     name=name,
                     memory_total=int(float(total)),
                     memory_used=int(float(used)),
-                    is_blacklisted=False,  # Updated based on service state
-                    running_job_id=None,  # Updated based on running jobs
-                    process_count=len(gpu_processes.get(index, [])),  # Add process count
+                    process_count=len(gpu_processes.get(index, [])),
+                    is_blacklisted=index in state.blacklisted_gpus,
+                    running_job_id=running_jobs.get(index),
                 )
                 gpus.append(gpu)
             except (ValueError, IndexError) as e:
@@ -92,20 +94,11 @@ def get_available_gpus(state: ServiceState) -> list[GpuInfo]:
     2. Not assigned to a running job in our service
     3. No processes currently using the GPU
     """
-    gpus = get_gpus()
-    running_jobs = {j.gpu_index: j.id for j in state.jobs if j.status == "running"}
+    gpus = get_gpus(state)
     gpu_processes = get_gpu_processes()
 
     # Filter available GPUs
-    available_gpus = [
-        g
-        for g in gpus
-        if (
-            not g.is_blacklisted  # Not blacklisted
-            and g.index not in running_jobs  # Not running a job in our service
-            and g.index not in gpu_processes
-        )  # No processes using this GPU
-    ]
+    available_gpus = [g for g in gpus if (not g.is_blacklisted and g.running_job_id is None and g.index not in gpu_processes)]
     return available_gpus
 
 

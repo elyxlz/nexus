@@ -51,11 +51,6 @@ def is_service_running() -> bool:
     """Check if the Nexus service is running."""
     try:
         result = subprocess.run(["screen", "-ls"], capture_output=True, text=True, check=False)
-        if result.returncode != 0:
-            print(colored(f"Error running 'screen -ls': Return code {result.returncode}", "red"))
-            print(colored(f"STDOUT: {result.stdout}", "yellow"))
-            print(colored(f"STDERR: {result.stderr}", "yellow"))
-            return False
         running = any(
             line.strip().split("\t")[0].endswith(".nexus")
             for line in result.stdout.splitlines()

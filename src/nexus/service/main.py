@@ -50,7 +50,7 @@ async def job_scheduler():
 
                 if completed_count > 0:
                     logger.info(f"Found {completed_count} completed jobs")
-                    update_jobs_in_state(state, jobs=jobs_to_update, state_path=config.state_path)
+                    update_jobs_in_state(state, jobs=jobs_to_update)
                     save_state(state, state_path=config.state_path)
                 else:
                     logger.debug("No running jobs have completed")
@@ -58,7 +58,6 @@ async def job_scheduler():
                 # Clean old jobs
                 clean_old_completed_jobs_in_state(
                     state,
-                    state_path=config.state_path,
                     max_completed=config.history_limit,
                 )
                 save_state(state, state_path=config.state_path)
@@ -93,7 +92,7 @@ async def job_scheduler():
 
                     if started_count > 0:
                         logger.info(f"Started {started_count} new jobs")
-                        update_jobs_in_state(state, jobs=jobs_to_update, state_path=config.state_path)
+                        update_jobs_in_state(state, jobs=jobs_to_update)
                         save_state(state, state_path=config.state_path)
 
             except Exception as e:
@@ -129,7 +128,7 @@ app = fa.FastAPI(
 # Service Endpoints
 @app.get("/v1/service/status", response_model=models.ServiceStatusResponse)
 async def get_status():
-    gpus = get_gpus()
+    gpus = get_gpus(state)
     queued = sum(1 for j in state.jobs if j.status == "queued")
     running = sum(1 for j in state.jobs if j.status == "running")
     completed = sum(1 for j in state.jobs if j.status == "completed")
@@ -195,7 +194,7 @@ async def add_jobs(job_request: models.JobsRequest):
         )
 
     jobs = [create_job(command, working_dir=working_dir) for command in job_request.commands]
-    add_jobs_to_state(state, jobs=jobs, state_path=config.state_path)
+    add_jobs_to_state(state, jobs=jobs)
     logger.info(f"Added {len(jobs)} jobs to queue (working_dir: {working_dir})")
     return jobs
 
@@ -246,7 +245,7 @@ async def kill_running_jobs(job_ids: list[str]):
             failed.append({"id": job_id, "error": str(e)})
 
     if killed_jobs:
-        update_jobs_in_state(state, jobs=killed_jobs, state_path=config.state_path)
+        update_jobs_in_state(state, jobs=killed_jobs)
         save_state(state, state_path=config.state_path)
 
     return models.JobActionResponse(killed=killed, failed=failed)
@@ -308,7 +307,7 @@ async def remove_queued_jobs(job_ids: list[str]):
         removed.append(job_id)
 
     if removed:
-        remove_jobs_from_state(state, job_ids=removed, state_path=config.state_path)
+        remove_jobs_from_state(state, job_ids=removed)
 
     return models.JobQueueActionResponse(removed=removed, failed=failed)
 
@@ -316,15 +315,7 @@ async def remove_queued_jobs(job_ids: list[str]):
 # GPU Endpoints
 @app.get("/v1/gpus", response_model=list[models.GpuInfo])
 async def list_gpus():
-    gpus = get_gpus()
-    for gpu in gpus:
-        gpu.is_blacklisted = gpu.index in state.blacklisted_gpus
-        running_job = next(
-            (j for j in state.jobs if j.status == "running" and j.gpu_index == gpu.index),
-            None,
-        )
-        gpu.running_job_id = running_job.id if running_job else None
-    return gpus
+    return get_gpus(state)
 
 
 @app.post("/v1/service/stop", response_model=models.ServiceActionResponse)
