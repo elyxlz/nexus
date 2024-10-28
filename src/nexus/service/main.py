@@ -4,6 +4,7 @@ import datetime as dt
 import os
 import pathlib
 import typing
+import importlib.metadata
 
 import fastapi as fa
 import uvicorn
@@ -120,7 +121,7 @@ async def lifespan(app: fa.FastAPI):
 app = fa.FastAPI(
     title="Nexus GPU Job Service",
     description="GPU Job Management Service",
-    version="1.0.0",
+    version=importlib.metadata.version("nexusai"),
     lifespan=lifespan,
 )
 
