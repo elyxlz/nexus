@@ -62,8 +62,7 @@ def is_service_running() -> bool:
             if "\t" in line and not line.startswith("No Sockets")
         )
         if not running:
-            print(colored("No Nexus service found in screen sessions.", "yellow"))
-            print(colored(f"Screen sessions:\n{result.stdout}", "cyan"))
+            return False
         return running
     except (subprocess.SubprocessError, OSError) as e:
         print(colored(f"Error checking service status: {str(e)}", "red"))
