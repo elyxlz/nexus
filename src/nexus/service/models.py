@@ -22,6 +22,7 @@ class GpuInfo(pyd.BaseModel):
     name: str
     memory_total: int
     memory_used: int
+    process_count: int
     is_blacklisted: bool
     running_job_id: str | None
 
