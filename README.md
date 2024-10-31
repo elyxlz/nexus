@@ -4,8 +4,11 @@
 - [ ] fix screen attaching not showing anything
 - [ ] freeze git states when adding jobs
 - [ ] Classify failed jobs
+- [ ] Automatically check for updates
 - [ ] a way to quickly find the logs of recent crashes
 - [ ] multi user support
+- [ ] filter history with command regex
+- [ ] runtime doesnt update if gpu is blacklisted
 - [ ] Webhooks for starting, completed, and failed jobs (for discord)
 - [ ] multi gpu jobs
 - [ ] share wandb run id
@@ -13,6 +16,9 @@
 - [ ] dependent jobs (a after b is done)
 - [ ] ensure cli and api version align, else restart
 - [ ] refactor, move more things away from cli and to the api
+- [ ] blacklist bugged out
+- [ ] prompt yes or now before removing or killing
+- [ ] put runtime and time started on same line
 
 ## Longterm TODO
 
