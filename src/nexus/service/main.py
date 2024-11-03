@@ -10,6 +10,7 @@ import uvicorn
 
 from nexus.service import models
 from nexus.service.config import load_config
+from nexus.service.git import cleanup_repo, validate_git_url
 from nexus.service.gpu import get_available_gpus, get_gpus
 from nexus.service.job import (
     create_job,
@@ -28,7 +29,6 @@ from nexus.service.state import (
     save_state,
     update_jobs_in_state,
 )
-from nexus.service.git import cleanup_repo, validate_git_url
 
 # Service Setup
 config = load_config()
@@ -46,7 +46,7 @@ async def job_scheduler():
                     if job.status == "running" and not is_job_running(job):
                         job.status = "completed"
                         job.completed_at = dt.datetime.now().timestamp()
-                        cleanup_repo(repo_dir=get_job_repo_dir(config.repo_dir, job_id=job.id))
+                        cleanup_repo(job_repo_dir=get_job_repo_dir(config.repo_dir, job_id=job.id))
                         jobs_to_update.append(job)
                         completed_count += 1
 

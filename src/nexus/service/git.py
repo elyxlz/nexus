@@ -1,10 +1,9 @@
-import shutil
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 from nexus.service.logger import logger
-
 
 GIT_URL_PATTERN = re.compile(r"^(?:https?://|git@)(?:[\w.@:/\-~]+)(?:\.git)?/?$")
 
