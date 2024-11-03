@@ -52,8 +52,7 @@ class ServiceActionResponse(pyd.BaseModel):
 
 
 class JobLogsResponse(pyd.BaseModel):
-    stdout: str
-    stderr: str
+    out: str
 
 
 class JobActionResponse(pyd.BaseModel):

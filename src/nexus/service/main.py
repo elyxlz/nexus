@@ -213,8 +213,8 @@ async def get_job_logs_endpoint(job_id: str):
     if not job:
         raise fa.HTTPException(status_code=404, detail="Job not found")
 
-    stdout, stderr = get_job_logs(job, log_dir=config.log_dir)
-    return models.JobLogsResponse(stdout=stdout or "", stderr=stderr or "")
+    out = get_job_logs(job, log_dir=config.log_dir)
+    return models.JobLogsResponse(out=out or "")
 
 
 @app.delete("/v1/jobs/running", response_model=models.JobActionResponse)

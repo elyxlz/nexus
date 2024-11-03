@@ -49,6 +49,8 @@ def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path) -> models.
     job_log_dir = log_dir / "jobs" / job.id
     job_log_dir.mkdir(parents=True, exist_ok=True)
 
+    combined_log = job_log_dir / "output.log"
+
     # Prepare environment variables
     env = os.environ.copy()
     env.update(
@@ -63,15 +65,11 @@ def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path) -> models.
     # Remove problematic screen variables
     env = {k: v for k, v in env.items() if not k.startswith("SCREEN_")}
 
-    stdout_log = job_log_dir / "stdout.log"
-    stderr_log = job_log_dir / "stderr.log"
-
-    # Create a script that changes to the working directory before running the command
+    # Create a minimal script that just changes directory and runs the command
     script_path = job_log_dir / "run.sh"
     script_content = f"""#!/bin/bash
 cd "{job.working_dir}"
-exec 1> "{stdout_log}" 2> "{stderr_log}"
-{job.command}
+script -f -q -c "{job.command}" "{combined_log}"
 """
     script_path.write_text(script_content)
     script_path.chmod(0o755)
@@ -91,6 +89,20 @@ exec 1> "{stdout_log}" 2> "{stderr_log}"
         raise
 
     return job
+
+
+def get_job_logs(job: models.Job, log_dir: pathlib.Path) -> str | None:
+    """Get combined logs for a job"""
+    job_log_dir = log_dir / "jobs" / job.id
+
+    if not job_log_dir:
+        return None
+
+    combined_log = job_log_dir / "output.log"
+
+    # Return the same content for both stdout and stderr since they're combined
+    output = combined_log.read_text() if combined_log.exists() else None
+    return output
 
 
 def is_job_running(job: models.Job) -> bool:
@@ -114,20 +126,3 @@ def kill_job(job: models.Job) -> None:
         job.error_message = "Killed by user"
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to kill job: {e}")
-
-
-def get_job_logs(job: models.Job, log_dir: pathlib.Path) -> tuple[str | None, str | None]:
-    """Get stdout and stderr logs for a job"""
-
-    job_log_dir = log_dir / "jobs" / job.id
-
-    if not job_log_dir:
-        return None, None
-
-    stdout_path = job_log_dir / "stdout.log"
-    stderr_path = job_log_dir / "stderr.log"
-
-    stdout = stdout_path.read_text() if stdout_path.exists() else None
-    stderr = stderr_path.read_text() if stderr_path.exists() else None
-
-    return stdout, stderr
