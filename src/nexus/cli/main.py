@@ -1,4 +1,6 @@
 import argparse
+import hashlib
+import base58
 import importlib.metadata
 import itertools
 import os
@@ -38,6 +40,15 @@ def load_config(config_path: pathlib.Path) -> dict:
     except toml.TomlDecodeError as e:
         print(colored(f"Error parsing config.toml: {e}", "red"))
         sys.exit(1)
+
+
+def generate_git_tag_id() -> str:
+    """Generate a unique git tag ID using timestamp and random bytes"""
+    timestamp = str(time.time()).encode()
+    random_bytes = os.urandom(4)
+    hash_input = timestamp + random_bytes
+    hash_bytes = hashlib.sha256(hash_input).digest()[:4]
+    return base58.b58encode(hash_bytes).decode()[:6].lower()
 
 
 def get_api_base_url() -> str:
@@ -219,9 +230,7 @@ def print_status_snapshot() -> None:
         print(colored(f"Error fetching status: {e}", "red"))
 
 
-def ensure_git_reproducibility(job_id: str, working_dir: pathlib.Path) -> tuple[str, str]:
-    os.chdir(working_dir)
-
+def ensure_git_reproducibility(id: str) -> tuple[str, str]:
     # Check for uncommitted changes
     result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
     if result.stdout.strip():
@@ -233,7 +242,7 @@ def ensure_git_reproducibility(job_id: str, working_dir: pathlib.Path) -> tuple[
     repo_url = result.stdout.strip()
 
     # Create and push tag
-    tag_name = f"nexus-job-{job_id}"
+    tag_name = f"nexus-{id}"
     try:
         subprocess.run(["git", "tag", tag_name], check=True)
         subprocess.run(["git", "push", "origin", tag_name], check=True)
@@ -246,25 +255,41 @@ def ensure_git_reproducibility(job_id: str, working_dir: pathlib.Path) -> tuple[
 
 
 def add_jobs(commands: list[str], repeat: int = 1) -> None:
-    """Add job(s) to the queue."""
-    expanded_commands = expand_job_commands(commands, repeat=repeat)
-    if not expanded_commands:
-        return
-
+    """Add job(s) to the queue with git information"""
     try:
+        # Generate a single job ID for all commands in this batch
+        git_tag_id = generate_git_tag_id()
+
+        # Ensure git state and create tag
+        repo_url, tag_name = ensure_git_reproducibility(git_tag_id)
+
+        # Expand job commands
+        expanded_commands = expand_job_commands(commands, repeat=repeat)
+        if not expanded_commands:
+            return
+
+        # Prepare request payload
         payload = {
             "commands": expanded_commands,
-            "working_dir": os.getcwd(),
+            "repo_url": repo_url,
+            "git_tag": tag_name,
         }
+
+        # Submit to API
         response = requests.post(f"{get_api_base_url()}/jobs", json=payload)
         response.raise_for_status()
         jobs = response.json()
 
+        # Display results
         for job in jobs:
             print(f"Added job {colored(job['id'], 'magenta', attrs=['bold'])}: {job['command']}")
         print(colored(f"\nAdded {len(jobs)} jobs to the queue", "green", attrs=["bold"]))
+        print(colored(f"Git tag: {tag_name}", "blue"))
+        print(colored(f"Repository: {repo_url}", "blue"))
+
     except requests.RequestException as e:
         print(colored(f"Error adding jobs: {e}", "red"))
+        sys.exit(1)
 
 
 def show_queue() -> None:

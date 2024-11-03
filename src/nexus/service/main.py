@@ -1,9 +1,9 @@
 import asyncio
+import re
 import contextlib
 import datetime as dt
 import importlib.metadata
 import os
-import pathlib
 import typing
 
 import fastapi as fa
@@ -15,6 +15,7 @@ from nexus.service.gpu import get_available_gpus, get_gpus
 from nexus.service.job import (
     create_job,
     get_job_logs,
+    get_job_repo_dir,
     is_job_running,
     kill_job,
     start_job,
@@ -28,10 +29,18 @@ from nexus.service.state import (
     save_state,
     update_jobs_in_state,
 )
+from nexus.service.git import cleanup_repo
 
 # Service Setup
 config = load_config()
 state = load_state(config.state_path)
+
+GIT_URL_PATTERN = re.compile(r"^(?:https?://|git@)(?:[\w.@:/\-~]+)(?:\.git)?/?$")
+
+
+def validate_git_url(url: str) -> bool:
+    """Validate git repository URL format"""
+    return bool(GIT_URL_PATTERN.match(url))
 
 
 async def job_scheduler():
@@ -45,6 +54,7 @@ async def job_scheduler():
                     if job.status == "running" and not is_job_running(job):
                         job.status = "completed"
                         job.completed_at = dt.datetime.now().timestamp()
+                        cleanup_repo(repo_dir=get_job_repo_dir(config.repo_dir, job_id=job.id))
                         jobs_to_update.append(job)
                         completed_count += 1
 
@@ -78,7 +88,7 @@ async def job_scheduler():
                         if queued_jobs:
                             job = queued_jobs.pop(0)
                             try:
-                                start_job(job, gpu_index=gpu.index, log_dir=config.log_dir)
+                                start_job(job, gpu_index=gpu.index, log_dir=config.log_dir, repo_dir=config.repo_dir)
                                 job.status = "running"
                                 jobs_to_update.append(job)
                                 started_count += 1
@@ -184,19 +194,20 @@ async def list_jobs(
 
 @app.post("/v1/jobs", response_model=list[models.Job])
 async def add_jobs(job_request: models.JobsRequest):
-    """Add multiple jobs to the queue, all sharing the same working directory"""
-    # Validate working directory
-    working_dir = pathlib.Path(job_request.working_dir)
-    if not working_dir.is_absolute() or not working_dir.exists():
-        raise fa.HTTPException(
-            status_code=400,
-            detail=f"Working directory '{job_request.working_dir}' must be an absolute path and must exist",
-        )
+    """Add multiple jobs to the queue with git repository information"""
+    if not validate_git_url(job_request.repo_url):
+        raise fa.HTTPException(status_code=400, detail=f"Invalid git repository URL: {job_request.repo_url}")
 
-    jobs = [create_job(command, working_dir=working_dir) for command in job_request.commands]
-    add_jobs_to_state(state, jobs=jobs)
-    logger.info(f"Added {len(jobs)} jobs to queue (working_dir: {working_dir})")
-    return jobs
+    try:
+        jobs = [create_job(command=command, repo_url=job_request.repo_url, git_tag=job_request.git_tag) for command in job_request.commands]
+
+        add_jobs_to_state(state, jobs=jobs)
+        logger.info(f"Added {len(jobs)} jobs to queue " f"(repo: {job_request.repo_url}, tag: {job_request.git_tag})")
+        return jobs
+
+    except Exception as e:
+        logger.error(f"Error adding jobs: {e}")
+        raise fa.HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/v1/jobs/{job_id}", response_model=models.Job)
@@ -213,8 +224,8 @@ async def get_job_logs_endpoint(job_id: str):
     if not job:
         raise fa.HTTPException(status_code=404, detail="Job not found")
 
-    out = get_job_logs(job, log_dir=config.log_dir)
-    return models.JobLogsResponse(out=out or "")
+    logs = get_job_logs(job, log_dir=config.log_dir)
+    return models.JobLogsResponse(logs=logs or "")
 
 
 @app.delete("/v1/jobs/running", response_model=models.JobActionResponse)
@@ -234,7 +245,7 @@ async def kill_running_jobs(job_ids: list[str]):
             continue
 
         try:
-            kill_job(job)
+            kill_job(job, repo_dir=config.repo_dir)
             job.status = "failed"
             job.completed_at = dt.datetime.now().timestamp()
             job.error_message = "Killed by user"

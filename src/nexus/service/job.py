@@ -9,6 +9,7 @@ import base58
 
 from nexus.service import models
 from nexus.service.logger import logger
+from nexus.service.git import clone_repository, cleanup_repo
 
 
 def generate_job_id() -> str:
@@ -40,12 +41,15 @@ def create_job(
         error_message=None,
         repo_url=repo_url,
         git_tag=git_tag,
-        temp_dir=None,
     )
 
 
 def get_job_session_name(job_id: str) -> str:
     return f"nexus_job_{job_id}"
+
+
+def get_job_repo_dir(repo_dir: pathlib.Path, job_id: str) -> pathlib.Path:
+    return repo_dir / job_id
 
 
 def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: pathlib.Path) -> models.Job:
@@ -57,28 +61,16 @@ def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: 
     job_log_dir.mkdir(parents=True, exist_ok=True)
     combined_log = job_log_dir / "output.log"
 
+    job_dir = get_job_repo_dir(repo_dir, job_id=job.id)
+    job_dir.mkdir(parents=True, exist_ok=True)
+
     try:
-        # Prepare repository
-        job_dir = prepare_job_directory(job, repo_dir)
-        job.temp_dir = job_dir
+        clone_repository(job.repo_url, tag=job.git_tag, target_dir=job_dir)
 
-        # Prepare environment variables
         env = os.environ.copy()
-        env.update(
-            {
-                "CUDA_VISIBLE_DEVICES": str(gpu_index),
-                "NEXUS_JOB_ID": job.id,
-                "NEXUS_GPU_ID": str(gpu_index),
-                "NEXUS_START_TIME": str(dt.datetime.now().timestamp()),
-                "NEXUS_GIT_TAG": job.git_tag,
-                "NEXUS_REPO_URL": job.repo_url,
-            }
-        )
-
-        # Remove problematic screen variables
+        env.update({"CUDA_VISIBLE_DEVICES": str(gpu_index)})
         env = {k: v for k, v in env.items() if not k.startswith("SCREEN_")}
 
-        # Create run script
         script_path = job_log_dir / "run.sh"
         script_content = f"""#!/bin/bash
 cd "{job_dir}"
@@ -86,8 +78,6 @@ script -f -q -c "{job.command}" "{combined_log}"
 """
         script_path.write_text(script_content)
         script_path.chmod(0o755)
-
-        # Start the job
         subprocess.run(["screen", "-dmS", session_name, str(script_path)], env=env, check=True)
 
         job.started_at = dt.datetime.now().timestamp()
@@ -98,8 +88,7 @@ script -f -q -c "{job.command}" "{combined_log}"
         job.status = "failed"
         job.error_message = str(e)
         job.completed_at = dt.datetime.now().timestamp()
-        if job.temp_dir:
-            cleanup_repo(job.temp_dir)
+        cleanup_repo(job_dir)
         logger.error(f"Failed to start job {job.id}: {e}")
         raise
 
@@ -114,8 +103,6 @@ def get_job_logs(job: models.Job, log_dir: pathlib.Path) -> str | None:
         return None
 
     combined_log = job_log_dir / "output.log"
-
-    # Return the same content for both stdout and stderr since they're combined
     output = combined_log.read_text() if combined_log.exists() else None
     return output
 
@@ -131,7 +118,7 @@ def is_job_running(job: models.Job) -> bool:
         return False
 
 
-def kill_job(job: models.Job) -> None:
+def kill_job(job: models.Job, repo_dir: pathlib.Path) -> None:
     """Kill a running job"""
     session_name = get_job_session_name(job.id)
     try:
@@ -139,5 +126,6 @@ def kill_job(job: models.Job) -> None:
         job.status = "failed"
         job.completed_at = dt.datetime.now().timestamp()
         job.error_message = "Killed by user"
+        cleanup_repo(get_job_repo_dir(repo_dir, job_id=job.id))
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to kill job: {e}")
