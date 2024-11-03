@@ -484,10 +484,7 @@ def view_logs(target: str) -> None:
         response = requests.get(f"{get_api_base_url()}/jobs/{target}/logs")
         response.raise_for_status()
         logs = response.json()
-        print(colored("=== STDOUT ===", "blue", attrs=["bold"]))
-        print(logs.get("stdout", ""))
-        print(colored("\n=== STDERR ===", "red", attrs=["bold"]))
-        print(logs.get("stderr", ""))
+        print(logs.get("out", ""))
     except requests.RequestException as e:
         print(colored(f"Error fetching logs: {e}", "red"))
 

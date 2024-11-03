@@ -68,9 +68,13 @@ def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path) -> models.
     # Create a minimal script that just changes directory and runs the command
     script_path = job_log_dir / "run.sh"
     script_content = f"""#!/bin/bash
-cd "{job.working_dir}"
-script -f -q -c "{job.command}" "{combined_log}"
-"""
+     cd "{job.working_dir}"
+     script -f -q -c "{job.command}" "{combined_log}"
+     """
+    #     script_content = f"""#!/bin/bash
+    #  cd "{job.working_dir}"
+    # {job.command}
+    #  """
     script_path.write_text(script_content)
     script_path.chmod(0o755)
 
