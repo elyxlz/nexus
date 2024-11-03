@@ -18,7 +18,7 @@
 - [ ] refactor, move more things away from cli and to the api
 - [ ] prompt yes or now before removing, killing, or adding
 - [ ] put runtime and time started on same line
-- [ ] merge stdout and stderr
+- [x] merge stdout and stderr
 - [ ] sqlite for state management
 - [ ] if -r in command it bugs out thinking its repeat
 - [ ] multiline bash
