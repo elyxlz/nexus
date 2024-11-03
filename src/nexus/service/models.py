@@ -14,7 +14,9 @@ class Job(pyd.BaseModel):
     gpu_index: int | None
     exit_code: int | None
     error_message: str | None
-    working_dir: pathlib.Path
+    repo_url: str
+    git_tag: str
+    temp_dir: pathlib.Path | None = None  # Path to temporary clone directory
 
 
 class GpuInfo(pyd.BaseModel):
@@ -40,7 +42,8 @@ class ServiceState(pyd.BaseModel):
 
 class JobsRequest(pyd.BaseModel):
     commands: list[str]
-    working_dir: str  # single working directory for all commands in the batch
+    repo_url: str
+    git_tag: str
 
 
 class ServiceLogsResponse(pyd.BaseModel):
@@ -52,7 +55,7 @@ class ServiceActionResponse(pyd.BaseModel):
 
 
 class JobLogsResponse(pyd.BaseModel):
-    out: str
+    logs: str
 
 
 class JobActionResponse(pyd.BaseModel):

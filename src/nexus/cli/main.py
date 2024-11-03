@@ -219,6 +219,32 @@ def print_status_snapshot() -> None:
         print(colored(f"Error fetching status: {e}", "red"))
 
 
+def ensure_git_reproducibility(job_id: str, working_dir: pathlib.Path) -> tuple[str, str]:
+    os.chdir(working_dir)
+
+    # Check for uncommitted changes
+    result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+    if result.stdout.strip():
+        changes = result.stdout.strip()
+        raise RuntimeError(f"Uncommitted changes present in repository:\n{changes}\n" "Cannot create reproducible job without clean git state")
+
+    # Get repository URL
+    result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True, check=True)
+    repo_url = result.stdout.strip()
+
+    # Create and push tag
+    tag_name = f"nexus-job-{job_id}"
+    try:
+        subprocess.run(["git", "tag", tag_name], check=True)
+        subprocess.run(["git", "push", "origin", tag_name], check=True)
+        return repo_url, tag_name
+
+    except subprocess.CalledProcessError as e:
+        # Try to clean up if tag was created but not pushed
+        subprocess.run(["git", "tag", "-d", tag_name], check=False)
+        raise RuntimeError(f"Failed to create/push git tag: {e}")
+
+
 def add_jobs(commands: list[str], repeat: int = 1) -> None:
     """Add job(s) to the queue."""
     expanded_commands = expand_job_commands(commands, repeat=repeat)
@@ -474,7 +500,7 @@ def view_logs(target: str) -> None:
         response = requests.get(f"{get_api_base_url()}/jobs/{target}/logs")
         response.raise_for_status()
         logs = response.json()
-        print(logs.get("out", ""))
+        print(logs.get("logs", ""))
     except requests.RequestException as e:
         print(colored(f"Error fetching logs: {e}", "red"))
 
