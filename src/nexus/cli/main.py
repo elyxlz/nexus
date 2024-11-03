@@ -245,7 +245,7 @@ def ensure_git_reproducibility(id: str) -> tuple[str, str]:
     tag_name = f"nexus-{id}"
     try:
         subprocess.run(["git", "tag", tag_name], check=True)
-        subprocess.run(["git", "push", "origin", tag_name], check=True)
+        subprocess.run(["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return repo_url, tag_name
 
     except subprocess.CalledProcessError as e:
@@ -284,8 +284,6 @@ def add_jobs(commands: list[str], repeat: int = 1) -> None:
         for job in jobs:
             print(f"Added job {colored(job['id'], 'magenta', attrs=['bold'])}: {job['command']}")
         print(colored(f"\nAdded {len(jobs)} jobs to the queue", "green", attrs=["bold"]))
-        print(colored(f"Git tag: {tag_name}", "blue"))
-        print(colored(f"Repository: {repo_url}", "blue"))
 
     except requests.RequestException as e:
         print(colored(f"Error adding jobs: {e}", "red"))
