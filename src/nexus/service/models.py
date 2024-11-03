@@ -1,4 +1,3 @@
-import pathlib
 import typing
 
 import pydantic as pyd
@@ -7,6 +6,8 @@ import pydantic as pyd
 class Job(pyd.BaseModel):
     id: str
     command: str
+    repo_url: str
+    git_tag: str
     status: typing.Literal["queued", "running", "completed", "failed"]
     created_at: float
     started_at: float | None
@@ -14,7 +15,6 @@ class Job(pyd.BaseModel):
     gpu_index: int | None
     exit_code: int | None
     error_message: str | None
-    working_dir: pathlib.Path
 
 
 class GpuInfo(pyd.BaseModel):
@@ -40,7 +40,8 @@ class ServiceState(pyd.BaseModel):
 
 class JobsRequest(pyd.BaseModel):
     commands: list[str]
-    working_dir: str  # single working directory for all commands in the batch
+    repo_url: str
+    git_tag: str
 
 
 class ServiceLogsResponse(pyd.BaseModel):
@@ -52,7 +53,7 @@ class ServiceActionResponse(pyd.BaseModel):
 
 
 class JobLogsResponse(pyd.BaseModel):
-    out: str
+    logs: str
 
 
 class JobActionResponse(pyd.BaseModel):

@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import importlib.metadata
 import itertools
 import os
@@ -9,6 +10,7 @@ import sys
 import time
 import typing
 
+import base58
 import requests
 from termcolor import colored
 
@@ -38,6 +40,15 @@ def load_config(config_path: pathlib.Path) -> dict:
     except toml.TomlDecodeError as e:
         print(colored(f"Error parsing config.toml: {e}", "red"))
         sys.exit(1)
+
+
+def generate_git_tag_id() -> str:
+    """Generate a unique git tag ID using timestamp and random bytes"""
+    timestamp = str(time.time()).encode()
+    random_bytes = os.urandom(4)
+    hash_input = timestamp + random_bytes
+    hash_bytes = hashlib.sha256(hash_input).digest()[:4]
+    return base58.b58encode(hash_bytes).decode()[:6].lower()
 
 
 def get_api_base_url() -> str:
@@ -219,26 +230,64 @@ def print_status_snapshot() -> None:
         print(colored(f"Error fetching status: {e}", "red"))
 
 
-def add_jobs(commands: list[str], repeat: int = 1) -> None:
-    """Add job(s) to the queue."""
-    expanded_commands = expand_job_commands(commands, repeat=repeat)
-    if not expanded_commands:
-        return
+def ensure_git_reproducibility(id: str) -> tuple[str, str]:
+    # Check for uncommitted changes
+    result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+    if result.stdout.strip():
+        changes = result.stdout.strip()
+        raise RuntimeError(f"Uncommitted changes present in repository:\n{changes}\n" "Cannot create reproducible job without clean git state")
 
+    # Get repository URL
+    result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True, check=True)
+    repo_url = result.stdout.strip()
+
+    # Create and push tag
+    tag_name = f"nexus-{id}"
     try:
+        subprocess.run(["git", "tag", tag_name], check=True)
+        subprocess.run(["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return repo_url, tag_name
+
+    except subprocess.CalledProcessError as e:
+        # Try to clean up if tag was created but not pushed
+        subprocess.run(["git", "tag", "-d", tag_name], check=False)
+        raise RuntimeError(f"Failed to create/push git tag: {e}")
+
+
+def add_jobs(commands: list[str], repeat: int = 1) -> None:
+    """Add job(s) to the queue with git information"""
+    try:
+        # Generate a single job ID for all commands in this batch
+        git_tag_id = generate_git_tag_id()
+
+        # Ensure git state and create tag
+        repo_url, tag_name = ensure_git_reproducibility(git_tag_id)
+
+        # Expand job commands
+        expanded_commands = expand_job_commands(commands, repeat=repeat)
+        if not expanded_commands:
+            return
+
+        # Prepare request payload
         payload = {
             "commands": expanded_commands,
-            "working_dir": os.getcwd(),
+            "repo_url": repo_url,
+            "git_tag": tag_name,
         }
+
+        # Submit to API
         response = requests.post(f"{get_api_base_url()}/jobs", json=payload)
         response.raise_for_status()
         jobs = response.json()
 
+        # Display results
         for job in jobs:
             print(f"Added job {colored(job['id'], 'magenta', attrs=['bold'])}: {job['command']}")
         print(colored(f"\nAdded {len(jobs)} jobs to the queue", "green", attrs=["bold"]))
+
     except requests.RequestException as e:
         print(colored(f"Error adding jobs: {e}", "red"))
+        sys.exit(1)
 
 
 def show_queue() -> None:
@@ -474,7 +523,7 @@ def view_logs(target: str) -> None:
         response = requests.get(f"{get_api_base_url()}/jobs/{target}/logs")
         response.raise_for_status()
         logs = response.json()
-        print(logs.get("out", ""))
+        print(logs.get("logs", ""))
     except requests.RequestException as e:
         print(colored(f"Error fetching logs: {e}", "red"))
 
