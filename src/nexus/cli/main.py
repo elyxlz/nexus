@@ -1,4 +1,5 @@
 import argparse
+import toml
 import hashlib
 import importlib.metadata
 import itertools
@@ -32,8 +33,6 @@ def load_config(config_path: pathlib.Path) -> dict:
     if not config_path.exists():
         print(colored(f"Configuration file not found at {config_path}.", "red"))
         sys.exit(1)
-
-    import toml
 
     try:
         return toml.load(config_path)
