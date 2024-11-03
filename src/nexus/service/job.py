@@ -21,6 +21,17 @@ def generate_job_id() -> str:
     return base58.b58encode(hash_bytes).decode()[:6].lower()
 
 
+def parse_env_file(env_file: pathlib.Path) -> dict:
+    env = {}
+    if env_file.exists():
+        with env_file.open() as f:
+            for line in f:
+                if line.strip() and not line.startswith("#"):
+                    key, value = line.strip().split("=", 1)
+                    env[key] = value
+    return env
+
+
 def create_job(
     command: str,
     repo_url: str,
@@ -52,7 +63,7 @@ def get_job_repo_dir(repo_dir: pathlib.Path, job_id: str) -> pathlib.Path:
     return repo_dir / job_id
 
 
-def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: pathlib.Path) -> models.Job:
+def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: pathlib.Path, env_file: pathlib.Path) -> models.Job:
     """Start a job on a specific GPU"""
     session_name = get_job_session_name(job.id)
 
@@ -69,6 +80,7 @@ def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: 
 
         env = os.environ.copy()
         env.update({"CUDA_VISIBLE_DEVICES": str(gpu_index)})
+        env.update(parse_env_file(env_file))
         env = {k: v for k, v in env.items() if not k.startswith("SCREEN_")}
 
         script_path = job_log_dir / "run.sh"

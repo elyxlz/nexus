@@ -77,9 +77,9 @@ async def job_scheduler():
                 queued_jobs = [j for j in state.jobs if j.status == "queued"]
 
                 if not queued_jobs:
-                    logger.info("No jobs in queue")
+                    logger.debug("No jobs in queue")
                 elif not available_gpus:
-                    logger.info(f"No available GPUs. Currently running {len([j for j in state.jobs if j.status == 'running'])} jobs")
+                    logger.debug(f"No available GPUs. Currently running {len([j for j in state.jobs if j.status == 'running'])} jobs")
                 else:
                     jobs_to_update = []
                     started_count = 0
@@ -88,7 +88,7 @@ async def job_scheduler():
                         if queued_jobs:
                             job = queued_jobs.pop(0)
                             try:
-                                start_job(job, gpu_index=gpu.index, log_dir=config.log_dir, repo_dir=config.repo_dir)
+                                start_job(job, gpu_index=gpu.index, log_dir=config.log_dir, repo_dir=config.repo_dir, env_file=config.env_file)
                                 job.status = "running"
                                 jobs_to_update.append(job)
                                 started_count += 1

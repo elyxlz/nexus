@@ -62,7 +62,7 @@ def get_gpus(state: ServiceState) -> list[GpuInfo]:
         return gpus if gpus else get_mock_gpus(state)
 
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        logger.warning(f"nvidia-smi not available or failed: {e}. Using mock GPU information.")
+        logger.debug(f"nvidia-smi not available or failed: {e}. Using mock GPU information.")
         return get_mock_gpus(state)
 
 
