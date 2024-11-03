@@ -44,9 +44,9 @@ def clone_repository(repo_url: str, tag: str, target_dir: Path) -> None:
         raise Exception(error_msg)
 
 
-def cleanup_repo(repo_dir: Path) -> None:
+def cleanup_repo(job_repo_dir: Path) -> None:
     try:
-        if repo_dir.exists():
-            shutil.rmtree(repo_dir, ignore_errors=True)
+        if job_repo_dir.exists():
+            shutil.rmtree(job_repo_dir, ignore_errors=True)
     except Exception as e:
-        logger.error(f"Error cleaning up repository directory {repo_dir}: {e}")
+        logger.error(f"Error cleaning up repository directory {job_repo_dir}: {e}")

@@ -8,7 +8,7 @@ import time
 import base58
 
 from nexus.service import models
-from nexus.service.git import cleanup_repo, clone_repository
+from nexus.service.git import cleanup_repo
 from nexus.service.logger import logger
 
 
@@ -76,27 +76,28 @@ def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: 
     job_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        clone_repository(job.repo_url, tag=job.git_tag, target_dir=job_dir)
-
         env = os.environ.copy()
         env.update({"CUDA_VISIBLE_DEVICES": str(gpu_index)})
         env.update(parse_env_file(env_file))
         env = {k: v for k, v in env.items() if not k.startswith("SCREEN_")}
 
+        # Create the job script with git clone and command execution
         script_path = job_log_dir / "run.sh"
         script_content = f"""#!/bin/bash
+git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {job.repo_url} "{job_dir}"
 cd "{job_dir}"
 script -f -q -c "{job.command}" "{combined_log}"
 """
         script_path.write_text(script_content)
         script_path.chmod(0o755)
+
         subprocess.run(["screen", "-dmS", session_name, str(script_path)], env=env, check=True)
 
         job.started_at = dt.datetime.now().timestamp()
         job.gpu_index = gpu_index
         job.status = "running"
 
-    except (subprocess.CalledProcessError, RuntimeError) as e:
+    except subprocess.CalledProcessError as e:
         job.status = "failed"
         job.error_message = str(e)
         job.completed_at = dt.datetime.now().timestamp()
