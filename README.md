@@ -17,8 +17,14 @@
 - [ ] ensure cli and api version align, else restart
 - [ ] refactor, move more things away from cli and to the api
 - [ ] blacklist bugged out
-- [ ] prompt yes or now before removing or killing
+- [ ] prompt yes or now before removing, killing, or adding
 - [ ] put runtime and time started on same line
+- [ ] merge stdout and stderr
+- [ ] sqlite for state management
+- [ ] if -r in command it bugs out thinking its repeat
+- [ ] multiline bash
+- [ ] remove spaces from command combinations
+- [ ] priority jobs
 
 ## Longterm TODO
 
