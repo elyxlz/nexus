@@ -6,7 +6,7 @@ import pydantic as pyd
 import pydantic_settings as pyds
 
 
-class NexusConfig(pyds.BaseSettings):
+class NexusServiceConfig(pyds.BaseSettings):
     log_dir: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "logs")
     state_path: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "state.json")
     repo_dir: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "repos")
@@ -34,7 +34,7 @@ class NexusConfig(pyds.BaseSettings):
         return (init_settings, env_settings, dotenv_settings, pyds.TomlConfigSettingsSource(settings_cls))
 
 
-DEFAULT_ENV_TEMPLATE = """# Nexus Environment Configuration
+DEFAULT_ENV_TEMPLATE = """# Nexus Service Environment Configuration
 """
 
 
@@ -53,10 +53,10 @@ def create_default_config() -> None:
 
     if not config_path.exists():
         # Create default config if it doesn't exist
-        config = NexusConfig()
+        config = NexusServiceConfig()
         # Write default config
         with open(config_path, "w") as f:
-            f.write(f"""# Nexus Configuration
+            f.write(f"""# Nexus Service Configuration
 log_dir = "{config.log_dir}"
 state_path = "{config.state_path}"
 repo_dir = "{config.repo_dir}"
@@ -67,11 +67,11 @@ port = {config.port}
 """)
 
 
-def load_config() -> NexusConfig:
+def load_config() -> NexusServiceConfig:
     """Load configuration."""
     create_default_config()
 
-    config = NexusConfig()
+    config = NexusServiceConfig()
 
     # Ensure directories exist
     config.log_dir.mkdir(parents=True, exist_ok=True)

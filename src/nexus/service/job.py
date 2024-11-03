@@ -109,14 +109,14 @@ script -f -q -c "{job.command}" "{combined_log}"
 
 
 def get_job_logs(job: models.Job, log_dir: pathlib.Path) -> str | None:
-    """Get combined logs for a job"""
+    """Get logs for a job"""
     job_log_dir = log_dir / "jobs" / job.id
 
     if not job_log_dir:
         return None
 
-    combined_log = job_log_dir / "output.log"
-    output = combined_log.read_text() if combined_log.exists() else None
+    logs = job_log_dir / "output.log"
+    output = logs.read_text() if logs.exists() else None
     return output
 
 
