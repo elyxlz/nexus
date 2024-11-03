@@ -1,6 +1,6 @@
 ## Immediate TODO
 
-- [ ] jobs are still being added to blacklisted gpus
+- [x] jobs are still being added to blacklisted gpus
 - [ ] fix screen attaching not showing anything
 - [ ] freeze git states when adding jobs
 - [ ] Classify failed jobs
@@ -16,7 +16,6 @@
 - [ ] dependent jobs (a after b is done)
 - [ ] ensure cli and api version align, else restart
 - [ ] refactor, move more things away from cli and to the api
-- [ ] blacklist bugged out
 - [ ] prompt yes or now before removing, killing, or adding
 - [ ] put runtime and time started on same line
 - [ ] merge stdout and stderr
