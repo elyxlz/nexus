@@ -1,7 +1,7 @@
 ## Immediate TODO
 
 - [x] jobs are still being added to blacklisted gpus
-- [ ] fix screen attaching not showing anything
+- [x] fix screen attaching not showing anything
 - [ ] freeze git states when adding jobs
 - [ ] Classify failed jobs
 - [ ] Automatically check for updates
