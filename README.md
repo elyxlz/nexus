@@ -2,6 +2,8 @@
 
 - [x] jobs are still being added to blacklisted gpus
 - [x] fix screen attaching not showing anything
+- [x] merge stdout and stderr
+- [x] remove spaces from command combinations
 - [ ] freeze git states when adding jobs
 - [ ] Classify failed jobs
 - [ ] Automatically check for updates
@@ -18,11 +20,9 @@
 - [ ] refactor, move more things away from cli and to the api
 - [ ] prompt yes or now before removing, killing, or adding
 - [ ] put runtime and time started on same line
-- [x] merge stdout and stderr
 - [ ] sqlite for state management
 - [ ] if -r in command it bugs out thinking its repeat
 - [ ] multiline bash
-- [ ] remove spaces from command combinations
 - [ ] priority jobs
 
 ## Longterm TODO

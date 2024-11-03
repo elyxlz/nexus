@@ -147,29 +147,19 @@ def parse_targets(targets: list[str]) -> tuple[list[int], list[str]]:
 def expand_job_commands(commands: list[str], repeat: int = 1) -> list[str]:
     """Expand job commands with repetition and parameter combinations."""
     expanded_commands = []
+
     for command in commands:
-        if "-r" in command:
-            parts = command.split("-r")
-            cmd = parts[0].strip('"').strip()
-            try:
-                count = int(parts[1].strip())
-                expanded_commands.extend([cmd] * count)
-            except (IndexError, ValueError):
-                print(colored("Invalid repetition format. Use -r <count>.", "red"))
-                return []
-        elif "{" in command and "}" in command:
+        if "{" in command and "}" in command:
             param_str = re.findall(r"\{([^}]+)\}", command)
             if not param_str:
                 expanded_commands.append(command)
                 continue
-            params = [p.split(",") for p in param_str]
-            for combo in itertools.product(*params):
+            params = [p.strip().split(",") for p in param_str]
+            for combo in itertools.product(*[[v.strip() for v in param] for param in params]):
                 temp_cmd = command
                 for value in combo:
                     temp_cmd = re.sub(r"\{[^}]+\}", value, temp_cmd, count=1)
                 expanded_commands.append(temp_cmd)
-        elif "|" in command:
-            expanded_commands.extend([cmd.strip() for cmd in command.split("|")])
         else:
             expanded_commands.append(command)
 
@@ -231,7 +221,7 @@ def print_status_snapshot() -> None:
 
 def add_jobs(commands: list[str], repeat: int = 1) -> None:
     """Add job(s) to the queue."""
-    expanded_commands = expand_job_commands(commands, repeat)
+    expanded_commands = expand_job_commands(commands, repeat=repeat)
     if not expanded_commands:
         return
 
