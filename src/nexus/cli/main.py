@@ -1,6 +1,5 @@
 import argparse
 import hashlib
-import base58
 import importlib.metadata
 import itertools
 import os
@@ -11,6 +10,7 @@ import sys
 import time
 import typing
 
+import base58
 import requests
 from termcolor import colored
 

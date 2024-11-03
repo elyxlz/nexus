@@ -8,8 +8,8 @@ import time
 import base58
 
 from nexus.service import models
+from nexus.service.git import cleanup_repo, clone_repository
 from nexus.service.logger import logger
-from nexus.service.git import clone_repository, cleanup_repo
 
 
 def generate_job_id() -> str:

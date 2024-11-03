@@ -1,7 +1,7 @@
 import pathlib
-import dotenv
 import typing
 
+import dotenv
 import pydantic as pyd
 import pydantic_settings as pyds
 

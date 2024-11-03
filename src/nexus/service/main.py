@@ -1,9 +1,9 @@
 import asyncio
-import re
 import contextlib
 import datetime as dt
 import importlib.metadata
 import os
+import re
 import typing
 
 import fastapi as fa
@@ -11,6 +11,7 @@ import uvicorn
 
 from nexus.service import models
 from nexus.service.config import load_config
+from nexus.service.git import cleanup_repo
 from nexus.service.gpu import get_available_gpus, get_gpus
 from nexus.service.job import (
     create_job,
@@ -29,7 +30,6 @@ from nexus.service.state import (
     save_state,
     update_jobs_in_state,
 )
-from nexus.service.git import cleanup_repo
 
 # Service Setup
 config = load_config()

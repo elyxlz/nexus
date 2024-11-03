@@ -1,7 +1,7 @@
 import subprocess
-from nexus.service.models import GpuInfo, ServiceState
 
 from nexus.service.logger import logger
+from nexus.service.models import GpuInfo, ServiceState
 
 
 def get_gpus(state: ServiceState) -> list[GpuInfo]:
