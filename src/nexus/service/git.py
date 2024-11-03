@@ -1,8 +1,17 @@
 import shutil
+import re
 import subprocess
 from pathlib import Path
 
 from nexus.service.logger import logger
+
+
+GIT_URL_PATTERN = re.compile(r"^(?:https?://|git@)(?:[\w.@:/\-~]+)(?:\.git)?/?$")
+
+
+def validate_git_url(url: str) -> bool:
+    """Validate git repository URL format"""
+    return bool(GIT_URL_PATTERN.match(url))
 
 
 def clone_repository(repo_url: str, tag: str, target_dir: Path) -> None:

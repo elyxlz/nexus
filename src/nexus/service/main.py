@@ -3,7 +3,6 @@ import contextlib
 import datetime as dt
 import importlib.metadata
 import os
-import re
 import typing
 
 import fastapi as fa
@@ -11,7 +10,6 @@ import uvicorn
 
 from nexus.service import models
 from nexus.service.config import load_config
-from nexus.service.git import cleanup_repo
 from nexus.service.gpu import get_available_gpus, get_gpus
 from nexus.service.job import (
     create_job,
@@ -30,17 +28,11 @@ from nexus.service.state import (
     save_state,
     update_jobs_in_state,
 )
+from nexus.service.git import cleanup_repo, validate_git_url
 
 # Service Setup
 config = load_config()
 state = load_state(config.state_path)
-
-GIT_URL_PATTERN = re.compile(r"^(?:https?://|git@)(?:[\w.@:/\-~]+)(?:\.git)?/?$")
-
-
-def validate_git_url(url: str) -> bool:
-    """Validate git repository URL format"""
-    return bool(GIT_URL_PATTERN.match(url))
 
 
 async def job_scheduler():
@@ -87,18 +79,13 @@ async def job_scheduler():
                     for gpu in available_gpus:
                         if queued_jobs:
                             job = queued_jobs.pop(0)
-                            try:
-                                start_job(job, gpu_index=gpu.index, log_dir=config.log_dir, repo_dir=config.repo_dir, env_file=config.env_file)
-                                job.status = "running"
-                                jobs_to_update.append(job)
-                                started_count += 1
+                            job = start_job(
+                                job, gpu_index=gpu.index, log_dir=config.log_dir, repo_dir=config.repo_dir, env_file=config.env_file
+                            )
+                            jobs_to_update.append(job)
+                            started_count += 1
+                            if job.status == "running":
                                 logger.info(f"Started job {job.id} with command '{job.command}' on GPU {gpu.index}")
-                            except Exception as e:
-                                job.status = "failed"
-                                job.error_message = str(e)
-                                job.completed_at = dt.datetime.now().timestamp()
-                                jobs_to_update.append(job)
-                                logger.error(f"Failed to start job {job.id}: {e}")
 
                     if started_count > 0:
                         logger.info(f"Started {started_count} new jobs")

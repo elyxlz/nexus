@@ -38,8 +38,8 @@ DEFAULT_ENV_TEMPLATE = """# Nexus Environment Configuration
 """
 
 
-def load_config() -> NexusConfig:
-    """Load configuration, creating default if it doesn't exist."""
+def create_default_config() -> None:
+    """Create default configuration files if they don't exist."""
     config_dir = pathlib.Path.home() / ".nexus"
     config_path = config_dir / "config.toml"
     env_path = config_dir / ".env"
@@ -50,8 +50,6 @@ def load_config() -> NexusConfig:
     # Create default .env if it doesn't exist
     if not env_path.exists():
         env_path.write_text(DEFAULT_ENV_TEMPLATE)
-        print(f"Created default .env at {env_path}")
-        print("Please edit it to add your git credentials and other environment variables.")
 
     if not config_path.exists():
         # Create default config if it doesn't exist
@@ -62,10 +60,16 @@ def load_config() -> NexusConfig:
 log_dir = "{config.log_dir}"
 state_path = "{config.state_path}"
 repo_dir = "{config.repo_dir}"
+env_file = "{config.env_file}"
 refresh_rate = {config.refresh_rate}
 host = "{config.host}"
 port = {config.port}
 """)
+
+
+def load_config() -> NexusConfig:
+    """Load configuration."""
+    create_default_config()
 
     config = NexusConfig()
 
