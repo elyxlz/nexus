@@ -4,7 +4,8 @@
 - [x] fix screen attaching not showing anything
 - [x] merge stdout and stderr
 - [x] remove spaces from command combinations
-- [ ] freeze git states when adding jobs
+- [x] freeze git states when adding jobs
+- [x] if -r in command it bugs out thinking its repeat
 - [ ] Classify failed jobs
 - [ ] Automatically check for updates
 - [ ] a way to quickly find the logs of recent crashes
@@ -21,7 +22,6 @@
 - [ ] prompt yes or now before removing, killing, or adding
 - [ ] put runtime and time started on same line
 - [ ] sqlite for state management
-- [ ] if -r in command it bugs out thinking its repeat
 - [ ] multiline bash
 - [ ] priority jobs
 
