@@ -45,19 +45,16 @@ async def job_scheduler():
 
                 for job in state.jobs:
                     if job.status == "running":
-                        job = update_job_status(job, log_dir=config.log_dir)
+                        updated_job = update_job_status(job, config.log_dir)
+                        if updated_job.status in ["completed", "failed"]:
+                            if updated_job.status == "completed":
+                                logger.info(f"Job {job.id} completed successfully")
+                            else:
+                                logger.error(f"Job {job.id} failed: {updated_job.error_message}")
 
-                        if job.status == "completed":
                             cleanup_repo(job_repo_dir=get_job_repo_dir(config.repo_dir, job_id=job.id))
-                            jobs_to_update.append(job)
+                            jobs_to_update.append(updated_job)
                             completed_count += 1
-                            logger.info(f"Job {job.id} completed successfully")
-
-                        if job.status == "failed":
-                            cleanup_repo(job_repo_dir=get_job_repo_dir(config.repo_dir, job_id=job.id))
-                            jobs_to_update.append(job)
-                            completed_count += 1
-                            logger.info(f"Job {job.id} failed", job.error_message)
 
                 if completed_count > 0:
                     update_jobs_in_state(state, jobs=jobs_to_update)

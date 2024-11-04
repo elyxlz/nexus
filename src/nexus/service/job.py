@@ -120,8 +120,11 @@ def update_job_status(job: models.Job, log_dir: pathlib.Path) -> models.Job:
         try:
             content = output_log.read_text()
             # Look for exit code in the last line
-            if match := content.strip().split("\n")[-1].strip().find('COMMAND_EXIT_CODE="'):
-                exit_code = int(content.strip().split("\n")[-1][match + 18 : -2])  # Extract number between quotes
+            last_line = content.strip().split("\n")[-1]
+            if "COMMAND_EXIT_CODE=" in last_line:
+                # Extract just the number between the quotes
+                exit_code_str = last_line.split('COMMAND_EXIT_CODE="')[1].split('"')[0]
+                exit_code = int(exit_code_str)
                 job.exit_code = exit_code
                 job.status = "completed" if exit_code == 0 else "failed"
                 job.error_message = None if exit_code == 0 else f"Job failed with exit code {exit_code}"
