@@ -1,9 +1,9 @@
 import asyncio
-import pathlib
 import contextlib
 import datetime as dt
 import importlib.metadata
 import os
+import pathlib
 import typing
 
 import fastapi as fa
@@ -11,8 +11,8 @@ import uvicorn
 
 from nexus.service import models
 from nexus.service.config import load_config
-from nexus.service.git import cleanup_repo, validate_git_url
 from nexus.service.format import format_job_action
+from nexus.service.git import cleanup_repo, validate_git_url
 from nexus.service.gpu import get_gpus
 from nexus.service.job import (
     create_job,

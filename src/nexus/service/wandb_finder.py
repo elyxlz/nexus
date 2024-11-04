@@ -1,8 +1,10 @@
 import concurrent.futures
-import pathlib
 import os
+import pathlib
+
 import wandb
 import wandb.errors
+
 from nexus.service.logger import logger
 
 __all__ = ["find_wandb_run_by_nexus_id"]
