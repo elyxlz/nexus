@@ -16,9 +16,9 @@ from nexus.service.job import (
     create_job,
     get_job_logs,
     get_job_repo_dir,
-    is_job_running,
     kill_job,
     start_job,
+    update_job_status,
 )
 from nexus.service.logger import logger
 from nexus.service.state import (
@@ -42,13 +42,21 @@ async def job_scheduler():
                 # Check and update completed jobs
                 jobs_to_update = []
                 completed_count = 0
+
                 for job in state.jobs:
-                    if job.status == "running" and not is_job_running(job):
-                        job.status = "completed"
-                        job.completed_at = dt.datetime.now().timestamp()
+                    job = update_job_status(job, log_dir=config.log_dir)
+
+                    if job.status == "completed":
                         cleanup_repo(job_repo_dir=get_job_repo_dir(config.repo_dir, job_id=job.id))
                         jobs_to_update.append(job)
                         completed_count += 1
+                        logger.info(f"Job {job.id} completed successfully")
+
+                    if job.status == "failed":
+                        cleanup_repo(job_repo_dir=get_job_repo_dir(config.repo_dir, job_id=job.id))
+                        jobs_to_update.append(job)
+                        completed_count += 1
+                        logger.info(f"Job {job.id} failed")
 
                 if completed_count > 0:
                     logger.info(f"Found {completed_count} completed jobs")
@@ -58,10 +66,7 @@ async def job_scheduler():
                     logger.debug("No running jobs have completed")
 
                 # Clean old jobs
-                clean_old_completed_jobs_in_state(
-                    state,
-                    max_completed=config.history_limit,
-                )
+                clean_old_completed_jobs_in_state(state, max_completed=config.history_limit)
                 save_state(state, state_path=config.state_path)
 
                 # Process queued jobs

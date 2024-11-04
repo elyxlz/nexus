@@ -70,7 +70,8 @@ def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: 
     # Setup logging directory
     job_log_dir = log_dir / "jobs" / job.id
     job_log_dir.mkdir(parents=True, exist_ok=True)
-    combined_log = job_log_dir / "output.log"
+    log = job_log_dir / "output.log"
+    exit_code_file = job_log_dir / "exit_code"
 
     job_dir = get_job_repo_dir(repo_dir, job_id=job.id)
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -84,9 +85,13 @@ def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: 
         # Create the job script with git clone and command execution
         script_path = job_log_dir / "run.sh"
         script_content = f"""#!/bin/bash
+set -e  # Exit on error
 git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {job.repo_url} "{job_dir}"
 cd "{job_dir}"
-script -f -q -c "{job.command}" "{combined_log}"
+script -f -q -c "{job.command}" "{log}"
+exit_code=$?
+echo $exit_code > "{exit_code_file}"
+exit $exit_code
 """
         script_path.write_text(script_content)
         script_path.chmod(0o755)
@@ -105,6 +110,30 @@ script -f -q -c "{job.command}" "{combined_log}"
         logger.error(f"Failed to start job {job.id}: {e}")
         raise
 
+    return job
+
+
+def update_job_status(job: models.Job, log_dir: pathlib.Path) -> models.Job:
+    """Check if a job has completed and update its status"""
+    if is_job_running(job):
+        return job
+
+    # Check for exit code file
+    exit_code_file = log_dir / "jobs" / job.id / "exit_code"
+    if exit_code_file.exists():
+        try:
+            exit_code = int(exit_code_file.read_text().strip())
+            job.exit_code = exit_code
+            job.status = "completed" if exit_code == 0 else "failed"
+            job.error_message = None if exit_code == 0 else f"Job failed with exit code {exit_code}"
+        except (ValueError, IOError) as e:
+            job.status = "failed"
+            job.error_message = f"Failed to read exit code: {e}"
+    else:
+        job.status = "failed"
+        job.error_message = "Job terminated without exit code"
+
+    job.completed_at = dt.datetime.now().timestamp()
     return job
 
 
