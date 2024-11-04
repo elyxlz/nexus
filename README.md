@@ -8,11 +8,11 @@
 - [x] if -r in command it bugs out thinking its repeat
 - [x] runtime doesnt update if gpu is blacklisted
 - [ ] Classify failed jobs
+- [ ] multi user support
+- [ ] Webhooks for starting, completed, and failed jobs (for discord)
 - [ ] Automatically check for updates
 - [ ] a way to quickly find the logs of recent crashes
-- [ ] multi user support
 - [ ] filter history with command regex
-- [ ] Webhooks for starting, completed, and failed jobs (for discord)
 - [ ] multi gpu jobs
 - [ ] share wandb run id
 - [ ] automatically detect wandb runs
