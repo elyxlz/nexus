@@ -11,19 +11,16 @@ import uvicorn
 from nexus.service import models
 from nexus.service.config import load_config
 from nexus.service.git import cleanup_repo, validate_git_url
-from nexus.service.gpu import get_available_gpus, get_gpus
+from nexus.service.gpu import get_gpus
 from nexus.service.job import (
     create_job,
     get_job_logs,
-    get_job_repo_dir,
     kill_job,
-    start_job,
-    update_job_status,
 )
 from nexus.service.logger import logger
+from nexus.service.scheduler import job_scheduler
 from nexus.service.state import (
     add_jobs_to_state,
-    clean_old_completed_jobs_in_state,
     load_state,
     remove_jobs_from_state,
     save_state,
@@ -35,76 +32,9 @@ config = load_config()
 state = load_state(config.state_path)
 
 
-async def job_scheduler():
-    while True:
-        if not state.is_paused:
-            try:
-                # Check and update completed jobs
-                jobs_to_update = []
-                completed_count = 0
-
-                for job in state.jobs:
-                    if job.status == "running":
-                        updated_job = update_job_status(job, config.log_dir)
-                        if updated_job.status in ["completed", "failed"]:
-                            if updated_job.status == "completed":
-                                logger.info(f"Job {job.id} completed successfully")
-                            else:
-                                logger.error(f"Job {job.id} failed: {updated_job.error_message}")
-
-                            cleanup_repo(job_repo_dir=get_job_repo_dir(config.repo_dir, job_id=job.id))
-                            jobs_to_update.append(updated_job)
-                            completed_count += 1
-
-                if completed_count > 0:
-                    update_jobs_in_state(state, jobs=jobs_to_update)
-                    save_state(state, state_path=config.state_path)
-                else:
-                    logger.debug("No running jobs have completed")
-
-                # Clean old jobs
-                clean_old_completed_jobs_in_state(state, max_completed=config.history_limit)
-                save_state(state, state_path=config.state_path)
-
-                # Process queued jobs
-                available_gpus = get_available_gpus(state)
-                queued_jobs = [j for j in state.jobs if j.status == "queued"]
-
-                if not queued_jobs:
-                    logger.debug("No jobs in queue")
-                elif not available_gpus:
-                    logger.debug(f"No available GPUs. Currently running {len([j for j in state.jobs if j.status == 'running'])} jobs")
-                else:
-                    jobs_to_update = []
-                    started_count = 0
-
-                    for gpu in available_gpus:
-                        if queued_jobs:
-                            job = queued_jobs.pop(0)
-                            job = start_job(
-                                job, gpu_index=gpu.index, log_dir=config.log_dir, repo_dir=config.repo_dir, env_file=config.env_file
-                            )
-                            jobs_to_update.append(job)
-                            started_count += 1
-                            if job.status == "running":
-                                logger.info(f"Started job {job.id} with command '{job.command}' on GPU {gpu.index}")
-
-                    if started_count > 0:
-                        logger.info(f"Started {started_count} new jobs")
-                        update_jobs_in_state(state, jobs=jobs_to_update)
-                        save_state(state, state_path=config.state_path)
-
-            except Exception as e:
-                logger.error(f"Scheduler error: {e}")
-        else:
-            logger.info("Scheduler is paused")
-
-        await asyncio.sleep(config.refresh_rate)
-
-
 @contextlib.asynccontextmanager
 async def lifespan(app: fa.FastAPI):
-    scheduler_task = asyncio.create_task(job_scheduler())
+    scheduler_task = asyncio.create_task(job_scheduler(state, config))
     logger.info("Nexus service started")
     yield
     scheduler_task.cancel()
@@ -240,7 +170,7 @@ async def kill_running_jobs(job_ids: list[str]):
             job.error_message = "Killed by user"
             killed.append(job.id)
             killed_jobs.append(job)
-            cleanup_repo(job_repo_dir=get_job_repo_dir(config.repo_dir, job_id=job.id))
+            cleanup_repo(job_repo_dir=config.repo_dir / job.id)
 
         except Exception as e:
             logger.error(f"Failed to kill job {job.id}: {e}")

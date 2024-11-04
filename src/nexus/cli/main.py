@@ -1,5 +1,4 @@
 import argparse
-import toml
 import hashlib
 import importlib.metadata
 import itertools
@@ -13,6 +12,7 @@ import typing
 
 import base58
 import requests
+import toml
 from termcolor import colored
 
 # Types

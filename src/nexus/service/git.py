@@ -1,6 +1,6 @@
+import pathlib
 import re
 import shutil
-import pathlib
 
 from nexus.service.logger import logger
 

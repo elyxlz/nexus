@@ -12,6 +12,7 @@ from nexus.service.git import cleanup_repo
 from nexus.service.logger import logger
 
 
+# Utility functions
 def generate_job_id() -> str:
     """Generate a unique job ID using timestamp and random bytes"""
     timestamp = str(time.time()).encode()
@@ -32,6 +33,11 @@ def parse_env_file(env_file: pathlib.Path) -> dict:
     return env
 
 
+def get_job_session_name(job_id: str) -> str:
+    return f"nexus_job_{job_id}"
+
+
+# Core job lifecycle functions
 def create_job(
     command: str,
     repo_url: str,
@@ -52,15 +58,8 @@ def create_job(
         error_message=None,
         repo_url=repo_url,
         git_tag=git_tag,
+        wandb_url=None,
     )
-
-
-def get_job_session_name(job_id: str) -> str:
-    return f"nexus_job_{job_id}"
-
-
-def get_job_repo_dir(repo_dir: pathlib.Path, job_id: str) -> pathlib.Path:
-    return repo_dir / job_id
 
 
 def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: pathlib.Path, env_file: pathlib.Path) -> models.Job:
@@ -72,8 +71,8 @@ def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: 
     job_log_dir.mkdir(parents=True, exist_ok=True)
     log = job_log_dir / "output.log"
 
-    job_dir = get_job_repo_dir(repo_dir, job_id=job.id)
-    job_dir.mkdir(parents=True, exist_ok=True)
+    job_repo_dir = repo_dir / job.id
+    job_repo_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         env = os.environ.copy()
@@ -85,8 +84,8 @@ def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: 
         script_path = job_log_dir / "run.sh"
         script_content = f"""#!/bin/bash
 set -e  # Exit on error
-git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {job.repo_url} "{job_dir}"
-cd "{job_dir}"
+git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {job.repo_url} "{job_repo_dir}"
+cd "{job_repo_dir}"
 script -f -q -c "{job.command}" "{log}"
 """
         script_path.write_text(script_content)
@@ -102,11 +101,23 @@ script -f -q -c "{job.command}" "{log}"
         job.status = "failed"
         job.error_message = str(e)
         job.completed_at = dt.datetime.now().timestamp()
-        cleanup_repo(job_dir)
+        cleanup_repo(job_repo_dir)
         logger.error(f"Failed to start job {job.id}: {e}")
         raise
 
     return job
+
+
+# Job status and monitoring functions
+def is_job_running(job: models.Job) -> bool:
+    """Check if a job's screen session is still running"""
+    session_name = get_job_session_name(job.id)
+
+    try:
+        output = subprocess.check_output(["screen", "-ls", session_name], stderr=subprocess.DEVNULL, text=True)
+        return session_name in output
+    except subprocess.CalledProcessError:
+        return False
 
 
 def update_job_status(job: models.Job, log_dir: pathlib.Path) -> models.Job:
@@ -154,17 +165,6 @@ def get_job_logs(job: models.Job, log_dir: pathlib.Path) -> str | None:
     return output
 
 
-def is_job_running(job: models.Job) -> bool:
-    """Check if a job's screen session is still running"""
-    session_name = get_job_session_name(job.id)
-
-    try:
-        output = subprocess.check_output(["screen", "-ls", session_name], stderr=subprocess.DEVNULL, text=True)
-        return session_name in output
-    except subprocess.CalledProcessError:
-        return False
-
-
 def kill_job(job: models.Job, repo_dir: pathlib.Path) -> None:
     """Kill a running job"""
     session_name = get_job_session_name(job.id)
@@ -173,6 +173,6 @@ def kill_job(job: models.Job, repo_dir: pathlib.Path) -> None:
         job.status = "failed"
         job.completed_at = dt.datetime.now().timestamp()
         job.error_message = "Killed by user"
-        cleanup_repo(get_job_repo_dir(repo_dir, job_id=job.id))
+        cleanup_repo(job_repo_dir=repo_dir / job.id)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to kill job: {e}")

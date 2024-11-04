@@ -15,6 +15,7 @@ class Job(pyd.BaseModel):
     gpu_index: int | None
     exit_code: int | None
     error_message: str | None
+    wandb_url: str | None
 
 
 class GpuInfo(pyd.BaseModel):
