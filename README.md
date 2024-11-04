@@ -7,19 +7,18 @@
 - [x] freeze git states when adding jobs
 - [x] if -r in command it bugs out thinking its repeat
 - [x] runtime doesnt update if gpu is blacklisted
-- [ ] Classify failed jobs
+- [x] Classify failed jobs
 - [ ] multi user support
 - [ ] Webhooks for starting, completed, and failed jobs (for discord)
+- [ ] automatically detect wandb runs
 - [ ] Automatically check for updates
 - [ ] a way to quickly find the logs of recent crashes
 - [ ] filter history with command regex
 - [ ] multi gpu jobs
-- [ ] share wandb run id
-- [ ] automatically detect wandb runs
 - [ ] dependent jobs (a after b is done)
 - [ ] ensure cli and api version align, else restart
 - [ ] refactor, move more things away from cli and to the api
-- [ ] prompt yes or now before removing, killing, or adding
+- [ ] prompt yes or no before removing, killing, or adding
 - [ ] put runtime and time started on same line
 - [ ] sqlite for state management
 - [ ] multiline bash

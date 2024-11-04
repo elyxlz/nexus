@@ -25,6 +25,11 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
                 logger.info(format_job_action(updated_job, action="completed"))
             else:
                 logger.error(format_job_action(updated_job, action="failed"))
+                log_file = config.log_dir / "jobs" / updated_job.id / "output.log"
+                if log_file.exists():
+                    with open(log_file, "r") as f:
+                        last_lines = f.readlines()[-5:]
+                    logger.error(f"Last 5 lines of job log:\n{''.join(last_lines)}")
 
             cleanup_repo(job_repo_dir=config.repo_dir / updated_job.id)
             jobs_to_update.append(updated_job)
