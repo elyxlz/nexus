@@ -1,4 +1,5 @@
 import asyncio
+import pathlib
 
 from nexus.service import models
 from nexus.service.config import NexusServiceConfig
@@ -12,6 +13,7 @@ from nexus.service.state import (
     save_state,
     update_jobs_in_state,
 )
+from nexus.service.wandb import find_wandb_run_by_nexus_id
 
 
 async def update_running_jobs(state: models.ServiceState, config: NexusServiceConfig):
@@ -38,6 +40,33 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
         update_jobs_in_state(state, jobs=jobs_to_update)
         save_state(state, state_path=config.state_path)
         logger.debug(f"Updated status for {len(jobs_to_update)} completed jobs")
+
+
+async def update_wandb_urls(state: models.ServiceState, config: NexusServiceConfig) -> None:
+    """Update W&B URLs for running jobs that don't have them yet."""
+    jobs_to_update = []
+
+    # Directories to search for W&B files
+    search_dirs = [
+        str(config.jobs_dir),  # Search in job directories
+        str(pathlib.Path.home() / "wandb"),  # Global wandb directory
+    ]
+
+    # Only check running jobs that don't have a W&B URL yet
+    for job in [j for j in state.jobs if j.status == "running" and not j.wandb_url]:
+        job_repo_dir = config.jobs_dir / job.id / "repo"
+        if job_repo_dir.exists():
+            search_dirs.append(str(job_repo_dir))
+
+        wandb_url = find_wandb_run_by_nexus_id(search_dirs, job.id)
+        if wandb_url:
+            job.wandb_url = wandb_url
+            jobs_to_update.append(job)
+            logger.info(f"Associated job {job.id} with W&B run: {wandb_url}")
+
+    if jobs_to_update:
+        update_jobs_in_state(state, jobs=jobs_to_update)
+        save_state(state, state_path=config.state_path)
 
 
 async def clean_old_jobs(state: models.ServiceState, config: NexusServiceConfig):
@@ -85,6 +114,7 @@ async def start_queued_jobs(state: models.ServiceState, config: NexusServiceConf
 async def process_scheduler_tick(state: models.ServiceState, config: NexusServiceConfig):
     """Process a single scheduler iteration."""
     await update_running_jobs(state, config)
+    await update_wandb_urls(state, config)  # Add W&B URL detection
     await clean_old_jobs(state, config)
     await start_queued_jobs(state, config)
 

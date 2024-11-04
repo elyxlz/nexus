@@ -5,9 +5,12 @@ import time
 
 from nexus.service import models
 
+from nexus.service.logger import logger
 
-def load_state(state_path: pathlib.Path) -> models.ServiceState:
-    """Load service state from disk"""
+
+def create_default_state(state_path: pathlib.Path) -> models.ServiceState:
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.touch(exist_ok=True)
 
     default_state = models.ServiceState(
         status="running",
@@ -16,19 +19,28 @@ def load_state(state_path: pathlib.Path) -> models.ServiceState:
         is_paused=False,
         last_updated=0.0,
     )
+    return default_state
+
+
+def load_state(state_path: pathlib.Path) -> models.ServiceState:
+    """Load service state from disk"""
 
     if not state_path.exists():
-        return default_state
+        logger.info("State file not found. Initializing default.")
+        return create_default_state(state_path)
 
     try:
         data = json.loads(state_path.read_text())
         state = models.ServiceState.model_validate(data)
+        logger.info("Successfully loaded state from disk.")
         return state
     except (json.JSONDecodeError, ValueError):
+        logger.warning("Failed to load state from disk. Initializing default.")
         if state_path.exists():
             backup_path = state_path.with_suffix(".json.bak")
             state_path.rename(backup_path)
-        return default_state
+            logger.info(f"Backed up corrupted state file to {backup_path}")
+        return create_default_state(state_path)
 
 
 def save_state(state: models.ServiceState, state_path: pathlib.Path) -> None:

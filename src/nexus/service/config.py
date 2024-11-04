@@ -72,10 +72,6 @@ def load_config() -> NexusServiceConfig:
     # Ensure directories exist
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
-    if config.state_path.suffix:  # If it's a file path (has extension)
-        config.state_path.parent.mkdir(parents=True, exist_ok=True)
-        config.state_path.touch(exist_ok=True)
-
     # Load environment variables
     dotenv.load_dotenv(config.env_file)
 

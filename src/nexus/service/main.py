@@ -59,12 +59,13 @@ app = fa.FastAPI(
 # Service Endpoints
 @app.get("/v1/service/status", response_model=models.ServiceStatusResponse)
 async def get_status():
+    logger.info("Retrieving service status")
     gpus = get_gpus(state)
     queued = sum(1 for j in state.jobs if j.status == "queued")
     running = sum(1 for j in state.jobs if j.status == "running")
     completed = sum(1 for j in state.jobs if j.status == "completed")
 
-    return models.ServiceStatusResponse(
+    response = models.ServiceStatusResponse(
         running=True,
         gpu_count=len(gpus),
         queued_jobs=queued,
@@ -72,15 +73,21 @@ async def get_status():
         completed_jobs=completed,
         is_paused=state.is_paused,
     )
+    logger.info(f"Service status: {response}")
+    return response
 
 
 @app.get("/v1/service/logs", response_model=models.ServiceLogsResponse)
 async def get_service_logs():
+    logger.info("Retrieving service logs")
     try:
         nexus_dir = pathlib.Path.home() / ".nexus"
         log_path = nexus_dir / "service.log"
-        return models.ServiceLogsResponse(logs=log_path.read_text() if log_path.exists() else "")
+        logs = log_path.read_text() if log_path.exists() else ""
+        logger.info(f"Service logs retrieved, size: {len(logs)} characters")
+        return models.ServiceLogsResponse(logs=logs)
     except Exception as e:
+        logger.error(f"Error retrieving service logs: {e}")
         raise fa.HTTPException(status_code=500, detail=str(e))
 
 
@@ -106,11 +113,13 @@ async def list_jobs(
     status: typing.Literal["queued", "running", "completed", "failed"] | None = None,
     gpu_index: int | None = None,
 ):
+    logger.info(f"Listing jobs with status: {status}, gpu_index: {gpu_index}")
     filtered_jobs = state.jobs
     if status:
         filtered_jobs = [j for j in filtered_jobs if j.status == status]
     if gpu_index is not None:
         filtered_jobs = [j for j in filtered_jobs if j.gpu_index == gpu_index]
+    logger.info(f"Found {len(filtered_jobs)} jobs matching criteria")
     return filtered_jobs
 
 
@@ -141,9 +150,12 @@ async def add_jobs(job_request: models.JobsRequest):
 
 @app.get("/v1/jobs/{job_id}", response_model=models.Job)
 async def get_job(job_id: str):
+    logger.info(f"Retrieving job with id: {job_id}")
     job = next((j for j in state.jobs if j.id == job_id), None)
     if not job:
+        logger.warning(f"Job not found: {job_id}")
         raise fa.HTTPException(status_code=404, detail="Job not found")
+    logger.info(f"Job found: {job}")
     return job
 
 
@@ -233,16 +245,19 @@ async def remove_gpu_blacklist(gpu_indexes: list[int]):
 
 @app.delete("/v1/jobs/queued", response_model=models.JobQueueActionResponse)
 async def remove_queued_jobs(job_ids: list[str]):
+    logger.info(f"Removing queued jobs: {job_ids}")
     removed = []
     failed = []
 
     for job_id in job_ids:
         job = next((j for j in state.jobs if j.id == job_id), None)
         if not job:
+            logger.warning(f"Job not found: {job_id}")
             failed.append({"id": job_id, "error": "Job not found"})
             continue
 
         if job.status != "queued":
+            logger.warning(f"Job {job_id} is not queued, status: {job.status}")
             failed.append({"id": job_id, "error": "Job is not queued"})
             continue
 
@@ -250,14 +265,19 @@ async def remove_queued_jobs(job_ids: list[str]):
 
     if removed:
         remove_jobs_from_state(state, job_ids=removed)
+        logger.info(f"Removed {len(removed)} queued jobs")
 
+    logger.info(f"Job removal results - Removed: {len(removed)}, Failed: {len(failed)}")
     return models.JobQueueActionResponse(removed=removed, failed=failed)
 
 
 # GPU Endpoints
 @app.get("/v1/gpus", response_model=list[models.GpuInfo])
 async def list_gpus():
-    return get_gpus(state)
+    logger.info("Listing available GPUs")
+    gpus = get_gpus(state)
+    logger.info(f"Found {len(gpus)} GPUs")
+    return gpus
 
 
 @app.post("/v1/service/stop", response_model=models.ServiceActionResponse)
