@@ -1,5 +1,4 @@
 import asyncio
-import pathlib
 
 from nexus.service import models
 from nexus.service.config import NexusServiceConfig
@@ -13,7 +12,7 @@ from nexus.service.state import (
     save_state,
     update_jobs_in_state,
 )
-from nexus.service.wandb import find_wandb_run_by_nexus_id
+from nexus.service.wandb_finder import find_wandb_run_by_nexus_id
 
 
 async def update_running_jobs(state: models.ServiceState, config: NexusServiceConfig):
@@ -47,10 +46,7 @@ async def update_wandb_urls(state: models.ServiceState, config: NexusServiceConf
     jobs_to_update = []
 
     # Directories to search for W&B files
-    search_dirs = [
-        str(config.jobs_dir),  # Search in job directories
-        str(pathlib.Path.home() / "wandb"),  # Global wandb directory
-    ]
+    search_dirs = []
 
     # Only check running jobs that don't have a W&B URL yet
     for job in [j for j in state.jobs if j.status == "running" and not j.wandb_url]:
@@ -58,7 +54,7 @@ async def update_wandb_urls(state: models.ServiceState, config: NexusServiceConf
         if job_repo_dir.exists():
             search_dirs.append(str(job_repo_dir))
 
-        wandb_url = find_wandb_run_by_nexus_id(search_dirs, job.id)
+        wandb_url = find_wandb_run_by_nexus_id(search_dirs, nexus_job_id=job.id)
         if wandb_url:
             job.wandb_url = wandb_url
             jobs_to_update.append(job)
