@@ -8,6 +8,7 @@ import time
 import base58
 
 from nexus.service import models
+from nexus.service.format import format_job_action
 from nexus.service.git import cleanup_repo
 from nexus.service.logger import logger
 
@@ -102,6 +103,7 @@ script -f -q -c "{job.command}" "{log}"
         job.error_message = str(e)
         job.completed_at = dt.datetime.now().timestamp()
         cleanup_repo(job_repo_dir)
+        logger.info(format_job_action(job, "failed"))
         logger.error(f"Failed to start job {job.id}: {e}")
         raise
 

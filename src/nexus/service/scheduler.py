@@ -2,6 +2,7 @@ import asyncio
 
 from nexus.service import models
 from nexus.service.config import NexusServiceConfig
+from nexus.service.format import format_job_action
 from nexus.service.git import cleanup_repo
 from nexus.service.gpu import get_available_gpus
 from nexus.service.job import start_job, update_job_status_if_completed
@@ -68,7 +69,7 @@ async def start_queued_jobs(state: models.ServiceState, config: NexusServiceConf
 
         started_jobs.append(started_job)
         if started_job.status == "running":
-            logger.info(f"Started job {started_job.id} with command '{started_job.command}' on GPU {gpu.index}")
+            logger.info(format_job_action(job, "started"))
 
     if started_jobs:
         update_jobs_in_state(state, jobs=started_jobs)
