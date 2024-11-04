@@ -14,6 +14,11 @@
 - [ ] Automatically check for updates
 - [ ] a way to quickly find the logs of recent crashes
 - [ ] filter history with command regex
+- [ ] clean up git tags that are unused
+- [ ] if a job doesnt have wandb after 5 minutes, stop pinging it
+- [ ] make webhooks prettier
+- [ ] make sure the job started webhook waits
+- [ ] put wandb url in nexus status at cli
 - [ ] multi gpu jobs
 - [ ] dependent jobs (a after b is done)
 - [ ] ensure cli and api version align, else restart

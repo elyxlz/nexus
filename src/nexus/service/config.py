@@ -14,12 +14,7 @@ class NexusServiceConfig(pyds.BaseSettings):
     history_limit: int = pyd.Field(default=1000)
     host: str = pyd.Field(default="localhost")
     port: int = pyd.Field(default=54322)
-
-    model_config = pyds.SettingsConfigDict(
-        env_file=str(pathlib.Path.home() / ".nexus" / ".env"),
-        env_file_encoding="utf-8",
-        extra="allow",  # Allow extra fields from .env
-    )
+    webhooks_enabled: bool = pyd.Field(default=True)
 
     @classmethod
     def settings_customise_sources(
@@ -42,7 +37,9 @@ def create_default_config() -> None:
     # Create nexus directory if it doesn't exist
     config_dir.mkdir(parents=True, exist_ok=True)
 
-    DEFAULT_ENV_TEMPLATE = """# Nexus Service Environment Configuration"""
+    DEFAULT_ENV_TEMPLATE = """# Nexus Service Environment Configuration
+    NEXUS_DISCORD_WEBHOOK_URL=
+    """
 
     # Create default .env if it doesn't exist
     if not env_path.exists():
@@ -59,7 +56,8 @@ state_path = "{config.state_path}"
 env_file = "{config.env_file}"
 refresh_rate = {config.refresh_rate}
 host = "{config.host}"
-port = {config.port}
+port = "{config.port}"
+webhooks_enabled = "{config.webhooks_enabled}"
 """)
 
 

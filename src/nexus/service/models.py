@@ -18,6 +18,7 @@ class Job(pyd.BaseModel):
     exit_code: int | None
     error_message: str | None
     wandb_url: str | None
+    user: str | None
 
 
 class GpuInfo(pyd.BaseModel):
@@ -45,6 +46,7 @@ class JobsRequest(pyd.BaseModel):
     commands: list[str]
     git_repo_url: str
     git_tag: str
+    user: str | None
 
 
 class ServiceLogsResponse(pyd.BaseModel):

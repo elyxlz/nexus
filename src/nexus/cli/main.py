@@ -253,7 +253,7 @@ def ensure_git_reproducibility(id: str, dirty: bool) -> tuple[str, str]:
         raise RuntimeError(f"Failed to create/push git tag: {e}")
 
 
-def add_jobs(commands: list[str], repeat: int, dirty: bool) -> None:
+def add_jobs(commands: list[str], repeat: int, dirty: bool, user: str | None) -> None:
     """Add job(s) to the queue with git information"""
     try:
         # Generate a single job ID for all commands in this batch
@@ -268,11 +268,7 @@ def add_jobs(commands: list[str], repeat: int, dirty: bool) -> None:
             return
 
         # Prepare request payload
-        payload = {
-            "commands": expanded_commands,
-            "git_repo_url": git_repo_url,
-            "git_tag": tag_name,
-        }
+        payload = {"commands": expanded_commands, "git_repo_url": git_repo_url, "git_tag": tag_name, "user": user}
 
         # Submit to API
         response = requests.post(f"{get_api_base_url()}/jobs", json=payload)
@@ -655,6 +651,7 @@ def create_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("commands", nargs="+", help='Command to add, e.g., "python train.py"')
     add_parser.add_argument("-r", "--repeat", type=int, default=1, help="Repeat the command multiple times")
     add_parser.add_argument("-d", "--dirty", action="store_true", help="Allow adding jobs with unstaged changes")
+    add_parser.add_argument("-u", "--user", help="User")  # New argument
 
     # Kill jobs
     kill_parser = subparsers.add_parser("kill", help="Kill jobs by GPU indices, job IDs, or command regex")
@@ -702,7 +699,7 @@ def main() -> None:
     command_handlers = {
         "stop": lambda: stop_service(),
         "restart": lambda: restart_service(),
-        "add": lambda: add_jobs(args.commands, repeat=args.repeat, dirty=args.dirty),
+        "add": lambda: add_jobs(args.commands, repeat=args.repeat, dirty=args.dirty, user=args.user),
         "queue": lambda: show_queue(),
         "history": lambda: show_history(),
         "kill": lambda: kill_jobs(args.targets),

@@ -6,6 +6,7 @@ from nexus.service.format import format_job_action
 from nexus.service.git import cleanup_repo
 from nexus.service.gpu import get_available_gpus
 from nexus.service.job import start_job, update_job_status_if_completed
+from nexus.service.webhooks import notify_job_started, notify_job_completed, notify_job_failed
 from nexus.service.logger import logger
 from nexus.service.state import (
     clean_old_completed_jobs_in_state,
@@ -24,6 +25,9 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
         if updated_job.status != "running":
             if updated_job.status == "completed":
                 logger.info(format_job_action(updated_job, action="completed"))
+
+                if config.webhooks_enabled:
+                    await notify_job_completed(updated_job)
             else:
                 logger.error(format_job_action(updated_job, action="failed"))
                 log_file = config.jobs_dir / updated_job.id / "output.log"
@@ -31,6 +35,9 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
                     with open(log_file, "r") as f:
                         last_lines = f.readlines()[-5:]
                     logger.error(f"Last 10 lines of job log:\n{''.join(last_lines)}")
+
+                if config.webhooks_enabled:
+                    await notify_job_failed(updated_job, config.jobs_dir)
 
             cleanup_repo(config.jobs_dir, job_id=updated_job.id)
             jobs_to_update.append(updated_job)
@@ -98,7 +105,8 @@ async def start_queued_jobs(state: models.ServiceState, config: NexusServiceConf
         started_job = start_job(job, gpu_index=gpu.index, jobs_dir=config.jobs_dir, env_file=config.env_file)
 
         started_jobs.append(started_job)
-        if started_job.status == "running":
+        if started_job.status == "running" and config.webhooks_enabled:
+            await notify_job_started(started_job)
             logger.info(format_job_action(job, action="started"))
 
     if started_jobs:

@@ -125,13 +125,13 @@ async def list_jobs(
 
 @app.post("/v1/jobs", response_model=list[models.Job])
 async def add_jobs(job_request: models.JobsRequest):
-    """Add multiple jobs to the queue with git repository information"""
     if not validate_git_url(job_request.git_repo_url):
         raise fa.HTTPException(status_code=400, detail=f"Invalid git repository URL: {job_request.git_repo_url}")
 
     try:
         jobs = [
-            create_job(command=command, git_repo_url=job_request.git_repo_url, git_tag=job_request.git_tag) for command in job_request.commands
+            create_job(command=command, git_repo_url=job_request.git_repo_url, git_tag=job_request.git_tag, user=job_request.user)
+            for command in job_request.commands
         ]
 
         add_jobs_to_state(state, jobs=jobs)

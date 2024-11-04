@@ -39,11 +39,7 @@ def get_job_session_name(job_id: str) -> str:
 
 
 # Core job lifecycle functions
-def create_job(
-    command: str,
-    git_repo_url: str,
-    git_tag: str,
-) -> models.Job:
+def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None) -> models.Job:
     """Create a new job with the given command and git info"""
     job_id = generate_job_id()
 
@@ -60,6 +56,7 @@ def create_job(
         git_repo_url=git_repo_url,
         git_tag=git_tag,
         wandb_url=None,
+        user=user,
     )
 
 
