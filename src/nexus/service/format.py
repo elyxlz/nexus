@@ -1,4 +1,5 @@
 import datetime as dt
+from typing import Literal
 
 from nexus.service import models
 
@@ -33,7 +34,7 @@ def format_job_status(status: models.JobStatus) -> str:
     return status.upper()
 
 
-def format_job_action(job: models.Job, action: str) -> str:
+def format_job_action(job: models.Job, action: Literal["started", "completed", "failed"]) -> str:
     """Format a job action log message with consistent structure."""
     runtime = calculate_runtime(job)
     gpu_info = f" on GPU {job.gpu_index}" if job.gpu_index is not None else ""
@@ -46,7 +47,7 @@ def format_job_action(job: models.Job, action: str) -> str:
 
     error_info = f" ({job.error_message})" if job.error_message else ""
 
-    return f"models.Job {job.id} {action}{gpu_info}{time_info}: {job.command}{error_info}"
+    return f"Job {job.id} {action}{gpu_info}{time_info}: COMMAND: {job.command}{error_info}"
 
 
 def format_job_state(job: models.Job) -> str:
