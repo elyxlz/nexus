@@ -57,7 +57,7 @@ async def job_scheduler():
                             cleanup_repo(job_repo_dir=get_job_repo_dir(config.repo_dir, job_id=job.id))
                             jobs_to_update.append(job)
                             completed_count += 1
-                            logger.info(f"Job {job.id} failed")
+                            logger.info(f"Job {job.id} failed", job.error_message)
 
                 if completed_count > 0:
                     update_jobs_in_state(state, jobs=jobs_to_update)
@@ -173,7 +173,7 @@ async def resume_service():
 # Job Endpoints
 @app.get("/v1/jobs", response_model=list[models.Job])
 async def list_jobs(
-    status: typing.Literal["queued", "running", "completed"] | None = None,
+    status: typing.Literal["queued", "running", "completed", "failed"] | None = None,
     gpu_index: int | None = None,
 ):
     filtered_jobs = state.jobs
@@ -243,6 +243,8 @@ async def kill_running_jobs(job_ids: list[str]):
             job.error_message = "Killed by user"
             killed.append(job.id)
             killed_jobs.append(job)
+            cleanup_repo(job_repo_dir=get_job_repo_dir(config.repo_dir, job_id=job.id))
+
         except Exception as e:
             logger.error(f"Failed to kill job {job.id}: {e}")
             failed.append({"id": job_id, "error": str(e)})
