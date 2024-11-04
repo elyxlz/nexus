@@ -19,19 +19,19 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
     jobs_to_update = []
 
     for job in [j for j in state.jobs if j.status == "running"]:
-        updated_job = update_job_status_if_completed(job, config.log_dir)
+        updated_job = update_job_status_if_completed(job, jobs_dir=config.jobs_dir)
         if updated_job.status != "running":
             if updated_job.status == "completed":
                 logger.info(format_job_action(updated_job, action="completed"))
             else:
                 logger.error(format_job_action(updated_job, action="failed"))
-                log_file = config.log_dir / "jobs" / updated_job.id / "output.log"
+                log_file = config.jobs_dir / updated_job.id / "output.log"
                 if log_file.exists():
                     with open(log_file, "r") as f:
                         last_lines = f.readlines()[-5:]
-                    logger.error(f"Last 5 lines of job log:\n{''.join(last_lines)}")
+                    logger.error(f"Last 10 lines of job log:\n{''.join(last_lines)}")
 
-            cleanup_repo(job_repo_dir=config.repo_dir / updated_job.id)
+            cleanup_repo(config.jobs_dir, job_id=updated_job.id)
             jobs_to_update.append(updated_job)
 
     if jobs_to_update:
@@ -70,7 +70,7 @@ async def start_queued_jobs(state: models.ServiceState, config: NexusServiceConf
             break
 
         job = queued_jobs.pop(0)
-        started_job = start_job(job, gpu_index=gpu.index, log_dir=config.log_dir, repo_dir=config.repo_dir, env_file=config.env_file)
+        started_job = start_job(job, gpu_index=gpu.index, jobs_dir=config.jobs_dir, env_file=config.env_file)
 
         started_jobs.append(started_job)
         if started_job.status == "running":
@@ -79,8 +79,7 @@ async def start_queued_jobs(state: models.ServiceState, config: NexusServiceConf
     if started_jobs:
         update_jobs_in_state(state, jobs=started_jobs)
         save_state(state, state_path=config.state_path)
-        logger.info(f"Started {len(started_jobs)} new jobs")
-        logger.info(f"Remaining jobs in queue: {len(queued_jobs)}")
+        logger.info(f"Started {len(started_jobs)} new jobs. Remaining jobs in queue: {len(queued_jobs)}")
 
 
 async def process_scheduler_tick(state: models.ServiceState, config: NexusServiceConfig):

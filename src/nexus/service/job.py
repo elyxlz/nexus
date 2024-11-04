@@ -63,16 +63,16 @@ def create_job(
     )
 
 
-def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: pathlib.Path, env_file: pathlib.Path) -> models.Job:
+def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file: pathlib.Path) -> models.Job:
     """Start a job on a specific GPU"""
     session_name = get_job_session_name(job.id)
 
     # Setup logging directory
-    job_log_dir = log_dir / "jobs" / job.id
-    job_log_dir.mkdir(parents=True, exist_ok=True)
-    log = job_log_dir / "output.log"
+    job_dir = jobs_dir / job.id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    log = job_dir / "output.log"
 
-    job_repo_dir = repo_dir / job.id
+    job_repo_dir = job_dir / "repo"
     job_repo_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -82,7 +82,7 @@ def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: 
         env = {k: v for k, v in env.items() if not k.startswith("SCREEN_")}
 
         # Create the job script with git clone and command execution
-        script_path = job_log_dir / "run.sh"
+        script_path = job_dir / "run.sh"
         script_content = f"""#!/bin/bash
 set -e  # Exit on error
 git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {job.git_repo_url} "{job_repo_dir}"
@@ -102,7 +102,7 @@ script -f -q -c "{job.command}" "{log}"
         job.status = "failed"
         job.error_message = str(e)
         job.completed_at = dt.datetime.now().timestamp()
-        cleanup_repo(job_repo_dir)
+        cleanup_repo(jobs_dir, job_id=job.id)
         logger.info(format_job_action(job, "failed"))
         logger.error(f"Failed to start job {job.id}: {e}")
         raise
@@ -122,13 +122,13 @@ def is_job_running(job: models.Job) -> bool:
         return False
 
 
-def update_job_status_if_completed(job: models.Job, log_dir: pathlib.Path) -> models.Job:
+def update_job_status_if_completed(job: models.Job, jobs_dir: pathlib.Path) -> models.Job:
     """Check if a job has completed and update its status"""
     if is_job_running(job):
         return job
 
     # Read the output log to get exit code
-    output_log = log_dir / "jobs" / job.id / "output.log"
+    output_log = jobs_dir / job.id / "output.log"
     if output_log.exists():
         try:
             content = output_log.read_text()
@@ -155,19 +155,19 @@ def update_job_status_if_completed(job: models.Job, log_dir: pathlib.Path) -> mo
     return job
 
 
-def get_job_logs(job: models.Job, log_dir: pathlib.Path) -> str | None:
+def get_job_logs(job: models.Job, jobs_dir: pathlib.Path) -> str | None:
     """Get logs for a job"""
-    job_log_dir = log_dir / "jobs" / job.id
+    job_dir = jobs_dir / job.id
 
-    if not job_log_dir:
+    if not job_dir:
         return None
 
-    logs = job_log_dir / "output.log"
+    logs = job_dir / "output.log"
     output = logs.read_text() if logs.exists() else None
     return output
 
 
-def kill_job(job: models.Job, repo_dir: pathlib.Path) -> None:
+def kill_job(job: models.Job, jobs_dir: pathlib.Path) -> None:
     """Kill a running job"""
     session_name = get_job_session_name(job.id)
     try:
@@ -175,6 +175,6 @@ def kill_job(job: models.Job, repo_dir: pathlib.Path) -> None:
         job.status = "failed"
         job.completed_at = dt.datetime.now().timestamp()
         job.error_message = "Killed by user"
-        cleanup_repo(job_repo_dir=repo_dir / job.id)
+        cleanup_repo(jobs_dir=jobs_dir, job_id=job.id)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to kill job: {e}")

@@ -1,4 +1,5 @@
 import asyncio
+import pathlib
 import contextlib
 import datetime as dt
 import importlib.metadata
@@ -76,7 +77,8 @@ async def get_status():
 @app.get("/v1/service/logs", response_model=models.ServiceLogsResponse)
 async def get_service_logs():
     try:
-        log_path = config.log_dir / "service.log"
+        nexus_dir = pathlib.Path.home() / ".nexus"
+        log_path = nexus_dir / "service.log"
         return models.ServiceLogsResponse(logs=log_path.read_text() if log_path.exists() else "")
     except Exception as e:
         raise fa.HTTPException(status_code=500, detail=str(e))
@@ -151,7 +153,7 @@ async def get_job_logs_endpoint(job_id: str):
     if not job:
         raise fa.HTTPException(status_code=404, detail="Job not found")
 
-    logs = get_job_logs(job, log_dir=config.log_dir)
+    logs = get_job_logs(job, jobs_dir=config.jobs_dir)
     return models.JobLogsResponse(logs=logs or "")
 
 
@@ -172,13 +174,13 @@ async def kill_running_jobs(job_ids: list[str]):
             continue
 
         try:
-            kill_job(job, repo_dir=config.repo_dir)
+            kill_job(job, jobs_dir=config.jobs_dir)
             job.status = "failed"
             job.completed_at = dt.datetime.now().timestamp()
             job.error_message = "Killed by user"
             killed.append(job.id)
             killed_jobs.append(job)
-            cleanup_repo(job_repo_dir=config.repo_dir / job.id)
+            cleanup_repo(config.jobs_dir, job_id=job.id)
 
         except Exception as e:
             logger.error(f"Failed to kill job {job.id}: {e}")
