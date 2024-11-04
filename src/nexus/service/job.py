@@ -120,7 +120,7 @@ def is_job_running(job: models.Job) -> bool:
         return False
 
 
-def update_job_status(job: models.Job, log_dir: pathlib.Path) -> models.Job:
+def update_job_status_if_completed(job: models.Job, log_dir: pathlib.Path) -> models.Job:
     """Check if a job has completed and update its status"""
     if is_job_running(job):
         return job

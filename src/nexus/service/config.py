@@ -34,10 +34,6 @@ class NexusServiceConfig(pyds.BaseSettings):
         return (init_settings, env_settings, dotenv_settings, pyds.TomlConfigSettingsSource(settings_cls))
 
 
-DEFAULT_ENV_TEMPLATE = """# Nexus Service Environment Configuration
-"""
-
-
 def create_default_config() -> None:
     """Create default configuration files if they don't exist."""
     config_dir = pathlib.Path.home() / ".nexus"
@@ -46,6 +42,8 @@ def create_default_config() -> None:
 
     # Create nexus directory if it doesn't exist
     config_dir.mkdir(parents=True, exist_ok=True)
+
+    DEFAULT_ENV_TEMPLATE = """# Nexus Service Environment Configuration"""
 
     # Create default .env if it doesn't exist
     if not env_path.exists():

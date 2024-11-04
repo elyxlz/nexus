@@ -4,7 +4,7 @@ from nexus.service import models
 from nexus.service.config import NexusServiceConfig
 from nexus.service.git import cleanup_repo
 from nexus.service.gpu import get_available_gpus
-from nexus.service.job import start_job, update_job_status
+from nexus.service.job import start_job, update_job_status_if_completed
 from nexus.service.logger import logger
 from nexus.service.state import (
     clean_old_completed_jobs_in_state,
@@ -18,7 +18,7 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
     jobs_to_update = []
 
     for job in [j for j in state.jobs if j.status == "running"]:
-        updated_job = update_job_status(job, config.log_dir)
+        updated_job = update_job_status_if_completed(job, config.log_dir)
         if updated_job.status != "running":
             if updated_job.status == "completed":
                 logger.info(f"Job {job.id} completed successfully")
