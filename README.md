@@ -8,9 +8,9 @@
 - [x] if -r in command it bugs out thinking its repeat
 - [x] runtime doesnt update if gpu is blacklisted
 - [x] Classify failed jobs
-- [ ] multi user support
+- [x] automatically detect wandb runs
 - [ ] Webhooks for starting, completed, and failed jobs (for discord)
-- [ ] automatically detect wandb runs
+- [ ] multi user support
 - [ ] Automatically check for updates
 - [ ] a way to quickly find the logs of recent crashes
 - [ ] filter history with command regex
