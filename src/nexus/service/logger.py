@@ -1,4 +1,5 @@
 import logging
+import pathlib
 import os
 from logging.handlers import RotatingFileHandler
 
@@ -59,4 +60,5 @@ def create_service_logger(
 
 
 config = load_config()
-logger = create_service_logger(str(config.log_dir))
+nexus_dir = pathlib.Path.home() / ".nexus"
+logger = create_service_logger(str(nexus_dir))

@@ -2,19 +2,22 @@ import typing
 
 import pydantic as pyd
 
+JobStatus = typing.Literal["queued", "running", "completed", "failed"]
+
 
 class Job(pyd.BaseModel):
     id: str
     command: str
-    repo_url: str
+    git_repo_url: str
     git_tag: str
-    status: typing.Literal["queued", "running", "completed", "failed"]
+    status: JobStatus
     created_at: float
     started_at: float | None
     completed_at: float | None
     gpu_index: int | None
     exit_code: int | None
     error_message: str | None
+    wandb_url: str | None
 
 
 class GpuInfo(pyd.BaseModel):
@@ -40,7 +43,7 @@ class ServiceState(pyd.BaseModel):
 
 class JobsRequest(pyd.BaseModel):
     commands: list[str]
-    repo_url: str
+    git_repo_url: str
     git_tag: str
 
 

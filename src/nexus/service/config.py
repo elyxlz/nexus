@@ -7,9 +7,8 @@ import pydantic_settings as pyds
 
 
 class NexusServiceConfig(pyds.BaseSettings):
-    log_dir: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "logs")
+    jobs_dir: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "jobs")
     state_path: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "state.json")
-    repo_dir: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "repos")
     env_file: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / ".env")
     refresh_rate: int = pyd.Field(default=5)
     history_limit: int = pyd.Field(default=1000)
@@ -34,10 +33,6 @@ class NexusServiceConfig(pyds.BaseSettings):
         return (init_settings, env_settings, dotenv_settings, pyds.TomlConfigSettingsSource(settings_cls))
 
 
-DEFAULT_ENV_TEMPLATE = """# Nexus Service Environment Configuration
-"""
-
-
 def create_default_config() -> None:
     """Create default configuration files if they don't exist."""
     config_dir = pathlib.Path.home() / ".nexus"
@@ -46,6 +41,8 @@ def create_default_config() -> None:
 
     # Create nexus directory if it doesn't exist
     config_dir.mkdir(parents=True, exist_ok=True)
+
+    DEFAULT_ENV_TEMPLATE = """# Nexus Service Environment Configuration"""
 
     # Create default .env if it doesn't exist
     if not env_path.exists():
@@ -57,9 +54,8 @@ def create_default_config() -> None:
         # Write default config
         with open(config_path, "w") as f:
             f.write(f"""# Nexus Service Configuration
-log_dir = "{config.log_dir}"
+jobs_dir = "{config.jobs_dir}"
 state_path = "{config.state_path}"
-repo_dir = "{config.repo_dir}"
 env_file = "{config.env_file}"
 refresh_rate = {config.refresh_rate}
 host = "{config.host}"
@@ -74,8 +70,7 @@ def load_config() -> NexusServiceConfig:
     config = NexusServiceConfig()
 
     # Ensure directories exist
-    config.log_dir.mkdir(parents=True, exist_ok=True)
-    config.repo_dir.mkdir(parents=True, exist_ok=True)
+    config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
     if config.state_path.suffix:  # If it's a file path (has extension)
         config.state_path.parent.mkdir(parents=True, exist_ok=True)

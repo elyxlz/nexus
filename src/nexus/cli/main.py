@@ -1,5 +1,4 @@
 import argparse
-import toml
 import hashlib
 import importlib.metadata
 import itertools
@@ -13,6 +12,7 @@ import typing
 
 import base58
 import requests
+import toml
 from termcolor import colored
 
 # Types
@@ -229,23 +229,23 @@ def print_status_snapshot() -> None:
         print(colored(f"Error fetching status: {e}", "red"))
 
 
-def ensure_git_reproducibility(id: str) -> tuple[str, str]:
+def ensure_git_reproducibility(id: str, dirty: bool) -> tuple[str, str]:
     # Check for uncommitted changes
     result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
-    if result.stdout.strip():
+    if result.stdout.strip() and not dirty:
         changes = result.stdout.strip()
         raise RuntimeError(f"Uncommitted changes present in repository:\n{changes}\n" "Cannot create reproducible job without clean git state")
 
     # Get repository URL
     result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True, check=True)
-    repo_url = result.stdout.strip()
+    git_repo_url = result.stdout.strip()
 
     # Create and push tag
     tag_name = f"nexus-{id}"
     try:
         subprocess.run(["git", "tag", tag_name], check=True)
         subprocess.run(["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return repo_url, tag_name
+        return git_repo_url, tag_name
 
     except subprocess.CalledProcessError as e:
         # Try to clean up if tag was created but not pushed
@@ -253,14 +253,14 @@ def ensure_git_reproducibility(id: str) -> tuple[str, str]:
         raise RuntimeError(f"Failed to create/push git tag: {e}")
 
 
-def add_jobs(commands: list[str], repeat: int = 1) -> None:
+def add_jobs(commands: list[str], repeat: int, dirty: bool) -> None:
     """Add job(s) to the queue with git information"""
     try:
         # Generate a single job ID for all commands in this batch
         git_tag_id = generate_git_tag_id()
 
         # Ensure git state and create tag
-        repo_url, tag_name = ensure_git_reproducibility(git_tag_id)
+        git_repo_url, tag_name = ensure_git_reproducibility(git_tag_id, dirty=dirty)
 
         # Expand job commands
         expanded_commands = expand_job_commands(commands, repeat=repeat)
@@ -270,7 +270,7 @@ def add_jobs(commands: list[str], repeat: int = 1) -> None:
         # Prepare request payload
         payload = {
             "commands": expanded_commands,
-            "repo_url": repo_url,
+            "git_repo_url": git_repo_url,
             "git_tag": tag_name,
         }
 
@@ -654,6 +654,7 @@ def create_parser() -> argparse.ArgumentParser:
     add_parser = subparsers.add_parser("add", help="Add job(s) to queue")
     add_parser.add_argument("commands", nargs="+", help='Command to add, e.g., "python train.py"')
     add_parser.add_argument("-r", "--repeat", type=int, default=1, help="Repeat the command multiple times")
+    add_parser.add_argument("-d", "--dirty", action="store_true", help="Allow adding jobs with unstaged changes")
 
     # Kill jobs
     kill_parser = subparsers.add_parser("kill", help="Kill jobs by GPU indices, job IDs, or command regex")
@@ -701,7 +702,7 @@ def main() -> None:
     command_handlers = {
         "stop": lambda: stop_service(),
         "restart": lambda: restart_service(),
-        "add": lambda: add_jobs(args.commands, args.repeat),
+        "add": lambda: add_jobs(args.commands, repeat=args.repeat, dirty=args.dirty),
         "queue": lambda: show_queue(),
         "history": lambda: show_history(),
         "kill": lambda: kill_jobs(args.targets),
