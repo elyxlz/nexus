@@ -22,9 +22,9 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
         updated_job = update_job_status_if_completed(job, config.log_dir)
         if updated_job.status != "running":
             if updated_job.status == "completed":
-                logger.info(f"Job {job.id} completed successfully")
+                logger.info(format_job_action(updated_job, action="completed"))
             else:
-                logger.error(f"Job {job.id} failed: {updated_job.error_message}")
+                logger.info(format_job_action(updated_job, action="failed"))
 
             cleanup_repo(job_repo_dir=config.repo_dir / updated_job.id)
             jobs_to_update.append(updated_job)
@@ -32,7 +32,7 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
     if jobs_to_update:
         update_jobs_in_state(state, jobs=jobs_to_update)
         save_state(state, state_path=config.state_path)
-        logger.info(f"Updated status for {len(jobs_to_update)} completed jobs")
+        logger.debug(f"Updated status for {len(jobs_to_update)} completed jobs")
 
 
 async def clean_old_jobs(state: models.ServiceState, config: NexusServiceConfig):
@@ -69,7 +69,7 @@ async def start_queued_jobs(state: models.ServiceState, config: NexusServiceConf
 
         started_jobs.append(started_job)
         if started_job.status == "running":
-            logger.info(format_job_action(job, "started"))
+            logger.info(format_job_action(job, action="started"))
 
     if started_jobs:
         update_jobs_in_state(state, jobs=started_jobs)
