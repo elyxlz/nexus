@@ -1,6 +1,6 @@
 import logging
-import pathlib
 import os
+import pathlib
 from logging.handlers import RotatingFileHandler
 
 from colorlog import ColoredFormatter
