@@ -128,6 +128,8 @@ async def add_jobs(job_request: models.JobsRequest):
         for job in jobs:
             logger.info(format_job_action(job, action="added"))
 
+        logger.info(f"Added {len(jobs)} new jobs")
+
         return jobs
 
     except Exception as e:

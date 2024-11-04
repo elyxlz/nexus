@@ -75,6 +75,7 @@ async def start_queued_jobs(state: models.ServiceState, config: NexusServiceConf
         update_jobs_in_state(state, jobs=started_jobs)
         save_state(state, state_path=config.state_path)
         logger.info(f"Started {len(started_jobs)} new jobs")
+        logger.info(f"Remaining jobs in queue: {len(queued_jobs)}")
 
 
 async def process_scheduler_tick(state: models.ServiceState, config: NexusServiceConfig):
