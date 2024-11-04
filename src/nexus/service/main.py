@@ -11,6 +11,7 @@ import uvicorn
 from nexus.service import models
 from nexus.service.config import load_config
 from nexus.service.git import cleanup_repo, validate_git_url
+from nexus.service.format import format_job_action
 from nexus.service.gpu import get_gpus
 from nexus.service.job import (
     create_job,
@@ -118,10 +119,15 @@ async def add_jobs(job_request: models.JobsRequest):
         raise fa.HTTPException(status_code=400, detail=f"Invalid git repository URL: {job_request.git_repo_url}")
 
     try:
-        jobs = [create_job(command=command, git_repo_url=job_request.git_repo_url, git_tag=job_request.git_tag) for command in job_request.commands]
+        jobs = [
+            create_job(command=command, git_repo_url=job_request.git_repo_url, git_tag=job_request.git_tag) for command in job_request.commands
+        ]
 
         add_jobs_to_state(state, jobs=jobs)
-        logger.info(f"Added {len(jobs)} jobs to queue " f"(repo: {job_request.git_repo_url}, tag: {job_request.git_tag})")
+
+        for job in jobs:
+            logger.info(format_job_action(job, action="added"))
+
         return jobs
 
     except Exception as e:
