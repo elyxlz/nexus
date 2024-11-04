@@ -238,14 +238,14 @@ def ensure_git_reproducibility(id: str, dirty: bool) -> tuple[str, str]:
 
     # Get repository URL
     result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True, check=True)
-    repo_url = result.stdout.strip()
+    git_repo_url = result.stdout.strip()
 
     # Create and push tag
     tag_name = f"nexus-{id}"
     try:
         subprocess.run(["git", "tag", tag_name], check=True)
         subprocess.run(["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return repo_url, tag_name
+        return git_repo_url, tag_name
 
     except subprocess.CalledProcessError as e:
         # Try to clean up if tag was created but not pushed
@@ -260,7 +260,7 @@ def add_jobs(commands: list[str], repeat: int, dirty: bool) -> None:
         git_tag_id = generate_git_tag_id()
 
         # Ensure git state and create tag
-        repo_url, tag_name = ensure_git_reproducibility(git_tag_id, dirty=dirty)
+        git_repo_url, tag_name = ensure_git_reproducibility(git_tag_id, dirty=dirty)
 
         # Expand job commands
         expanded_commands = expand_job_commands(commands, repeat=repeat)
@@ -270,7 +270,7 @@ def add_jobs(commands: list[str], repeat: int, dirty: bool) -> None:
         # Prepare request payload
         payload = {
             "commands": expanded_commands,
-            "repo_url": repo_url,
+            "git_repo_url": git_repo_url,
             "git_tag": tag_name,
         }
 

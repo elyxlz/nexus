@@ -8,7 +8,7 @@ JobStatus = typing.Literal["queued", "running", "completed", "failed"]
 class Job(pyd.BaseModel):
     id: str
     command: str
-    repo_url: str
+    git_repo_url: str
     git_tag: str
     status: JobStatus
     created_at: float
@@ -43,7 +43,7 @@ class ServiceState(pyd.BaseModel):
 
 class JobsRequest(pyd.BaseModel):
     commands: list[str]
-    repo_url: str
+    git_repo_url: str
     git_tag: str
 
 

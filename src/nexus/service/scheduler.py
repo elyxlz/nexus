@@ -24,7 +24,7 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
             if updated_job.status == "completed":
                 logger.info(format_job_action(updated_job, action="completed"))
             else:
-                logger.info(format_job_action(updated_job, action="failed"))
+                logger.error(format_job_action(updated_job, action="failed"))
 
             cleanup_repo(job_repo_dir=config.repo_dir / updated_job.id)
             jobs_to_update.append(updated_job)

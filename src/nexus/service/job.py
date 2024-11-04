@@ -41,7 +41,7 @@ def get_job_session_name(job_id: str) -> str:
 # Core job lifecycle functions
 def create_job(
     command: str,
-    repo_url: str,
+    git_repo_url: str,
     git_tag: str,
 ) -> models.Job:
     """Create a new job with the given command and git info"""
@@ -57,7 +57,7 @@ def create_job(
         gpu_index=None,
         exit_code=None,
         error_message=None,
-        repo_url=repo_url,
+        git_repo_url=git_repo_url,
         git_tag=git_tag,
         wandb_url=None,
     )
@@ -85,7 +85,7 @@ def start_job(job: models.Job, gpu_index: int, log_dir: pathlib.Path, repo_dir: 
         script_path = job_log_dir / "run.sh"
         script_content = f"""#!/bin/bash
 set -e  # Exit on error
-git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {job.repo_url} "{job_repo_dir}"
+git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {job.git_repo_url} "{job_repo_dir}"
 cd "{job_repo_dir}"
 script -f -q -c "{job.command}" "{log}"
 """
