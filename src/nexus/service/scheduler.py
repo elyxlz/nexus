@@ -6,7 +6,6 @@ from nexus.service.format import format_job_action
 from nexus.service.git import cleanup_repo
 from nexus.service.gpu import get_available_gpus
 from nexus.service.job import start_job, update_job_status_if_completed
-from nexus.service.webhooks import notify_job_started, notify_job_completed, notify_job_failed
 from nexus.service.logger import logger
 from nexus.service.state import (
     clean_old_completed_jobs_in_state,
@@ -14,6 +13,7 @@ from nexus.service.state import (
     update_jobs_in_state,
 )
 from nexus.service.wandb_finder import find_wandb_run_by_nexus_id
+from nexus.service.webhooks import notify_job_completed, notify_job_failed, notify_job_started
 
 
 async def update_running_jobs(state: models.ServiceState, config: NexusServiceConfig):
