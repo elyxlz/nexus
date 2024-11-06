@@ -60,7 +60,6 @@ def get_service_session_name() -> str:
 def start_service() -> None:
     """Start the Nexus service if not running."""
     if is_service_running():
-        print(colored("Nexus service is already running.", "yellow"))
         return
 
     session_name = get_service_session_name()
@@ -215,8 +214,10 @@ def print_status_snapshot() -> None:
 
                 print(f"{gpu_info}{colored(job_id, 'magenta')}")
                 print(f"  Command: {colored(job.get('command', 'N/A'), 'white', attrs=['bold'])}")
-                print(f"  Runtime: {colored(runtime_str, 'cyan')}")
-                print(f"  Started: {colored(start_time, 'cyan')}")
+                print(f"  Time: {colored(runtime_str, 'cyan')} (Started: {colored(start_time, 'cyan')})")
+                if job.get("wandb_url"):
+                    print(f"  W&B: {colored(job['wandb_url'], 'yellow')}")
+
             elif gpu.get("process_count", 0) == 0:
                 print(f"{gpu_info}{colored('Available', 'green', attrs=['bold'])}")
             else:
@@ -319,24 +320,52 @@ def show_queue() -> None:
         print(colored(f"Error fetching queue: {e}", "red"))
 
 
-def show_history() -> None:
-    """Show completed jobs."""
+def show_history(regex: str | None = None) -> None:
+    """Show completed and failed jobs with optional regex filtering."""
     try:
-        response = requests.get(f"{get_api_base_url()}/jobs", params={"status": "completed"})
+        response = requests.get(f"{get_api_base_url()}/jobs", params={"status": ["completed", "failed"]})
         response.raise_for_status()
         jobs = response.json()
 
         if not jobs:
-            print(colored("No completed jobs.", "green"))
+            print(colored("No completed or failed jobs.", "green"))
             return
 
-        for job in jobs[-25:]:
+        # Filter jobs by regex if provided
+        if regex:
+            try:
+                pattern = re.compile(regex)
+                jobs = [j for j in jobs if pattern.search(j["command"])]
+                if not jobs:
+                    print(colored(f"No jobs found matching pattern: {regex}", "yellow"))
+                    return
+            except re.error as e:
+                print(colored(f"Invalid regex pattern: {e}", "red"))
+                return
+
+        # Sort jobs by completion time, most recent first
+        jobs.sort(key=lambda x: x.get("completed_at", 0), reverse=True)
+
+        print(colored("Job History:", "blue", attrs=["bold"]))
+        for job in jobs[-25:]:  # Last 25 jobs
+            # Calculate runtime and format timestamps
             runtime = calculate_runtime(job)
             gpu = job.get("gpu_index", "Unknown")
             started_time = format_timestamp(job.get("started_at"))
+
+            # Format status with color and icon
+            status_color = "green" if job["status"] == "completed" else "red"
+            status_icon = "✓" if job["status"] == "completed" else "✗"
+            status = colored(f"{status_icon} {job['status'].upper()}", status_color)
+
+            # Format command, potentially truncating if too long
+            command = job["command"]
+            if len(command) > 80:
+                command = command[:77] + "..."
+
             print(
-                f"{colored(job['id'], 'magenta')}: "
-                f"{colored(job['command'], 'white')} "
+                f"{colored(job['id'], 'magenta')} [{status}] "
+                f"{colored(command, 'white')} "
                 f"(Started: {colored(started_time, 'cyan')}, "
                 f"Runtime: {colored(format_runtime(runtime), 'cyan')}, "
                 f"GPU: {colored(str(gpu), 'yellow')})"
@@ -347,8 +376,18 @@ def show_history() -> None:
             print(
                 f"\n{colored('Showing last 25 of', 'blue', attrs=['bold'])} "
                 f"{colored(str(total_jobs), 'cyan')} "
-                f"{colored('total completed jobs', 'blue', attrs=['bold'])}"
+                f"{colored('total jobs', 'blue', attrs=['bold'])}"
             )
+
+        # Print summary statistics
+        completed_count = sum(1 for j in jobs if j["status"] == "completed")
+        failed_count = sum(1 for j in jobs if j["status"] == "failed")
+        print(
+            f"\n{colored('Summary:', 'blue', attrs=['bold'])} "
+            f"{colored(str(completed_count), 'green')} completed, "
+            f"{colored(str(failed_count), 'red')} failed"
+        )
+
     except requests.RequestException as e:
         print(colored(f"Error fetching history: {e}", "red"))
 
@@ -682,7 +721,6 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("stop", help="Stop the Nexus service")
     subparsers.add_parser("restart", help="Restart the Nexus service")
     subparsers.add_parser("queue", help="Show pending jobs")
-    subparsers.add_parser("history", help="Show completed jobs")
     subparsers.add_parser("pause", help="Pause queue processing")
     subparsers.add_parser("resume", help="Resume queue processing")
     subparsers.add_parser("config", help="Show configuration")
@@ -710,6 +748,10 @@ def create_parser() -> argparse.ArgumentParser:
     remove_parser = subparsers.add_parser("remove", help="Remove jobs from queue by job IDs or command regex")
     remove_parser.add_argument("job_ids", nargs="+", help="List of job IDs or command regex patterns")
     remove_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+
+    # History
+    history_parser = subparsers.add_parser("history", help="Show completed and failed jobs")
+    history_parser.add_argument("pattern", nargs="?", help="Filter jobs by command regex pattern")
 
     # Blacklist management
     blacklist_parser = subparsers.add_parser("blacklist", help="Manage GPU blacklist")
@@ -749,7 +791,7 @@ def main() -> None:
             args.commands, repeat=args.repeat, dirty=args.dirty, user=args.user, discord_id=args.discord_id, bypass_confirm=args.yes
         ),
         "queue": lambda: show_queue(),
-        "history": lambda: show_history(),
+        "history": lambda: show_history(getattr(args, "pattern", None)),
         "kill": lambda: kill_jobs(args.targets, bypass_confirm=args.yes),
         "remove": lambda: remove_jobs(args.job_ids, bypass_confirm=args.yes),
         "pause": lambda: pause_queue(),

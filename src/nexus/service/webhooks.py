@@ -68,8 +68,8 @@ def format_job_message_for_webhook(job: Job, event_type: typing.Literal["started
 
     fields = [
         {"name": "Command", "value": command},
-        {"name": "Git", "value": git_info},
         {"name": "W&B", "value": wandb_url},
+        {"name": "Git", "value": git_info},
         {"name": "User", "value": job.user, "inline": True},
         {"name": "GPU", "value": gpu_index, "inline": True},
     ]
