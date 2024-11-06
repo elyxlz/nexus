@@ -60,5 +60,5 @@ def create_service_logger(
 
 
 config = load_config()
-nexus_dir = pathlib.Path.home() / ".nexus"
+nexus_dir = pathlib.Path.home() / ".nexus_service"
 logger = create_service_logger(str(nexus_dir))

@@ -1,11 +1,12 @@
 import asyncio
+import datetime as dt
 
 from nexus.service import models
 from nexus.service.config import NexusServiceConfig
 from nexus.service.format import format_job_action
-from nexus.service.git import cleanup_repo
+from nexus.service.git import cleanup_git_tag
 from nexus.service.gpu import get_available_gpus
-from nexus.service.job import start_job, update_job_status_if_completed
+from nexus.service.job import end_job, get_job_logs, is_job_session_running, kill_job_session, start_job
 from nexus.service.logger import logger
 from nexus.service.state import (
     clean_old_completed_jobs_in_state,
@@ -13,6 +14,7 @@ from nexus.service.state import (
     update_jobs_in_state,
 )
 from nexus.service.wandb_finder import find_wandb_run_by_nexus_id
+from nexus.service.webhooks import notify_job_completed, notify_job_failed, notify_job_started, update_job_wandb
 
 
 async def update_running_jobs(state: models.ServiceState, config: NexusServiceConfig):
@@ -20,20 +22,34 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
     jobs_to_update = []
 
     for job in [j for j in state.jobs if j.status == "running"]:
-        updated_job = update_job_status_if_completed(job, jobs_dir=config.jobs_dir)
-        if updated_job.status != "running":
-            if updated_job.status == "completed":
-                logger.info(format_job_action(updated_job, action="completed"))
-            else:
-                logger.error(format_job_action(updated_job, action="failed"))
-                log_file = config.jobs_dir / updated_job.id / "output.log"
-                if log_file.exists():
-                    with open(log_file, "r") as f:
-                        last_lines = f.readlines()[-5:]
-                    logger.error(f"Last 10 lines of job log:\n{''.join(last_lines)}")
+        if job.marked_for_kill and is_job_session_running(job.id):
+            kill_job_session(job.id)
+            updated_job = end_job(job, jobs_dir=config.jobs_dir, killed=True)
 
-            cleanup_repo(config.jobs_dir, job_id=updated_job.id)
-            jobs_to_update.append(updated_job)
+        elif not is_job_session_running(job.id):
+            updated_job = end_job(job, jobs_dir=config.jobs_dir, killed=False)
+        else:
+            continue
+
+        if updated_job.status != "running":
+            action = "completed" if updated_job.status == "completed" else "failed"
+            log_func = logger.info if action == "completed" else logger.error
+            log_func(format_job_action(updated_job, action=action))
+
+            # Add git tag cleanup here
+            running_jobs = [j for j in state.jobs if j.status == "running"]
+            cleanup_git_tag(updated_job, running_jobs)
+
+            if config.webhooks_enabled:
+                notify_func = notify_job_completed if action == "completed" else notify_job_failed
+                await notify_func(updated_job, jobs_dir=config.jobs_dir)
+
+            if action == "failed":
+                last_lines = get_job_logs(updated_job.id, jobs_dir=config.jobs_dir, last_n_lines=5)
+                if last_lines is not None:
+                    logger.error(f"Last 5 lines of job log:\n{''.join(last_lines)}")
+
+        jobs_to_update.append(updated_job)
 
     if jobs_to_update:
         update_jobs_in_state(state, jobs=jobs_to_update)
@@ -44,12 +60,17 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
 async def update_wandb_urls(state: models.ServiceState, config: NexusServiceConfig) -> None:
     """Update W&B URLs for running jobs that don't have them yet."""
     jobs_to_update = []
-
-    # Directories to search for W&B files
     search_dirs = []
+    current_time = dt.datetime.now().timestamp()
 
-    # Only check running jobs that don't have a W&B URL yet
     for job in [j for j in state.jobs if j.status == "running" and not j.wandb_url]:
+        assert job.started_at is not None
+        job_runtime = current_time - job.started_at
+
+        # Skip if runtime is more than 5 minutes
+        if job_runtime > 360:
+            continue
+
         job_repo_dir = config.jobs_dir / job.id / "repo"
         if job_repo_dir.exists():
             search_dirs.append(str(job_repo_dir))
@@ -60,6 +81,10 @@ async def update_wandb_urls(state: models.ServiceState, config: NexusServiceConf
             jobs_to_update.append(job)
             logger.info(f"Associated job {job.id} with W&B run: {wandb_url}")
 
+            # Update the webhook message with the W&B URL
+            if config.webhooks_enabled:
+                await update_job_wandb(job)
+
     if jobs_to_update:
         update_jobs_in_state(state, jobs=jobs_to_update)
         save_state(state, state_path=config.state_path)
@@ -68,7 +93,7 @@ async def update_wandb_urls(state: models.ServiceState, config: NexusServiceConf
 async def clean_old_jobs(state: models.ServiceState, config: NexusServiceConfig):
     """Remove old completed jobs based on history limit."""
     initial_count = len(state.jobs)
-    clean_old_completed_jobs_in_state(state, max_completed=config.history_limit)
+    state = clean_old_completed_jobs_in_state(state, max_completed=config.history_limit)
 
     if len(state.jobs) < initial_count:
         save_state(state, state_path=config.state_path)
@@ -96,10 +121,11 @@ async def start_queued_jobs(state: models.ServiceState, config: NexusServiceConf
 
         job = queued_jobs.pop(0)
         started_job = start_job(job, gpu_index=gpu.index, jobs_dir=config.jobs_dir, env_file=config.env_file)
-
         started_jobs.append(started_job)
-        if started_job.status == "running":
-            logger.info(format_job_action(job, action="started"))
+        logger.info(format_job_action(job, action="started"))
+
+        if config.webhooks_enabled:
+            await notify_job_started(job)
 
     if started_jobs:
         update_jobs_in_state(state, jobs=started_jobs)
@@ -110,7 +136,7 @@ async def start_queued_jobs(state: models.ServiceState, config: NexusServiceConf
 async def process_scheduler_tick(state: models.ServiceState, config: NexusServiceConfig):
     """Process a single scheduler iteration."""
     await update_running_jobs(state, config)
-    await update_wandb_urls(state, config)  # Add W&B URL detection
+    await update_wandb_urls(state, config)
     await clean_old_jobs(state, config)
     await start_queued_jobs(state, config)
 

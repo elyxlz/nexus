@@ -3,7 +3,6 @@ import hashlib
 import importlib.metadata
 import itertools
 import os
-import pathlib
 import re
 import subprocess
 import sys
@@ -12,8 +11,9 @@ import typing
 
 import base58
 import requests
-import toml
 from termcolor import colored
+
+from nexus.cli.config import load_config
 
 # Types
 Color = typing.Literal["grey", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
@@ -23,22 +23,6 @@ try:
     VERSION = importlib.metadata.version("nexusai")
 except importlib.metadata.PackageNotFoundError:
     VERSION = "unknown"
-
-# Configuration
-DEFAULT_CONFIG_PATH = pathlib.Path.home() / ".nexus" / "config.toml"
-
-
-def load_config(config_path: pathlib.Path) -> dict:
-    """Load configuration from config.toml."""
-    if not config_path.exists():
-        print(colored(f"Configuration file not found at {config_path}.", "red"))
-        sys.exit(1)
-
-    try:
-        return toml.load(config_path)
-    except toml.TomlDecodeError as e:
-        print(colored(f"Error parsing config.toml: {e}", "red"))
-        sys.exit(1)
 
 
 def generate_git_tag_id() -> str:
@@ -52,8 +36,8 @@ def generate_git_tag_id() -> str:
 
 def get_api_base_url() -> str:
     """Get API base URL from config."""
-    config = load_config(DEFAULT_CONFIG_PATH)
-    return f"http://{config['host']}:{config['port']}/v1"
+    config = load_config()
+    return f"http://{config.host}:{config.port}/v1"
 
 
 # Service Management
@@ -253,25 +237,31 @@ def ensure_git_reproducibility(id: str, dirty: bool) -> tuple[str, str]:
         raise RuntimeError(f"Failed to create/push git tag: {e}")
 
 
-def add_jobs(commands: list[str], repeat: int, dirty: bool) -> None:
-    """Add job(s) to the queue with git information"""
+def add_jobs(commands: list[str], repeat: int, dirty: bool, user: str | None, discord_id: str | None) -> None:
     try:
-        # Generate a single job ID for all commands in this batch
-        git_tag_id = generate_git_tag_id()
+        # Get default values from config
+        cli_config = load_config()
 
-        # Ensure git state and create tag
+        # Use command line args if provided, otherwise use config values
+        final_user = user or cli_config.user
+        final_discord = discord_id or cli_config.discord_id
+
+        # Generate job ID and ensure git state
+        git_tag_id = generate_git_tag_id()
         git_repo_url, tag_name = ensure_git_reproducibility(git_tag_id, dirty=dirty)
 
-        # Expand job commands
+        # Expand commands
         expanded_commands = expand_job_commands(commands, repeat=repeat)
         if not expanded_commands:
             return
 
-        # Prepare request payload
+        # Prepare request payload with user info
         payload = {
             "commands": expanded_commands,
             "git_repo_url": git_repo_url,
             "git_tag": tag_name,
+            "user": final_user,
+            "discord_id": final_discord,
         }
 
         # Submit to API
@@ -610,11 +600,11 @@ def handle_blacklist(args) -> None:
 def show_config() -> None:
     """Display current configuration."""
     try:
-        config = load_config(DEFAULT_CONFIG_PATH)
+        config = load_config()
         print(colored("Current Configuration:", "blue", attrs=["bold"]))
 
         # Format and display config entries
-        for key, value in config.items():
+        for key, value in config.model_dump().items():
             if isinstance(value, dict):
                 print(f"\n{colored(key, 'white', attrs=['bold'])}:")
                 for subkey, subvalue in value.items():
@@ -655,6 +645,8 @@ def create_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("commands", nargs="+", help='Command to add, e.g., "python train.py"')
     add_parser.add_argument("-r", "--repeat", type=int, default=1, help="Repeat the command multiple times")
     add_parser.add_argument("-d", "--dirty", action="store_true", help="Allow adding jobs with unstaged changes")
+    add_parser.add_argument("-u", "--user", help="Override default username")
+    add_parser.add_argument("--discord_id", help="Override default Discord user ID")
 
     # Kill jobs
     kill_parser = subparsers.add_parser("kill", help="Kill jobs by GPU indices, job IDs, or command regex")
@@ -702,7 +694,7 @@ def main() -> None:
     command_handlers = {
         "stop": lambda: stop_service(),
         "restart": lambda: restart_service(),
-        "add": lambda: add_jobs(args.commands, repeat=args.repeat, dirty=args.dirty),
+        "add": lambda: add_jobs(args.commands, repeat=args.repeat, dirty=args.dirty, user=args.user, discord_id=args.discord_id),
         "queue": lambda: show_queue(),
         "history": lambda: show_history(),
         "kill": lambda: kill_jobs(args.targets),

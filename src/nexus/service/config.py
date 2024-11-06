@@ -7,19 +7,14 @@ import pydantic_settings as pyds
 
 
 class NexusServiceConfig(pyds.BaseSettings):
-    jobs_dir: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "jobs")
-    state_path: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "state.json")
-    env_file: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / ".env")
+    jobs_dir: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus_service" / "jobs")
+    state_path: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus_service" / "state.json")
+    env_file: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus_service" / ".env")
     refresh_rate: int = pyd.Field(default=5)
     history_limit: int = pyd.Field(default=1000)
     host: str = pyd.Field(default="localhost")
-    port: int = pyd.Field(default=54322)
-
-    model_config = pyds.SettingsConfigDict(
-        env_file=str(pathlib.Path.home() / ".nexus" / ".env"),
-        env_file_encoding="utf-8",
-        extra="allow",  # Allow extra fields from .env
-    )
+    port: int = pyd.Field(default=54323)
+    webhooks_enabled: bool = pyd.Field(default=True)
 
     @classmethod
     def settings_customise_sources(
@@ -30,19 +25,23 @@ class NexusServiceConfig(pyds.BaseSettings):
         dotenv_settings: pyds.PydanticBaseSettingsSource,
         file_secret_settings: pyds.PydanticBaseSettingsSource,
     ) -> tuple[pyds.PydanticBaseSettingsSource, ...]:
-        return (init_settings, env_settings, dotenv_settings, pyds.TomlConfigSettingsSource(settings_cls))
+        return (init_settings, pyds.TomlConfigSettingsSource(settings_cls, toml_file=pathlib.Path.home() / ".nexus_service" / "config.toml"))
 
 
 def create_default_config() -> None:
     """Create default configuration files if they don't exist."""
-    config_dir = pathlib.Path.home() / ".nexus"
+    config_dir = pathlib.Path.home() / ".nexus_service"
     config_path = config_dir / "config.toml"
     env_path = config_dir / ".env"
 
     # Create nexus directory if it doesn't exist
     config_dir.mkdir(parents=True, exist_ok=True)
 
-    DEFAULT_ENV_TEMPLATE = """# Nexus Service Environment Configuration"""
+    DEFAULT_ENV_TEMPLATE = """# Nexus Service Environment Configuration
+NEXUS_DISCORD_WEBHOOK_URL=
+WANDB_API_KEY=
+WANDB_ENTITY=
+    """
 
     # Create default .env if it doesn't exist
     if not env_path.exists():
@@ -59,7 +58,8 @@ state_path = "{config.state_path}"
 env_file = "{config.env_file}"
 refresh_rate = {config.refresh_rate}
 host = "{config.host}"
-port = {config.port}
+port = "{config.port}"
+webhooks_enabled = "{config.webhooks_enabled}"
 """)
 
 
