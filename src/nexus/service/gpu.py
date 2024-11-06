@@ -114,6 +114,7 @@ def get_available_gpus(state: ServiceState) -> list[GpuInfo]:
 # Mock GPUs for testing/development
 def get_mock_gpus(state: ServiceState) -> list[GpuInfo]:
     """Generate mock GPUs for testing purposes."""
+    running_jobs = {j.gpu_index: j.id for j in state.jobs if j.status == "running"}
     return [
         GpuInfo(
             index=0,
@@ -122,7 +123,7 @@ def get_mock_gpus(state: ServiceState) -> list[GpuInfo]:
             memory_used=1,
             process_count=0,
             is_blacklisted=0 in state.blacklisted_gpus,
-            running_job_id=None,
+            running_job_id=running_jobs.get(0),
         ),
         GpuInfo(
             index=1,
@@ -131,6 +132,6 @@ def get_mock_gpus(state: ServiceState) -> list[GpuInfo]:
             memory_used=1,
             process_count=0,
             is_blacklisted=1 in state.blacklisted_gpus,
-            running_job_id=None,
+            running_job_id=running_jobs.get(1),
         ),
     ]

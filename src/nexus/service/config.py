@@ -38,6 +38,7 @@ def create_default_config() -> None:
     config_dir.mkdir(parents=True, exist_ok=True)
 
     DEFAULT_ENV_TEMPLATE = """# Nexus Service Environment Configuration
+GITHUB_TOKEN=
 NEXUS_DISCORD_WEBHOOK_URL=
 WANDB_API_KEY=
 WANDB_ENTITY=

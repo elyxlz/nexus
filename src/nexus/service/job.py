@@ -84,9 +84,11 @@ def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file:
         script_path = job_dir / "run.sh"
         script_content = f"""#!/bin/bash
 set -e  # Exit on error
-git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {job.git_repo_url} "{job_repo_dir}"
-cd "{job_repo_dir}"
-script -f -q -c "{job.command}" "{log}"
+script -f -q -c "
+git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {job.git_repo_url} '{job_repo_dir}'
+cd '{job_repo_dir}'
+{job.command}
+" "{log}"
 """
         script_path.write_text(script_content)
         script_path.chmod(0o755)
