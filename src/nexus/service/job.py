@@ -48,15 +48,16 @@ def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None) 
         command=command.strip(),
         status="queued",
         created_at=dt.datetime.now().timestamp(),
+        user=user,
+        git_repo_url=git_repo_url,
+        git_tag=git_tag,
         started_at=None,
         completed_at=None,
         gpu_index=None,
         exit_code=None,
         error_message=None,
-        git_repo_url=git_repo_url,
-        git_tag=git_tag,
         wandb_url=None,
-        user=user,
+        marked_for_kill=False,
     )
 
 
@@ -108,9 +109,9 @@ script -f -q -c "{job.command}" "{log}"
 
 
 # Job status and monitoring functions
-def is_job_running(job: models.Job) -> bool:
+def is_job_session_running(job_id: str) -> bool:
     """Check if a job's screen session is still running"""
-    session_name = get_job_session_name(job.id)
+    session_name = get_job_session_name(job_id)
 
     try:
         output = subprocess.check_output(["screen", "-ls", session_name], stderr=subprocess.DEVNULL, text=True)
@@ -119,59 +120,72 @@ def is_job_running(job: models.Job) -> bool:
         return False
 
 
-def update_job_status_if_completed(job: models.Job, jobs_dir: pathlib.Path) -> models.Job:
+def end_job(job: models.Job, jobs_dir: pathlib.Path, killed: bool) -> models.Job:
     """Check if a job has completed and update its status"""
-    if is_job_running(job):
+    if is_job_session_running(job.id):
         return job
 
-    # Read the output log to get exit code
-    output_log = jobs_dir / job.id / "output.log"
-    if output_log.exists():
-        try:
-            content = output_log.read_text()
-            # Look for exit code in the last line
-            last_line = content.strip().split("\n")[-1]
-            if "COMMAND_EXIT_CODE=" in last_line:
-                # Extract just the number between the quotes
-                exit_code_str = last_line.split('COMMAND_EXIT_CODE="')[1].split('"')[0]
-                exit_code = int(exit_code_str)
-                job.exit_code = exit_code
-                job.status = "completed" if exit_code == 0 else "failed"
-                job.error_message = None if exit_code == 0 else f"Job failed with exit code {exit_code}"
-            else:
-                job.status = "failed"
-                job.error_message = "Could not find exit code in log"
-        except (ValueError, IOError) as e:
-            job.status = "failed"
-            job.error_message = f"Failed to read log file: {e}"
-    else:
+    # Get job logs and exit code
+    job_log = get_job_logs(job.id, jobs_dir=jobs_dir)
+    exit_code = get_job_exit_code(job.id, jobs_dir=jobs_dir)
+
+    if killed:
+        job.status = "failed"
+        job.error_message = "Killed by user"
+    elif job_log is None:
         job.status = "failed"
         job.error_message = "No output log found"
+    elif exit_code is None:
+        job.status = "failed"
+        job.error_message = "Could not find exit code in log"
+    else:
+        job.exit_code = exit_code
+        job.status = "completed" if exit_code == 0 else "failed"
+        job.error_message = None if exit_code == 0 else f"Job failed with exit code {exit_code}"
 
     job.completed_at = dt.datetime.now().timestamp()
+    cleanup_repo(jobs_dir, job_id=job.id)
     return job
 
 
-def get_job_logs(job: models.Job, jobs_dir: pathlib.Path) -> str | None:
-    """Get logs for a job"""
-    job_dir = jobs_dir / job.id
+def get_job_exit_code(job_id: str, jobs_dir: pathlib.Path) -> int | None:
+    """Get the exit code of a job given its job id"""
+    content = get_job_logs(job_id, jobs_dir, last_n_lines=1)
+    if content is None:
+        return None
 
-    if not job_dir:
+    try:
+        last_line = content.strip()
+        if "COMMAND_EXIT_CODE=" in last_line:
+            exit_code_str = last_line.split('COMMAND_EXIT_CODE="')[1].split('"')[0]
+            return int(exit_code_str)
+    except (ValueError, AttributeError):
+        pass
+
+    return None
+
+
+def get_job_logs(job_id: str, jobs_dir: pathlib.Path, last_n_lines: int | None = None) -> str | None:
+    job_dir = jobs_dir / job_id
+
+    if not job_dir.exists():
         return None
 
     logs = job_dir / "output.log"
-    output = logs.read_text() if logs.exists() else None
-    return output
+    if not logs.exists():
+        return None
+
+    if last_n_lines is None:
+        return logs.read_text()
+    else:
+        with logs.open() as f:
+            return "".join(f.readlines()[-last_n_lines:])
 
 
-def kill_job(job: models.Job, jobs_dir: pathlib.Path) -> None:
-    """Kill a running job"""
-    session_name = get_job_session_name(job.id)
+def kill_job_session(job_id: str) -> None:
+    """Kill a running job session"""
+    session_name = get_job_session_name(job_id)
     try:
         subprocess.run(["screen", "-S", session_name, "-X", "quit"], check=True)
-        job.status = "failed"
-        job.completed_at = dt.datetime.now().timestamp()
-        job.error_message = "Killed by user"
-        cleanup_repo(jobs_dir=jobs_dir, job_id=job.id)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to kill job: {e}")

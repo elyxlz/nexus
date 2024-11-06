@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import datetime as dt
 import importlib.metadata
 import os
 import pathlib
@@ -12,12 +11,11 @@ import uvicorn
 from nexus.service import models
 from nexus.service.config import load_config
 from nexus.service.format import format_job_action
-from nexus.service.git import cleanup_repo, validate_git_url
+from nexus.service.git import validate_git_url
 from nexus.service.gpu import get_gpus
 from nexus.service.job import (
     create_job,
     get_job_logs,
-    kill_job,
 )
 from nexus.service.logger import logger
 from nexus.service.scheduler import job_scheduler
@@ -165,15 +163,15 @@ async def get_job_logs_endpoint(job_id: str):
     if not job:
         raise fa.HTTPException(status_code=404, detail="Job not found")
 
-    logs = get_job_logs(job, jobs_dir=config.jobs_dir)
+    logs = get_job_logs(job.id, jobs_dir=config.jobs_dir)
     return models.JobLogsResponse(logs=logs or "")
 
 
 @app.delete("/v1/jobs/running", response_model=models.JobActionResponse)
 async def kill_running_jobs(job_ids: list[str]):
-    killed = []
+    marked = []
     failed = []
-    killed_jobs = []
+    marked_jobs = []
 
     for job_id in job_ids:
         job = next((j for j in state.jobs if j.id == job_id), None)
@@ -185,24 +183,16 @@ async def kill_running_jobs(job_ids: list[str]):
             failed.append({"id": job_id, "error": "Job is not running"})
             continue
 
-        try:
-            kill_job(job, jobs_dir=config.jobs_dir)
-            job.status = "failed"
-            job.completed_at = dt.datetime.now().timestamp()
-            job.error_message = "Killed by user"
-            killed.append(job.id)
-            killed_jobs.append(job)
-            cleanup_repo(config.jobs_dir, job_id=job.id)
+        job.marked_for_kill = True
+        marked.append(job.id)
+        marked_jobs.append(job)
+        logger.info(f"Marked job {job.id} for termination")
 
-        except Exception as e:
-            logger.error(f"Failed to kill job {job.id}: {e}")
-            failed.append({"id": job_id, "error": str(e)})
-
-    if killed_jobs:
-        update_jobs_in_state(state, jobs=killed_jobs)
+    if marked_jobs:
+        update_jobs_in_state(state, jobs=marked_jobs)
         save_state(state, state_path=config.state_path)
 
-    return models.JobActionResponse(killed=killed, failed=failed)
+    return models.JobActionResponse(killed=marked, failed=failed)
 
 
 @app.post("/v1/gpus/blacklist", response_model=models.GpuActionResponse)

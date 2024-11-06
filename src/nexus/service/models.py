@@ -19,6 +19,7 @@ class Job(pyd.BaseModel):
     error_message: str | None
     wandb_url: str | None
     user: str | None
+    marked_for_kill: bool
 
 
 class GpuInfo(pyd.BaseModel):

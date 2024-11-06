@@ -1,0 +1,31 @@
+start job :
+- actually run the job script 
+- update the job attrs that its running 
+- service logging
+- send webhook 
+- save the new job in the state
+
+job failed :
+- check that no screen session even if job attr is running 
+- check exit code == failed
+- update job attribtues 
+- cleanup repo
+- service logging 
+- send webhook 
+
+job completed:
+- check that no screen session even if job attr is running 
+- check exit code == completed
+- update job attribtues 
+- cleanup repo
+- service logging 
+- send webhook 
+
+
+job killed:
+- end screen session
+- update job attribtues with specific job killed ones
+- cleanup repo
+- service logging 
+- send webhook 
+

@@ -101,7 +101,7 @@ def remove_jobs_from_state(state: models.ServiceState, job_ids: list[str]) -> bo
     return False
 
 
-def clean_old_completed_jobs_in_state(state: models.ServiceState, max_completed: int) -> None:
+def clean_old_completed_jobs_in_state(state: models.ServiceState, max_completed: int) -> models.ServiceState:
     """Remove old completed jobs keeping only the most recent ones"""
     completed_jobs = [j for j in state.jobs if j.status in ["completed", "failed"]]
 
@@ -117,3 +117,5 @@ def clean_old_completed_jobs_in_state(state: models.ServiceState, max_completed:
         state.jobs = [j for j in state.jobs if j.status not in ["completed", "failed"] or j.id in job_ids_to_keep]
 
         state.last_updated = dt.datetime.now().timestamp()
+
+    return state

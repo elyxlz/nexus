@@ -1,10 +1,11 @@
-import asyncio
 import os
 import pathlib
 import typing
 from datetime import datetime
+
 import aiohttp
 import pydantic as pyd
+
 from nexus.service.job import get_job_logs
 from nexus.service.logger import logger
 from nexus.service.models import Job
@@ -28,7 +29,7 @@ class WebhookMessage(pyd.BaseModel):
     username: str = "Nexus"
 
 
-def format_job_message(job: Job, event_type: typing.Literal["started", "completed", "failed"]) -> dict:
+def format_job_message_for_webhook(job: Job, event_type: typing.Literal["started", "completed", "failed"]) -> dict:
     """Format job information for webhook message with rich embeds."""
     user_mention = f"@{DISCORD_USER_MAPPING[job.user]}" if (job.user and job.user in DISCORD_USER_MAPPING) else "No user assigned"
 
@@ -58,9 +59,9 @@ def format_job_message(job: Job, event_type: typing.Literal["started", "complete
         {"name": "GPU", "value": gpu_index, "inline": True},
     ]
 
-    # Add error message if available
-    if job.error_message:
-        fields.insert(0, {"name": job.error_message, "value": ""})
+    # Add error message if available for completed or failed jobs
+    if job.error_message and event_type in ["completed", "failed"]:
+        fields.insert(0, {"name": "Error Message", "value": job.error_message})
 
     return {
         "content": message_title,
@@ -90,26 +91,23 @@ async def send_webhook(message_data: dict) -> None:
 async def notify_job_started(job: Job) -> None:
     """Send webhook notification for job start after waiting for potential W&B URL."""
     # Wait 30 seconds to allow W&B URL to be populated
-    await asyncio.sleep(30)
-    message_data = format_job_message(job, "started")
+    message_data = format_job_message_for_webhook(job, "started")
     await send_webhook(message_data)
 
 
-async def notify_job_completed(job: Job) -> None:
+async def notify_job_completed(job: Job, jobs_dir: pathlib.Path | None = None) -> None:
     """Send webhook notification for job completion."""
-    message_data = format_job_message(job, "completed")
+    message_data = format_job_message_for_webhook(job, "completed")
     await send_webhook(message_data)
 
 
 async def notify_job_failed(job: Job, jobs_dir: pathlib.Path) -> None:
     """Send webhook notification for job failure with last few log lines."""
-    message_data = format_job_message(job, "failed")
+    message_data = format_job_message_for_webhook(job, "failed")
 
     # Add last few lines of logs
-    logs = get_job_logs(job, jobs_dir)
-    if logs:
-        last_lines = "\n".join(logs.splitlines()[-5:])  # Get last 5 lines
-        # Add logs to the embed
+    last_lines = get_job_logs(job.id, jobs_dir, last_n_lines=5)
+    if last_lines:
         message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": f"```\n{last_lines}\n```"})
 
     await send_webhook(message_data)
