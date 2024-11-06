@@ -42,33 +42,41 @@ def get_api_base_url() -> str:
 
 # Service Management
 def is_service_running() -> bool:
-    """Check if the Nexus service is running."""
+    """Check if the Nexus service is running by pinging the API."""
+    config = load_config()
     try:
-        result = subprocess.run(["screen", "-ls"], capture_output=True, text=True, check=False)
-        running = any(
-            line.strip().split("\t")[0].endswith(".nexus")
-            for line in result.stdout.splitlines()
-            if "\t" in line and not line.startswith("No Sockets")
-        )
-        if not running:
-            return False
-        return running
-    except (subprocess.SubprocessError, OSError) as e:
-        print(colored(f"Error checking service status: {str(e)}", "red"))
+        response = requests.get(f"http://{config.host}:{config.port}/v1/service/status", timeout=2)
+        return response.status_code == 200
+    except requests.RequestException:
         return False
+
+
+def get_service_session_name() -> str:
+    """Get the screen session name for the service."""
+    config = load_config()
+    return f"nexus_service_{config.port}"
 
 
 def start_service() -> None:
     """Start the Nexus service if not running."""
     if is_service_running():
+        print(colored("Nexus service is already running.", "yellow"))
         return
 
+    session_name = get_service_session_name()
     try:
-        subprocess.run(["screen", "-S", "nexus", "-dm", "nexus-service"], check=True)
-        time.sleep(2)
-        if not is_service_running():
-            raise RuntimeError("Service failed to start")
-        print(colored("Nexus service started successfully.", "green"))
+        subprocess.run(["screen", "-dmS", session_name, "nexus-service"], check=True)
+
+        # Wait for service to start (max 10 seconds)
+        for _ in range(10):
+            if is_service_running():
+                print(colored("Nexus service started successfully.", "green"))
+                return
+            time.sleep(1)
+
+        # If we get here, service didn't start properly
+        raise RuntimeError("Service started but API is not responding")
+
     except subprocess.CalledProcessError as e:
         print(colored(f"Error starting Nexus service: {e}", "red"))
         print(
@@ -80,6 +88,11 @@ def start_service() -> None:
     except RuntimeError as e:
         print(colored(f"Error: {e}", "red"))
         print(colored("Check the service logs for more information.", "yellow"))
+        # Try to clean up the screen session if it exists
+        try:
+            subprocess.run(["screen", "-S", session_name, "-X", "quit"], check=False)
+        except Exception:
+            pass
 
 
 # Time Utilities
