@@ -597,9 +597,12 @@ def view_logs(target: str) -> None:
 
 def attach_to_session(target: str) -> None:
     """Attach to screen session."""
+
+    config = load_config()
+
     try:
         if target == "service":
-            session_name = "nexus"
+            session_name = f"nexus_service_{config.port}"
         elif target.isdigit():
             response = requests.get(f"{get_api_base_url()}/gpus")
             response.raise_for_status()
