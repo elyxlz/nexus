@@ -9,14 +9,14 @@
 - [x] runtime doesnt update if gpu is blacklisted
 - [x] Classify failed jobs
 - [x] automatically detect wandb runs
-- [ ] Webhooks for starting, completed, and failed jobs (for discord)
+- [x] Webhooks for starting, completed, and failed jobs (for discord)
+- [x] make webhooks prettier
+- [x] if a job doesnt have wandb after 5 minutes, stop pinging it
 - [ ] multi user support
 - [ ] Automatically check for updates
 - [ ] a way to quickly find the logs of recent crashes
 - [ ] filter history with command regex
 - [ ] clean up git tags that are unused
-- [ ] if a job doesnt have wandb after 5 minutes, stop pinging it
-- [ ] make webhooks prettier
 - [ ] make sure the job started webhook waits
 - [ ] put wandb url in nexus status at cli
 - [ ] multi gpu jobs

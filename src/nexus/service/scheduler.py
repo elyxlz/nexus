@@ -1,4 +1,5 @@
 import asyncio
+import datetime as dt
 
 from nexus.service import models
 from nexus.service.config import NexusServiceConfig
@@ -55,8 +56,16 @@ async def update_wandb_urls(state: models.ServiceState, config: NexusServiceConf
     """Update W&B URLs for running jobs that don't have them yet."""
     jobs_to_update = []
     search_dirs = []
+    current_time = dt.datetime.now().timestamp()
 
     for job in [j for j in state.jobs if j.status == "running" and not j.wandb_url]:
+        assert job.started_at is not None
+        job_runtime = current_time - job.started_at
+
+        # Skip if runtime is more than 2 minutes
+        if job_runtime > 120:  # 2 minutes in seconds
+            continue
+
         job_repo_dir = config.jobs_dir / job.id / "repo"
         if job_repo_dir.exists():
             search_dirs.append(str(job_repo_dir))

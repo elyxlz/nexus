@@ -1,10 +1,11 @@
-import os
-import typing
 import datetime
 import json
+import os
+import pathlib
+import typing
+
 import aiohttp
 import pydantic as pyd
-import pathlib
 
 from nexus.service.job import get_job_logs
 from nexus.service.logger import logger
