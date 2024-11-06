@@ -70,7 +70,6 @@ async def get_status():
         queued_jobs=queued,
         running_jobs=running,
         completed_jobs=completed,
-        is_paused=state.is_paused,
         service_user=getpass.getuser(),
     )
     logger.info(f"Service status: {response}")
@@ -89,22 +88,6 @@ async def get_service_logs():
     except Exception as e:
         logger.error(f"Error retrieving service logs: {e}")
         raise fa.HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/v1/service/pause", response_model=models.ServiceActionResponse)
-async def pause_service():
-    state.is_paused = True
-    save_state(state, state_path=config.state_path)
-    logger.info("Service paused")
-    return models.ServiceActionResponse(status="paused")
-
-
-@app.post("/v1/service/resume", response_model=models.ServiceActionResponse)
-async def resume_service():
-    state.is_paused = False
-    save_state(state, state_path=config.state_path)
-    logger.info("Service resumed")
-    return models.ServiceActionResponse(status="resumed")
 
 
 # Job Endpoints

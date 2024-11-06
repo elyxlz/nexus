@@ -183,11 +183,8 @@ def print_status_snapshot() -> None:
         status = response.json()
 
         queued = status.get("queued_jobs", 0)
-        is_paused = status.get("is_paused", False)
-        queue_status = "PAUSED" if is_paused else "RUNNING"
-        queue_color = "yellow" if is_paused else "green"
 
-        print(f"Queue: {queued} jobs pending [{colored(queue_status, queue_color)}]")
+        print(f"Queue: {queued} jobs pending")
         print(f"History: {colored(str(status.get('completed_jobs', 0)), 'blue')} jobs completed\n")
 
         response = requests.get(f"{get_api_base_url()}/gpus")
@@ -516,26 +513,6 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
             print(colored(f"Error removing jobs: {e}", "red"))
 
 
-def pause_queue() -> None:
-    """Pause queue processing."""
-    try:
-        response = requests.post(f"{get_api_base_url()}/service/pause")
-        response.raise_for_status()
-        print(colored("Queue processing paused.", "yellow"))
-    except requests.RequestException as e:
-        print(colored(f"Error pausing queue: {e}", "red"))
-
-
-def resume_queue() -> None:
-    """Resume queue processing."""
-    try:
-        response = requests.post(f"{get_api_base_url()}/service/resume")
-        response.raise_for_status()
-        print(colored("Queue processing resumed.", "green"))
-    except requests.RequestException as e:
-        print(colored(f"Error resuming queue: {e}", "red"))
-
-
 def stop_service() -> None:
     """Stop the Nexus service."""
     try:
@@ -724,8 +701,6 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("stop", help="Stop the Nexus service")
     subparsers.add_parser("restart", help="Restart the Nexus service")
     subparsers.add_parser("queue", help="Show pending jobs")
-    subparsers.add_parser("pause", help="Pause queue processing")
-    subparsers.add_parser("resume", help="Resume queue processing")
     subparsers.add_parser("config", help="Show configuration")
     subparsers.add_parser("version", help="Show version information")
 
@@ -797,8 +772,6 @@ def main() -> None:
         "history": lambda: show_history(getattr(args, "pattern", None)),
         "kill": lambda: kill_jobs(args.targets, bypass_confirm=args.yes),
         "remove": lambda: remove_jobs(args.job_ids, bypass_confirm=args.yes),
-        "pause": lambda: pause_queue(),
-        "resume": lambda: resume_queue(),
         "blacklist": lambda: handle_blacklist(args),
         "logs": lambda: view_logs(args.id),
         "attach": lambda: attach_to_session(args.target),

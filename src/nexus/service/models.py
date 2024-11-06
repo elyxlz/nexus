@@ -37,7 +37,6 @@ class ServiceState(pyd.BaseModel):
     status: typing.Literal["running", "stopped", "error"]
     jobs: list[Job]
     blacklisted_gpus: list[int]
-    is_paused: bool
     last_updated: float
 
 
@@ -91,5 +90,4 @@ class ServiceStatusResponse(pyd.BaseModel):
     queued_jobs: int
     running_jobs: int
     completed_jobs: int
-    is_paused: bool
     service_user: str
