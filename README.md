@@ -16,12 +16,11 @@
 - [x] make sure the job started webhook waits
 - [x] multi user support
 - [x] cli: prompt yes or no before removing, killing, or adding
-- [ ] cli: put wandb url in nexus status at cli
-- [ ] cli: filter history with command regex
-- [ ] cli: put runtime and time started on same line
-- [ ] cli: multiline bash
+- [x] cli: put wandb url in nexus status at cli
+- [x] cli: put runtime and time started on same line
+- [x] cli: filter history with command regex
+- [x] cli: in history put failed and completed together, then I shuold be able to see which  and which completed
 - [ ] cli: More job details when printing job stuff, especially when removing or killing
-- [ ] cli: in history put failed and completed together, then I shuold be able to see which failed and which completed
 - [ ] Automatically check for updates
 - [ ] multi gpu jobs
 - [ ] dependent jobs (a after b is done)
