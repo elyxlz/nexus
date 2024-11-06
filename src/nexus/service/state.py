@@ -18,6 +18,8 @@ def create_default_state(state_path: pathlib.Path) -> models.ServiceState:
         is_paused=False,
         last_updated=0.0,
     )
+
+    save_state(default_state, state_path)
     return default_state
 
 
