@@ -11,12 +11,6 @@ from nexus.service.job import get_job_logs
 from nexus.service.logger import logger
 from nexus.service.models import Job
 
-# Discord user mapping for mentions
-DISCORD_USER_MAPPING = {
-    "elyxlz": "223864514326560768",
-}
-
-# Emoji mapping for different job states
 EMOJI_MAPPING = {
     "started": ":rocket:",
     "completed": ":checkered_flag:",
@@ -149,7 +143,7 @@ async def notify_job_started(job: Job) -> None:
 
     if message_id:
         # Update webhook state
-        state_path = pathlib.Path.home() / ".nexus" / "webhook_state.json"
+        state_path = pathlib.Path.home() / ".nexus_service" / "webhook_state.json"
         webhook_state = load_webhook_state(state_path)
         webhook_state.message_ids[job.id] = message_id
         save_webhook_state(webhook_state, state_path)
@@ -158,6 +152,7 @@ async def notify_job_started(job: Job) -> None:
 async def update_job_wandb(job: Job) -> None:
     """Update job webhook message with W&B URL if found."""
     if not job.wandb_url:
+        logger.debug(f"No W&B URL found for job {job.id}. Skipping update.")
         return
 
     state_path = pathlib.Path.home() / ".nexus" / "webhook_state.json"

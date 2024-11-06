@@ -79,7 +79,7 @@ async def get_status():
 async def get_service_logs():
     logger.info("Retrieving service logs")
     try:
-        nexus_dir = pathlib.Path.home() / ".nexus"
+        nexus_dir = pathlib.Path.home() / ".nexus_service"
         log_path = nexus_dir / "service.log"
         logs = log_path.read_text() if log_path.exists() else ""
         logger.info(f"Service logs retrieved, size: {len(logs)} characters")
@@ -128,7 +128,13 @@ async def add_jobs(job_request: models.JobsRequest):
 
     try:
         jobs = [
-            create_job(command=command, git_repo_url=job_request.git_repo_url, git_tag=job_request.git_tag, user=job_request.user)
+            create_job(
+                command=command,
+                git_repo_url=job_request.git_repo_url,
+                git_tag=job_request.git_tag,
+                user=job_request.user,
+                discord_id=job_request.discord_id,
+            )
             for command in job_request.commands
         ]
 

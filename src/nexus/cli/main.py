@@ -646,7 +646,7 @@ def create_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("-r", "--repeat", type=int, default=1, help="Repeat the command multiple times")
     add_parser.add_argument("-d", "--dirty", action="store_true", help="Allow adding jobs with unstaged changes")
     add_parser.add_argument("-u", "--user", help="Override default username")
-    add_parser.add_argument("--discord", help="Override default Discord user ID")
+    add_parser.add_argument("--discord_id", help="Override default Discord user ID")
 
     # Kill jobs
     kill_parser = subparsers.add_parser("kill", help="Kill jobs by GPU indices, job IDs, or command regex")

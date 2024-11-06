@@ -67,8 +67,8 @@ async def update_wandb_urls(state: models.ServiceState, config: NexusServiceConf
         assert job.started_at is not None
         job_runtime = current_time - job.started_at
 
-        # Skip if runtime is more than 2 minutes
-        if job_runtime > 120:  # 2 minutes in seconds
+        # Skip if runtime is more than 5 minutes
+        if job_runtime > 360:
             continue
 
         job_repo_dir = config.jobs_dir / job.id / "repo"

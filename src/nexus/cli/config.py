@@ -20,7 +20,7 @@ class NexusCliConfig(pyds.BaseSettings):
         dotenv_settings: pyds.PydanticBaseSettingsSource,
         file_secret_settings: pyds.PydanticBaseSettingsSource,
     ) -> tuple[pyds.PydanticBaseSettingsSource, ...]:
-        return (init_settings, env_settings, dotenv_settings, pyds.TomlConfigSettingsSource(settings_cls))
+        return (init_settings, pyds.TomlConfigSettingsSource(settings_cls, toml_file=pathlib.Path.home() / ".nexus" / "config.toml"))
 
 
 def create_default_config() -> None:

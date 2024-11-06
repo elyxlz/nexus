@@ -25,7 +25,7 @@ class NexusServiceConfig(pyds.BaseSettings):
         dotenv_settings: pyds.PydanticBaseSettingsSource,
         file_secret_settings: pyds.PydanticBaseSettingsSource,
     ) -> tuple[pyds.PydanticBaseSettingsSource, ...]:
-        return (init_settings, env_settings, dotenv_settings, pyds.TomlConfigSettingsSource(settings_cls))
+        return (init_settings, pyds.TomlConfigSettingsSource(settings_cls, toml_file=pathlib.Path.home() / ".nexus_service" / "config.toml"))
 
 
 def create_default_config() -> None:
@@ -38,7 +38,9 @@ def create_default_config() -> None:
     config_dir.mkdir(parents=True, exist_ok=True)
 
     DEFAULT_ENV_TEMPLATE = """# Nexus Service Environment Configuration
-    NEXUS_DISCORD_WEBHOOK_URL=
+NEXUS_DISCORD_WEBHOOK_URL=
+WANDB_API_KEY=
+WANDB_ENTITY=
     """
 
     # Create default .env if it doesn't exist
