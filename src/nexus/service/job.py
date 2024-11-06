@@ -39,7 +39,7 @@ def get_job_session_name(job_id: str) -> str:
 
 
 # Core job lifecycle functions
-def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None) -> models.Job:
+def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None, discord_id: str | None) -> models.Job:
     """Create a new job with the given command and git info"""
     job_id = generate_job_id()
 
@@ -49,6 +49,7 @@ def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None) 
         status="queued",
         created_at=dt.datetime.now().timestamp(),
         user=user,
+        discord_id=discord_id,
         git_repo_url=git_repo_url,
         git_tag=git_tag,
         started_at=None,

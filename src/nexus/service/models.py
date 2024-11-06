@@ -19,6 +19,7 @@ class Job(pyd.BaseModel):
     error_message: str | None
     wandb_url: str | None
     user: str | None
+    discord_id: str | None
     marked_for_kill: bool
 
 
@@ -48,6 +49,7 @@ class JobsRequest(pyd.BaseModel):
     git_repo_url: str
     git_tag: str
     user: str | None
+    discord_id: str | None
 
 
 class ServiceLogsResponse(pyd.BaseModel):

@@ -56,7 +56,13 @@ def save_webhook_state(state: WebhookState, state_path: pathlib.Path) -> None:
 
 def format_job_message_for_webhook(job: Job, event_type: typing.Literal["started", "completed", "failed"]) -> dict:
     """Format job information for webhook message with rich embeds."""
-    user_mention = f"<@{DISCORD_USER_MAPPING[job.user]}>" if (job.user and job.user in DISCORD_USER_MAPPING) else "No user assigned"
+
+    if job.discord_id:
+        user_mention = f"<@{job.discord_id}>"
+    elif job.user:
+        user_mention = job.user
+    else:
+        user_mention = "No user assigned"
 
     message_title = f"{EMOJI_MAPPING[event_type]} - **Job {job.id} {event_type} on GPU {job.gpu_index}** - {user_mention}"
 
