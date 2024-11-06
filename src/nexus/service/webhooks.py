@@ -64,7 +64,7 @@ def format_job_message_for_webhook(job: Job, event_type: typing.Literal["started
     command = job.command or "N/A"
     git_info = f"{job.git_tag or ''} ({job.git_repo_url or 'N/A'})"
     gpu_index = str(job.gpu_index) if job.gpu_index is not None else "N/A"
-    wandb_url = job.wandb_url or "Pending ..."
+    wandb_url = "Pending ..." if event_type == "started" and not job.wandb_url else (job.wandb_url or "Not Found")
 
     fields = [
         {"name": "Command", "value": command},

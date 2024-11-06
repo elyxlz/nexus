@@ -14,24 +14,26 @@
 - [x] if a job doesnt have wandb after 5 minutes, stop pinging it
 - [x] clean up git tags that are unused
 - [x] make sure the job started webhook waits
-- [ ] multi user support
-- [ ] cli: prompt yes or no before removing, killing, or adding
+- [x] multi user support
+- [x] cli: prompt yes or no before removing, killing, or adding
 - [ ] cli: put wandb url in nexus status at cli
 - [ ] cli: filter history with command regex
 - [ ] cli: put runtime and time started on same line
 - [ ] cli: multiline bash
+- [ ] cli: More job details when printing job stuff, especially when removing or killing
+- [ ] cli: in history put failed and completed together, then I shuold be able to see which failed and which completed
 - [ ] Automatically check for updates
 - [ ] multi gpu jobs
 - [ ] dependent jobs (a after b is done)
 - [ ] cli: ensure cli and api version align, else restart
 - [ ] refactor, move more things away from cli and to the api
 - [ ] sqlite for state management
-- [ ] priority jobs
 
 ## Longterm TODO
 
-- [ ] rust rewrite for static binaries that don't require python (or venvs to be activated)
-- [ ] pretty TUI front end
+- [ ] systemd service
 - [ ] multi node
 - [ ] priority jobs
 - [ ] vram / flop minimum
+- [ ] rust rewrite for static binaries that don't require python (or venvs to be activated)
+- [ ] pretty TUI front end
