@@ -7,9 +7,9 @@ import pydantic_settings as pyds
 
 
 class NexusServiceConfig(pyds.BaseSettings):
-    jobs_dir: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "jobs")
-    state_path: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / "state.json")
-    env_file: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus" / ".env")
+    jobs_dir: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus_service" / "jobs")
+    state_path: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus_service" / "state.json")
+    env_file: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus_service" / ".env")
     refresh_rate: int = pyd.Field(default=5)
     history_limit: int = pyd.Field(default=1000)
     host: str = pyd.Field(default="localhost")
@@ -30,7 +30,7 @@ class NexusServiceConfig(pyds.BaseSettings):
 
 def create_default_config() -> None:
     """Create default configuration files if they don't exist."""
-    config_dir = pathlib.Path.home() / ".nexus"
+    config_dir = pathlib.Path.home() / ".nexus_service"
     config_path = config_dir / "config.toml"
     env_path = config_dir / ".env"
 

@@ -26,7 +26,7 @@ class NexusCliConfig(pyds.BaseSettings):
 def create_default_config() -> None:
     """Create default configuration files if they don't exist."""
     config_dir = pathlib.Path.home() / ".nexus"
-    config_path = config_dir / "cli_config.toml"
+    config_path = config_dir / "config.toml"
 
     # Create nexus directory if it doesn't exist
     config_dir.mkdir(parents=True, exist_ok=True)
