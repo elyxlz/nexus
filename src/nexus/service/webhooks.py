@@ -155,7 +155,7 @@ async def update_job_wandb(job: Job) -> None:
         logger.debug(f"No W&B URL found for job {job.id}. Skipping update.")
         return
 
-    state_path = pathlib.Path.home() / ".nexus" / "webhook_state.json"
+    state_path = pathlib.Path.home() / ".nexus_service" / "webhook_state.json"
     webhook_state = load_webhook_state(state_path)
     message_id = webhook_state.message_ids.get(job.id)
 
