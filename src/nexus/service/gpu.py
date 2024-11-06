@@ -1,10 +1,10 @@
 import subprocess
 import warnings
 
-from nexus.service.models import GpuInfo, ServiceState
+from nexus.service import models
 
 
-def get_gpus(state: ServiceState) -> list[GpuInfo]:
+def get_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
     """Query nvidia-smi for GPU information and map to process information."""
     try:
         # Get GPU stats
@@ -25,8 +25,8 @@ def get_gpus(state: ServiceState) -> list[GpuInfo]:
                 index, name, total, used = [x.strip() for x in line.split(",")]
                 index = int(index)
 
-                # Create GpuInfo object with process count from gpu_processes
-                gpu = GpuInfo(
+                # Create models.GpuInfo object with process count from gpu_processes
+                gpu = models.GpuInfo(
                     index=index,
                     name=name,
                     memory_total=int(float(total)),
@@ -50,7 +50,7 @@ def get_gpus(state: ServiceState) -> list[GpuInfo]:
         return get_mock_gpus(state)
 
 
-def get_available_gpus(state: ServiceState) -> list[GpuInfo]:
+def get_available_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
     """
     Get available GPUs based on:
     1. Not blacklisted
@@ -73,11 +73,11 @@ def get_available_gpus(state: ServiceState) -> list[GpuInfo]:
 
 
 # Mock GPUs for testing/development
-def get_mock_gpus(state: ServiceState) -> list[GpuInfo]:
+def get_mock_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
     """Generate mock GPUs for testing purposes."""
     running_jobs = {j.gpu_index: j.id for j in state.jobs if j.status == "running"}
     return [
-        GpuInfo(
+        models.GpuInfo(
             index=0,
             name="Mock GPU 0",
             memory_total=8192,
@@ -86,7 +86,7 @@ def get_mock_gpus(state: ServiceState) -> list[GpuInfo]:
             is_blacklisted=0 in state.blacklisted_gpus,
             running_job_id=running_jobs.get(0),
         ),
-        GpuInfo(
+        models.GpuInfo(
             index=1,
             name="Mock GPU 1",
             memory_total=16384,

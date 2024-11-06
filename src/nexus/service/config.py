@@ -15,6 +15,7 @@ class NexusServiceConfig(pyds.BaseSettings):
     host: str = pyd.Field(default="localhost")
     port: int = pyd.Field(default=54323)
     webhooks_enabled: bool = pyd.Field(default=True)
+    node_name: str | None = pyd.Field(default=None)
 
     @classmethod
     def settings_customise_sources(
@@ -61,6 +62,7 @@ refresh_rate = {config.refresh_rate}
 host = "{config.host}"
 port = "{config.port}"
 webhooks_enabled = "{config.webhooks_enabled}"
+# node_name = 
 """)
 
 
