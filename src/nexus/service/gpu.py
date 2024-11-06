@@ -36,9 +36,9 @@ def get_gpus(state: ServiceState) -> list[GpuInfo]:
                 total_memory = int(float(parts[2]))
                 used_memory = int(float(parts[3]))
 
-                # Parse process PIDs
+                # Parse process PIDs, skipping any non-integer entries like '-'
                 pids = []
-                if parts[4]:  # If there are processes
+                if parts[4] and parts[4] != "-":  # Check for non-empty and non-dash values
                     try:
                         pids = [int(pid) for pid in parts[4].split()]
                     except ValueError as e:

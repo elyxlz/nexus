@@ -60,7 +60,6 @@ def get_service_session_name() -> str:
 def start_service() -> None:
     """Start the Nexus service if not running."""
     if is_service_running():
-        print(colored("Nexus service is already running.", "yellow"))
         return
 
     session_name = get_service_session_name()
@@ -215,8 +214,10 @@ def print_status_snapshot() -> None:
 
                 print(f"{gpu_info}{colored(job_id, 'magenta')}")
                 print(f"  Command: {colored(job.get('command', 'N/A'), 'white', attrs=['bold'])}")
-                print(f"  Runtime: {colored(runtime_str, 'cyan')}")
-                print(f"  Started: {colored(start_time, 'cyan')}")
+                print(f"  Time: {colored(runtime_str, 'cyan')} (Started: {colored(start_time, 'cyan')})")
+                if job.get("wandb_url"):
+                    print(f"  W&B: {colored(job['wandb_url'], 'yellow')}")
+
             elif gpu.get("process_count", 0) == 0:
                 print(f"{gpu_info}{colored('Available', 'green', attrs=['bold'])}")
             else:
@@ -357,11 +358,6 @@ def show_history(regex: str | None = None) -> None:
             status_icon = "✓" if job["status"] == "completed" else "✗"
             status = colored(f"{status_icon} {job['status'].upper()}", status_color)
 
-            # Build error message if present
-            error_msg = ""
-            if job.get("error_message"):
-                error_msg = f"\n    {colored('Error:', 'red')} {job['error_message']}"
-
             # Format command, potentially truncating if too long
             command = job["command"]
             if len(command) > 80:
@@ -373,7 +369,6 @@ def show_history(regex: str | None = None) -> None:
                 f"(Started: {colored(started_time, 'cyan')}, "
                 f"Runtime: {colored(format_runtime(runtime), 'cyan')}, "
                 f"GPU: {colored(str(gpu), 'yellow')})"
-                f"{error_msg}"
             )
 
         total_jobs = len(jobs)
@@ -756,7 +751,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     # History
     history_parser = subparsers.add_parser("history", help="Show completed and failed jobs")
-    history_parser.add_argument("-f", "--filter", help="Filter jobs by command regex pattern")
+    history_parser.add_argument("pattern", nargs="?", help="Filter jobs by command regex pattern")
 
     # Blacklist management
     blacklist_parser = subparsers.add_parser("blacklist", help="Manage GPU blacklist")
@@ -796,7 +791,7 @@ def main() -> None:
             args.commands, repeat=args.repeat, dirty=args.dirty, user=args.user, discord_id=args.discord_id, bypass_confirm=args.yes
         ),
         "queue": lambda: show_queue(),
-        "history": lambda: show_history(getattr(args, "filter", None)),
+        "history": lambda: show_history(getattr(args, "pattern", None)),
         "kill": lambda: kill_jobs(args.targets, bypass_confirm=args.yes),
         "remove": lambda: remove_jobs(args.job_ids, bypass_confirm=args.yes),
         "pause": lambda: pause_queue(),
