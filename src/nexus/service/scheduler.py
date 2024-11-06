@@ -12,7 +12,7 @@ from nexus.service.state import (
     update_jobs_in_state,
 )
 from nexus.service.wandb_finder import find_wandb_run_by_nexus_id
-from nexus.service.webhooks import notify_job_completed, notify_job_failed, notify_job_started
+from nexus.service.webhooks import notify_job_completed, notify_job_failed, notify_job_started, update_job_wandb
 
 
 async def update_running_jobs(state: models.ServiceState, config: NexusServiceConfig):
@@ -66,6 +66,10 @@ async def update_wandb_urls(state: models.ServiceState, config: NexusServiceConf
             job.wandb_url = wandb_url
             jobs_to_update.append(job)
             logger.info(f"Associated job {job.id} with W&B run: {wandb_url}")
+
+            # Update the webhook message with the W&B URL
+            if config.webhooks_enabled:
+                await update_job_wandb(job)
 
     if jobs_to_update:
         update_jobs_in_state(state, jobs=jobs_to_update)
