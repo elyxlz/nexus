@@ -1,22 +1,76 @@
 import asyncio
 import os
 import pathlib
-from typing import Literal
-
+import typing
+from datetime import datetime
 import aiohttp
-from pydantic import BaseModel
-
+import pydantic as pyd
 from nexus.service.job import get_job_logs
 from nexus.service.logger import logger
 from nexus.service.models import Job
 
+# Discord user mapping for mentions
+DISCORD_USER_MAPPING = {
+    "elyxlz": "223864514326560768",  # TODO: figure out what to do
+}
 
-class WebhookMessage(BaseModel):
+# Emoji mapping for different job states
+EMOJI_MAPPING = {
+    "started": ":rocket:",
+    "completed": ":checkered_flag:",
+    "failed": ":interrobang:",
+}
+
+
+class WebhookMessage(pyd.BaseModel):
     content: str
+    embeds: list[dict] | None = None
     username: str = "Nexus"
 
 
-async def send_webhook(message: str) -> None:
+def format_job_message(job: Job, event_type: typing.Literal["started", "completed", "failed"]) -> dict:
+    """Format job information for webhook message with rich embeds."""
+    user_mention = f"@{DISCORD_USER_MAPPING[job.user]}" if (job.user and job.user in DISCORD_USER_MAPPING) else "No user assigned"
+
+    message_title = f"{EMOJI_MAPPING[event_type]} - **Job {job.id} {event_type} on GPU {job.gpu_index}** - {user_mention}"
+
+    # Prepare field values, using 'N/A' as fallback
+    command = job.command or "N/A"
+    git_info = f"{job.git_tag or ''} ({job.git_repo_url or 'N/A'})"
+    gpu_index = str(job.gpu_index or "N/A")
+    wandb_url = job.wandb_url or "N/A"
+
+    # Build the embed fields list
+    fields = [
+        {
+            "name": "Command",
+            "value": command,
+        },
+        {
+            "name": "Git",
+            "value": git_info,
+        },
+        {
+            "name": "W&B",
+            "value": wandb_url,
+        },
+        {"name": "User", "value": user_mention, "inline": True},
+        {"name": "GPU", "value": gpu_index, "inline": True},
+    ]
+
+    # Add error message if available
+    if job.error_message:
+        fields.insert(0, {"name": job.error_message, "value": ""})
+
+    return {
+        "content": message_title,
+        "embeds": [
+            {"fields": fields, "color": 4915310, "footer": {"text": f"Job Status Update • {job.id}"}, "timestamp": datetime.now().isoformat()}
+        ],
+    }
+
+
+async def send_webhook(message_data: dict) -> None:
     """Send a message to Discord webhook."""
     webhook_url = os.getenv("NEXUS_DISCORD_WEBHOOK_URL")
     if not webhook_url:
@@ -24,7 +78,7 @@ async def send_webhook(message: str) -> None:
         return
 
     try:
-        webhook_data = WebhookMessage(content=message)
+        webhook_data = WebhookMessage(**message_data)
         async with aiohttp.ClientSession() as session:
             async with session.post(webhook_url, json=webhook_data.model_dump()) as response:
                 if response.status != 204:
@@ -33,46 +87,29 @@ async def send_webhook(message: str) -> None:
         logger.error(f"Error sending webhook: {e}")
 
 
-def format_job_message(job: Job, event_type: Literal["started", "completed", "failed"]) -> str:
-    """Format job information for webhook message."""
-    user_mention = f"<@{job.user}>" if job.user else "No user assigned"
-
-    base_info = [f"Job {job.id} {event_type}", f"Command: {job.command}", f"Git: {job.git_tag} ({job.git_repo_url})", f"User: {user_mention}"]
-
-    if event_type == "started":
-        base_info.append(f"GPU: {job.gpu_index}")
-        if job.wandb_url:
-            base_info.append(f"W&B: {job.wandb_url}")
-
-    return "\n".join(base_info)
-
-
 async def notify_job_started(job: Job) -> None:
     """Send webhook notification for job start after waiting for potential W&B URL."""
     # Wait 30 seconds to allow W&B URL to be populated
     await asyncio.sleep(30)
-    message = format_job_message(job, "started")
-    await send_webhook(message)
+    message_data = format_job_message(job, "started")
+    await send_webhook(message_data)
 
 
 async def notify_job_completed(job: Job) -> None:
     """Send webhook notification for job completion."""
-    message = format_job_message(job, "completed")
-    await send_webhook(message)
+    message_data = format_job_message(job, "completed")
+    await send_webhook(message_data)
 
 
 async def notify_job_failed(job: Job, jobs_dir: pathlib.Path) -> None:
     """Send webhook notification for job failure with last few log lines."""
-    base_message = format_job_message(job, "failed")
-
-    # Add error message if available
-    if job.error_message:
-        base_message += f"\nError: {job.error_message}"
+    message_data = format_job_message(job, "failed")
 
     # Add last few lines of logs
     logs = get_job_logs(job, jobs_dir)
     if logs:
         last_lines = "\n".join(logs.splitlines()[-5:])  # Get last 5 lines
-        base_message += f"\n\nLast few log lines:\n```\n{last_lines}\n```"
+        # Add logs to the embed
+        message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": f"```\n{last_lines}\n```"})
 
-    await send_webhook(base_message)
+    await send_webhook(message_data)
