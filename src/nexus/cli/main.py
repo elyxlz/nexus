@@ -60,7 +60,6 @@ def get_service_session_name() -> str:
 def start_service() -> None:
     """Start the Nexus service if not running."""
     if is_service_running():
-        print(colored("Nexus service is already running.", "yellow"))
         return
 
     session_name = get_service_session_name()
