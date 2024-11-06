@@ -250,25 +250,29 @@ def ensure_git_reproducibility(id: str, dirty: bool) -> tuple[str, str]:
         raise RuntimeError(f"Failed to create/push git tag: {e}")
 
 
-def add_jobs(commands: list[str], repeat: int, dirty: bool, user: str | None, discord_id: str | None) -> None:
+def add_jobs(commands: list[str], repeat: int, dirty: bool, user: str | None, discord_id: str | None, bypass_confirm: bool = False) -> None:
     try:
-        # Get default values from config
-        cli_config = load_config()
-
-        # Use command line args if provided, otherwise use config values
-        final_user = user or cli_config.user
-        final_discord = discord_id or cli_config.discord_id
-
-        # Generate job ID and ensure git state
-        git_tag_id = generate_git_tag_id()
-        git_repo_url, tag_name = ensure_git_reproducibility(git_tag_id, dirty=dirty)
-
-        # Expand commands
+        # Expand commands first to show what will be added
         expanded_commands = expand_job_commands(commands, repeat=repeat)
         if not expanded_commands:
             return
 
-        # Prepare request payload with user info
+        # Display what will be added
+        print(f"\n{colored('Adding the following jobs:', 'blue', attrs=['bold'])}")
+        for cmd in expanded_commands:
+            print(f"  {colored('•', 'blue')} {cmd}")
+
+        if not confirm_action(f"Add {colored(str(len(expanded_commands)), 'cyan')} jobs to the queue?", bypass=bypass_confirm):
+            print(colored("Operation cancelled.", "yellow"))
+            return
+
+        # Rest of the add_jobs function remains the same...
+        cli_config = load_config()
+        final_user = user or cli_config.user
+        final_discord = discord_id or cli_config.discord_id
+        git_tag_id = generate_git_tag_id()
+        git_repo_url, tag_name = ensure_git_reproducibility(git_tag_id, dirty=dirty)
+
         payload = {
             "commands": expanded_commands,
             "git_repo_url": git_repo_url,
@@ -277,18 +281,16 @@ def add_jobs(commands: list[str], repeat: int, dirty: bool, user: str | None, di
             "discord_id": final_discord,
         }
 
-        # Submit to API
         response = requests.post(f"{get_api_base_url()}/jobs", json=payload)
         response.raise_for_status()
         jobs = response.json()
 
-        # Display results
+        print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
         for job in jobs:
-            print(f"Added job {colored(job['id'], 'magenta', attrs=['bold'])}: {job['command']}")
-        print(colored(f"\nAdded {len(jobs)} jobs to the queue", "green", attrs=["bold"]))
+            print(f"  {colored('•', 'green')} Job {colored(job['id'], 'magenta')}: {job['command']}")
 
     except requests.RequestException as e:
-        print(colored(f"Error adding jobs: {e}", "red"))
+        print(colored(f"\nError adding jobs: {e}", "red"))
         sys.exit(1)
 
 
@@ -351,12 +353,13 @@ def show_history() -> None:
         print(colored(f"Error fetching history: {e}", "red"))
 
 
-def kill_jobs(targets: list[str]) -> None:
-    """Kill running jobs."""
+def kill_jobs(targets: list[str], bypass_confirm: bool = False) -> None:
     try:
         gpu_indices, job_ids = parse_targets(targets)
         jobs_to_kill = set()
+        jobs_info = []
 
+        # Collect information about jobs that will be killed
         if gpu_indices:
             response = requests.get(f"{get_api_base_url()}/gpus")
             response.raise_for_status()
@@ -364,15 +367,9 @@ def kill_jobs(targets: list[str]) -> None:
 
             for gpu_index in gpu_indices:
                 matching_gpu = next((gpu for gpu in gpus if gpu["index"] == gpu_index), None)
-                if not matching_gpu:
-                    print(colored(f"No GPU found with index {gpu_index}", "red"))
-                    continue
-
-                job_id = matching_gpu.get("running_job_id")
-                if job_id:
-                    jobs_to_kill.add(job_id)
-                else:
-                    print(colored(f"No running job found on GPU {gpu_index}", "yellow"))
+                if matching_gpu and matching_gpu.get("running_job_id"):
+                    jobs_to_kill.add(matching_gpu["running_job_id"])
+                    jobs_info.append(f"GPU {gpu_index}: Job {colored(matching_gpu['running_job_id'], 'magenta')}")
 
         if job_ids:
             response = requests.get(f"{get_api_base_url()}/jobs", params={"status": "running"})
@@ -380,28 +377,43 @@ def kill_jobs(targets: list[str]) -> None:
             running_jobs = response.json()
 
             for pattern in job_ids:
+                matching_jobs = []
                 if pattern in [job["id"] for job in running_jobs]:
-                    jobs_to_kill.add(pattern)
+                    matching_jobs.append(next(job for job in running_jobs if job["id"] == pattern))
                 else:
                     try:
                         regex = re.compile(pattern)
-                        matching_jobs = [job["id"] for job in running_jobs if regex.search(job["command"])]
-                        jobs_to_kill.update(matching_jobs)
+                        matching_jobs.extend(job for job in running_jobs if regex.search(job["command"]))
                     except re.error as e:
                         print(colored(f"Invalid regex pattern '{pattern}': {e}", "red"))
+                        continue
+
+                for job in matching_jobs:
+                    jobs_to_kill.add(job["id"])
+                    jobs_info.append(f"Job {colored(job['id'], 'magenta')}: {job['command']}")
 
         if not jobs_to_kill:
             print(colored("No matching running jobs found.", "yellow"))
+            return
+
+        # Display jobs that will be killed
+        print(f"\n{colored('The following jobs will be killed:', 'blue', attrs=['bold'])}")
+        for info in jobs_info:
+            print(f"  {colored('•', 'blue')} {info}")
+
+        if not confirm_action(f"Kill {colored(str(len(jobs_to_kill)), 'cyan')} jobs?", bypass=bypass_confirm):
+            print(colored("Operation cancelled.", "yellow"))
             return
 
         response = requests.delete(f"{get_api_base_url()}/jobs/running", json=list(jobs_to_kill))
         response.raise_for_status()
         result = response.json()
 
+        print(colored("\nOperation results:", "green", attrs=["bold"]))
         for job_id in result.get("killed", []):
-            print(colored(f"Killed job {job_id}", "green"))
+            print(f"  {colored('•', 'green')} Successfully killed job {colored(job_id, 'magenta')}")
         for fail in result.get("failed", []):
-            print(colored(f"Failed to kill job {fail['id']}: {fail['error']}", "red"))
+            print(f"  {colored('×', 'red')} Failed to kill job {colored(fail['id'], 'magenta')}: {fail['error']}")
 
     except requests.RequestException as e:
         if hasattr(e.response, "text"):
@@ -411,22 +423,27 @@ def kill_jobs(targets: list[str]) -> None:
             print(colored(f"Error killing jobs: {e}", "red"))
 
 
-def remove_jobs(job_ids: list[str]) -> None:
-    """Remove queued jobs."""
+def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
     try:
         response = requests.get(f"{get_api_base_url()}/jobs", params={"status": "queued"})
         response.raise_for_status()
         queued_jobs = response.json()
 
         jobs_to_remove = set()
+        jobs_info = []
+
         for pattern in job_ids:
             if pattern in [job["id"] for job in queued_jobs]:
+                job = next(job for job in queued_jobs if job["id"] == pattern)
                 jobs_to_remove.add(pattern)
+                jobs_info.append(f"Job {colored(job['id'], 'magenta')}: {job['command']}")
             else:
                 try:
                     regex = re.compile(pattern)
-                    matching_jobs = [job["id"] for job in queued_jobs if regex.search(job["command"])]
-                    jobs_to_remove.update(matching_jobs)
+                    matching_jobs = [job for job in queued_jobs if regex.search(job["command"])]
+                    for job in matching_jobs:
+                        jobs_to_remove.add(job["id"])
+                        jobs_info.append(f"Job {colored(job['id'], 'magenta')}: {job['command']}")
                 except re.error as e:
                     print(colored(f"Invalid regex pattern '{pattern}': {e}", "red"))
 
@@ -434,14 +451,23 @@ def remove_jobs(job_ids: list[str]) -> None:
             print(colored("No matching queued jobs found.", "yellow"))
             return
 
+        print(f"\n{colored('The following jobs will be removed from queue:', 'blue', attrs=['bold'])}")
+        for info in jobs_info:
+            print(f"  {colored('•', 'blue')} {info}")
+
+        if not confirm_action(f"Remove {colored(str(len(jobs_to_remove)), 'cyan')} jobs from queue?", bypass=bypass_confirm):
+            print(colored("Operation cancelled.", "yellow"))
+            return
+
         response = requests.delete(f"{get_api_base_url()}/jobs/queued", json=list(jobs_to_remove))
         response.raise_for_status()
         result = response.json()
 
+        print(colored("\nOperation results:", "green", attrs=["bold"]))
         for job_id in result.get("removed", []):
-            print(colored(f"Removed job {job_id}", "green"))
+            print(f"  {colored('•', 'green')} Successfully removed job {colored(job_id, 'magenta')}")
         for fail in result.get("failed", []):
-            print(colored(f"Failed to remove job {fail['id']}: {fail['error']}", "red"))
+            print(f"  {colored('×', 'red')} Failed to remove job {colored(fail['id'], 'magenta')}: {fail['error']}")
 
     except requests.RequestException as e:
         if hasattr(e.response, "text"):
@@ -634,6 +660,15 @@ def show_version() -> None:
     print(f"Nexus version: {colored(VERSION, 'cyan')}")
 
 
+def confirm_action(action_description: str, bypass: bool = False) -> bool:
+    if bypass:
+        return True
+
+    response = input(f"\n{colored('?', 'blue', attrs=['bold'])} {action_description} [y/N] ").lower().strip()
+    print()  # Add newline after response
+    return response == "y"
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser."""
     parser = argparse.ArgumentParser(
@@ -660,6 +695,7 @@ def create_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("-d", "--dirty", action="store_true", help="Allow adding jobs with unstaged changes")
     add_parser.add_argument("-u", "--user", help="Override default username")
     add_parser.add_argument("--discord_id", help="Override default Discord user ID")
+    add_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     # Kill jobs
     kill_parser = subparsers.add_parser("kill", help="Kill jobs by GPU indices, job IDs, or command regex")
@@ -668,10 +704,12 @@ def create_parser() -> argparse.ArgumentParser:
         nargs="+",
         help="List of GPU indices, job IDs, or command regex patterns",
     )
+    kill_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     # Remove jobs
     remove_parser = subparsers.add_parser("remove", help="Remove jobs from queue by job IDs or command regex")
     remove_parser.add_argument("job_ids", nargs="+", help="List of job IDs or command regex patterns")
+    remove_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     # Blacklist management
     blacklist_parser = subparsers.add_parser("blacklist", help="Manage GPU blacklist")
@@ -707,11 +745,13 @@ def main() -> None:
     command_handlers = {
         "stop": lambda: stop_service(),
         "restart": lambda: restart_service(),
-        "add": lambda: add_jobs(args.commands, repeat=args.repeat, dirty=args.dirty, user=args.user, discord_id=args.discord_id),
+        "add": lambda: add_jobs(
+            args.commands, repeat=args.repeat, dirty=args.dirty, user=args.user, discord_id=args.discord_id, bypass_confirm=args.yes
+        ),
         "queue": lambda: show_queue(),
         "history": lambda: show_history(),
-        "kill": lambda: kill_jobs(args.targets),
-        "remove": lambda: remove_jobs(args.job_ids),
+        "kill": lambda: kill_jobs(args.targets, bypass_confirm=args.yes),
+        "remove": lambda: remove_jobs(args.job_ids, bypass_confirm=args.yes),
         "pause": lambda: pause_queue(),
         "resume": lambda: resume_queue(),
         "blacklist": lambda: handle_blacklist(args),
@@ -720,7 +760,6 @@ def main() -> None:
         "config": lambda: show_config(),
         "version": lambda: show_version(),
     }
-
     handler = command_handlers.get(args.command, parser.print_help)
     handler()
 

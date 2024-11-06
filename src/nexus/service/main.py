@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import getpass
 import importlib.metadata
 import os
 import pathlib
@@ -70,6 +71,7 @@ async def get_status():
         running_jobs=running,
         completed_jobs=completed,
         is_paused=state.is_paused,
+        service_user=getpass.getuser(),
     )
     logger.info(f"Service status: {response}")
     return response
