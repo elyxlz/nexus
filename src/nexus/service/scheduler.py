@@ -4,6 +4,7 @@ import datetime as dt
 from nexus.service import models
 from nexus.service.config import NexusServiceConfig
 from nexus.service.format import format_job_action
+from nexus.service.git import cleanup_git_tag
 from nexus.service.gpu import get_available_gpus
 from nexus.service.job import end_job, get_job_logs, is_job_session_running, kill_job_session, start_job
 from nexus.service.logger import logger
@@ -34,6 +35,10 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
             action = "completed" if updated_job.status == "completed" else "failed"
             log_func = logger.info if action == "completed" else logger.error
             log_func(format_job_action(updated_job, action=action))
+
+            # Add git tag cleanup here
+            running_jobs = [j for j in state.jobs if j.status == "running"]
+            cleanup_git_tag(updated_job, running_jobs)
 
             if config.webhooks_enabled:
                 notify_func = notify_job_completed if action == "completed" else notify_job_failed

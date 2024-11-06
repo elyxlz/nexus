@@ -13,7 +13,7 @@ class NexusServiceConfig(pyds.BaseSettings):
     refresh_rate: int = pyd.Field(default=5)
     history_limit: int = pyd.Field(default=1000)
     host: str = pyd.Field(default="localhost")
-    port: int = pyd.Field(default=54322)
+    port: int = pyd.Field(default=54323)
     webhooks_enabled: bool = pyd.Field(default=True)
 
     @classmethod

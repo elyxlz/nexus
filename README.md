@@ -12,21 +12,20 @@
 - [x] Webhooks for starting, completed, and failed jobs (for discord)
 - [x] make webhooks prettier
 - [x] if a job doesnt have wandb after 5 minutes, stop pinging it
+- [x] clean up git tags that are unused
+- [x] make sure the job started webhook waits
 - [ ] multi user support
+- [ ] cli: prompt yes or no before removing, killing, or adding
+- [ ] cli: put wandb url in nexus status at cli
+- [ ] cli: filter history with command regex
+- [ ] cli: put runtime and time started on same line
+- [ ] cli: multiline bash
 - [ ] Automatically check for updates
-- [ ] a way to quickly find the logs of recent crashes
-- [ ] filter history with command regex
-- [ ] clean up git tags that are unused
-- [ ] make sure the job started webhook waits
-- [ ] put wandb url in nexus status at cli
 - [ ] multi gpu jobs
 - [ ] dependent jobs (a after b is done)
-- [ ] ensure cli and api version align, else restart
+- [ ] cli: ensure cli and api version align, else restart
 - [ ] refactor, move more things away from cli and to the api
-- [ ] prompt yes or no before removing, killing, or adding
-- [ ] put runtime and time started on same line
 - [ ] sqlite for state management
-- [ ] multiline bash
 - [ ] priority jobs
 
 ## Longterm TODO
