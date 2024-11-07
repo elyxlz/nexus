@@ -215,7 +215,7 @@ def print_status_snapshot() -> None:
                 if job.get("wandb_url"):
                     print(f"  W&B: {colored(job['wandb_url'], 'yellow')}")
 
-            elif gpu.get("process_count", 0) == 0:
+            elif gpu.get("is_available", False):
                 print(f"{gpu_info}{colored('Available', 'green', attrs=['bold'])}")
             else:
                 print(f"{gpu_info}{colored('In Use (External Process)', 'yellow', attrs=['bold'])}")
