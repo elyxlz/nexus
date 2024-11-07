@@ -55,7 +55,7 @@ def get_available_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
     Get available GPUs based on:
     1. Not blacklisted
     2. Not assigned to a running job in our service
-    3. No processes currently using the GPU
+    3. Less than 2MB memory used
     """
     gpus = get_gpus(state)
 
@@ -66,6 +66,7 @@ def get_available_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
         if (
             not g.is_blacklisted  # Not blacklisted
             and g.running_job_id is None  # Not assigned to a running job in our service
+            and g.memory_used < 2,
             # and g.index not in gpu_processes  # No processes using this GPU
         )
     ]
