@@ -20,6 +20,10 @@
 - [x] cli: put runtime and time started on same line
 - [x] cli: filter history with command regex
 - [x] cli: in history put failed and completed together, then I shuold be able to see which  and which completed
+- [ ] cli: nx should also work
+- [ ] sometimes a job doesnt die, should probably SIGKILL
+- [ ] Look for wandb in longer intervals in the scheduler, then if not found after a while update original message
+- [ ] easy way to show logs for running jobs on discord
 - [ ] its starting jobs on non available gpus
 - [ ] actually get gpu processes
 - [ ] cli: follow logs with -f
