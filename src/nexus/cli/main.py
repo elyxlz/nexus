@@ -215,7 +215,7 @@ def print_status_snapshot() -> None:
                 if job.get("wandb_url"):
                     print(f"  W&B: {colored(job['wandb_url'], 'yellow')}")
 
-            elif gpu.get("process_count", 0) == 0:
+            elif gpu.get("memory_used", 0) < 2:
                 print(f"{gpu_info}{colored('Available', 'green', attrs=['bold'])}")
             else:
                 print(f"{gpu_info}{colored('In Use (External Process)', 'yellow', attrs=['bold'])}")
@@ -341,7 +341,7 @@ def show_history(regex: str | None = None) -> None:
                 return
 
         # Sort jobs by completion time, most recent first
-        jobs.sort(key=lambda x: x.get("completed_at", 0), reverse=True)
+        jobs.sort(key=lambda x: x.get("completed_at", 0), reverse=False)
 
         print(colored("Job History:", "blue", attrs=["bold"]))
         for job in jobs[-25:]:  # Last 25 jobs

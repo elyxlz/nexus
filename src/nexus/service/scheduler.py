@@ -38,7 +38,7 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
 
             # Add git tag cleanup here
             running_jobs = [j for j in state.jobs if j.status == "running"]
-            cleanup_git_tag(updated_job, running_jobs)
+            cleanup_git_tag(updated_job, running_jobs=running_jobs)
 
             if config.webhooks_enabled:
                 notify_func = notify_job_completed if action == "completed" else notify_job_failed
