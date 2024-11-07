@@ -1,7 +1,6 @@
 import subprocess
 import warnings
 from nexus.service import models
-
 from nexus.service.logger import logger
 
 
@@ -22,13 +21,11 @@ def get_gpu_processes() -> dict[int, int]:
         # Initialize process counts for all GPUs
         gpu_processes = {}
 
-        # Skip header line
-        lines = output.strip().split("\n")[1:]
+        # Skip header lines (there are typically 2 header lines)
+        lines = output.strip().split("\n")[2:]
 
         logger.debug(f"Processing {len(lines)} lines of nvidia-smi pmon output")
         for line in lines:
-            # PMON format: # gpu        pid  type    sm   mem   enc   dec   command
-            # We only need the GPU index (first column)
             if not line.strip():
                 continue
 
@@ -36,13 +33,16 @@ def get_gpu_processes() -> dict[int, int]:
             if not parts:
                 continue
 
-            try:
-                gpu_index = int(parts[0])
-                gpu_processes[gpu_index] = gpu_processes.get(gpu_index, 0) + 1
-                logger.debug(f"GPU {gpu_index}: process count incremented to {gpu_processes[gpu_index]}")
-            except (ValueError, IndexError):
-                logger.debug(f"Failed to parse line: {line}")
-                continue
+            # Check if the line actually represents a process
+            # A line with just "-" indicates no process
+            if len(parts) > 1 and parts[1].strip() != "-":
+                try:
+                    gpu_index = int(parts[0])
+                    gpu_processes[gpu_index] = gpu_processes.get(gpu_index, 0) + 1
+                    logger.debug(f"GPU {gpu_index}: process count incremented to {gpu_processes[gpu_index]}")
+                except (ValueError, IndexError):
+                    logger.debug(f"Failed to parse line: {line}")
+                    continue
 
         logger.debug(f"Final GPU process counts: {gpu_processes}")
         return gpu_processes
@@ -71,7 +71,6 @@ def get_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
 
         # Get process information for each GPU
         gpus = []
-        # logger.debug(f"Processing {len(output.strip().split('\n'))} lines of nvidia-smi GPU information output")
         for line in output.strip().split("\n"):
             try:
                 # Parse GPU information
