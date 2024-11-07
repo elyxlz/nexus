@@ -12,7 +12,7 @@ import uvicorn
 from nexus.service import models
 from nexus.service.config import load_config
 from nexus.service.format import format_job_action
-from nexus.service.git import validate_git_url
+from nexus.service.git import normalize_git_url
 from nexus.service.gpu import get_gpus
 from nexus.service.job import (
     create_job,
@@ -70,7 +70,6 @@ async def get_status():
         queued_jobs=queued,
         running_jobs=running,
         completed_jobs=completed,
-        is_paused=state.is_paused,
         service_user=getpass.getuser(),
     )
     logger.info(f"Service status: {response}")
@@ -91,22 +90,6 @@ async def get_service_logs():
         raise fa.HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/v1/service/pause", response_model=models.ServiceActionResponse)
-async def pause_service():
-    state.is_paused = True
-    save_state(state, state_path=config.state_path)
-    logger.info("Service paused")
-    return models.ServiceActionResponse(status="paused")
-
-
-@app.post("/v1/service/resume", response_model=models.ServiceActionResponse)
-async def resume_service():
-    state.is_paused = False
-    save_state(state, state_path=config.state_path)
-    logger.info("Service resumed")
-    return models.ServiceActionResponse(status="resumed")
-
-
 # Job Endpoints
 @app.get("/v1/jobs", response_model=list[models.Job])
 async def list_jobs(
@@ -125,14 +108,13 @@ async def list_jobs(
 
 @app.post("/v1/jobs", response_model=list[models.Job])
 async def add_jobs(job_request: models.JobsRequest):
-    if not validate_git_url(job_request.git_repo_url):
-        raise fa.HTTPException(status_code=400, detail=f"Invalid git repository URL: {job_request.git_repo_url}")
-
     try:
+        normalized_url = normalize_git_url(job_request.git_repo_url)
+
         jobs = [
             create_job(
                 command=command,
-                git_repo_url=job_request.git_repo_url,
+                git_repo_url=normalized_url,
                 git_tag=job_request.git_tag,
                 user=job_request.user,
                 discord_id=job_request.discord_id,
@@ -149,6 +131,8 @@ async def add_jobs(job_request: models.JobsRequest):
 
         return jobs
 
+    except ValueError as e:
+        raise fa.HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error adding jobs: {e}")
         raise fa.HTTPException(status_code=500, detail=str(e))

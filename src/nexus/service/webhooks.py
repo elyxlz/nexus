@@ -177,7 +177,7 @@ async def notify_job_failed(job: Job, jobs_dir: pathlib.Path) -> None:
     message_data = format_job_message_for_webhook(job, "failed")
 
     # Add last few lines of logs
-    last_lines = get_job_logs(job.id, jobs_dir, last_n_lines=5)
+    last_lines = get_job_logs(job.id, jobs_dir, last_n_lines=10)
     if last_lines:
         message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": f"```\n{last_lines}\n```"})
 

@@ -15,7 +15,6 @@ def create_default_state(state_path: pathlib.Path) -> models.ServiceState:
         status="running",
         jobs=[],
         blacklisted_gpus=[],
-        is_paused=False,
         last_updated=0.0,
     )
 

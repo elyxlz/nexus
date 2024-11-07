@@ -144,11 +144,8 @@ async def process_scheduler_tick(state: models.ServiceState, config: NexusServic
 async def job_scheduler(state: models.ServiceState, config: NexusServiceConfig):
     """Main scheduler loop that processes jobs and manages GPU allocation."""
     while True:
-        if not state.is_paused:
-            try:
-                await process_scheduler_tick(state, config)
-            except Exception as e:
-                logger.error(f"Scheduler error: {e}")
-        else:
-            logger.info("Scheduler is paused")
+        try:
+            await process_scheduler_tick(state, config)
+        except Exception as e:
+            logger.error(f"Scheduler error: {e}")
         await asyncio.sleep(config.refresh_rate)
