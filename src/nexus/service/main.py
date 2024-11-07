@@ -256,7 +256,6 @@ async def remove_queued_jobs(job_ids: list[str]):
 # GPU Endpoints
 @app.get("/v1/gpus", response_model=list[models.GpuInfo])
 async def list_gpus():
-    logger.info("Listing available GPUs")
     gpus = get_gpus(state)
     logger.info(f"Found {len(gpus)} GPUs")
     return gpus

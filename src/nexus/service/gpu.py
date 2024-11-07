@@ -3,6 +3,10 @@ import warnings
 from nexus.service import models
 
 
+def is_gpu_available(gpu_info: models.GpuInfo) -> bool:
+    return not gpu_info.is_blacklisted and gpu_info.running_job_id is None and gpu_info.process_count == 0
+
+
 def get_gpu_processes() -> dict[int, int]:
     """Query nvidia-smi pmon for process information per GPU.
     Returns a dictionary mapping GPU indices to their process counts."""
@@ -72,7 +76,10 @@ def get_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
                     process_count=gpu_processes.get(index, 0),  # Get process count, default to 0
                     is_blacklisted=index in state.blacklisted_gpus,
                     running_job_id={j.gpu_index: j.id for j in state.jobs if j.status == "running"}.get(index),
+                    is_available=False,
                 )
+                gpu.is_available = is_gpu_available(gpu)
+
                 gpus.append(gpu)
             except (ValueError, IndexError) as e:
                 warnings.warn(f"Error parsing GPU info: {e}")
@@ -86,32 +93,11 @@ def get_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
         return get_mock_gpus(state)
 
 
-def get_available_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
-    """
-    Get available GPUs based on:
-    1. Not blacklisted
-    2. Not assigned to a running job in our service
-    4. No processes running on the GPU
-    """
-    gpus = get_gpus(state)
-    # Filter available GPUs based on the process list and blacklist
-    available_gpus = [
-        g
-        for g in gpus
-        if (
-            not g.is_blacklisted  # Not blacklisted
-            and g.running_job_id is None  # Not assigned to a running job in our service
-            and g.process_count == 0  # No processes using this GPU
-        )
-    ]
-    return available_gpus
-
-
 # Mock GPUs for testing/development
 def get_mock_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
     """Generate mock GPUs for testing purposes."""
     running_jobs = {j.gpu_index: j.id for j in state.jobs if j.status == "running"}
-    return [
+    mock_gpus = [
         models.GpuInfo(
             index=0,
             name="Mock GPU 0",
@@ -120,6 +106,7 @@ def get_mock_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
             process_count=0,
             is_blacklisted=0 in state.blacklisted_gpus,
             running_job_id=running_jobs.get(0),
+            is_available=False,
         ),
         models.GpuInfo(
             index=1,
@@ -129,5 +116,11 @@ def get_mock_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
             process_count=0,
             is_blacklisted=1 in state.blacklisted_gpus,
             running_job_id=running_jobs.get(1),
+            is_available=False,
         ),
     ]
+
+    for gpu in mock_gpus:
+        gpu.is_available = is_gpu_available(gpu)
+
+    return mock_gpus
