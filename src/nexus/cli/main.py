@@ -341,7 +341,7 @@ def show_history(regex: str | None = None) -> None:
                 return
 
         # Sort jobs by completion time, most recent first
-        jobs.sort(key=lambda x: x.get("completed_at", 0), reverse=True)
+        jobs.sort(key=lambda x: x.get("completed_at", 0), reverse=False)
 
         print(colored("Job History:", "blue", attrs=["bold"]))
         for job in jobs[-25:]:  # Last 25 jobs
