@@ -2,6 +2,8 @@ import subprocess
 import warnings
 from nexus.service import models
 
+from nexus.service.logger import logger
+
 
 def is_gpu_available(gpu_info: models.GpuInfo) -> bool:
     return not gpu_info.is_blacklisted and gpu_info.running_job_id is None and gpu_info.process_count == 0
@@ -11,6 +13,7 @@ def get_gpu_processes() -> dict[int, int]:
     """Query nvidia-smi pmon for process information per GPU.
     Returns a dictionary mapping GPU indices to their process counts."""
     try:
+        logger.debug("Executing nvidia-smi pmon command")
         output = subprocess.check_output(
             ["nvidia-smi", "pmon", "-c", "1"],
             text=True,
@@ -22,6 +25,7 @@ def get_gpu_processes() -> dict[int, int]:
         # Skip header line
         lines = output.strip().split("\n")[1:]
 
+        logger.debug(f"Processing {len(lines)} lines of nvidia-smi pmon output")
         for line in lines:
             # PMON format: # gpu        pid  type    sm   mem   enc   dec   command
             # We only need the GPU index (first column)
@@ -35,11 +39,15 @@ def get_gpu_processes() -> dict[int, int]:
             try:
                 gpu_index = int(parts[0])
                 gpu_processes[gpu_index] = gpu_processes.get(gpu_index, 0) + 1
+                logger.debug(f"GPU {gpu_index}: process count incremented to {gpu_processes[gpu_index]}")
             except (ValueError, IndexError):
+                logger.debug(f"Failed to parse line: {line}")
                 continue
 
+        logger.debug(f"Final GPU process counts: {gpu_processes}")
         return gpu_processes
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.error(f"nvidia-smi pmon failed: {e}")
         warnings.warn(f"nvidia-smi pmon failed: {e}", RuntimeWarning)
         return {}
 
@@ -47,6 +55,7 @@ def get_gpu_processes() -> dict[int, int]:
 def get_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
     """Query nvidia-smi for GPU information and map to process information."""
     try:
+        logger.debug("Executing nvidia-smi command for GPU stats")
         # Get GPU stats
         output = subprocess.check_output(
             [
@@ -62,11 +71,13 @@ def get_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
 
         # Get process information for each GPU
         gpus = []
+        logger.debug(f"Processing {len(output.strip().split('\n'))} lines of nvidia-smi output")
         for line in output.strip().split("\n"):
             try:
                 # Parse GPU information
                 index, name, total, used = [x.strip() for x in line.split(",")]
                 index = int(index)
+                logger.debug(f"Processing GPU {index}: {name}")
                 # Create models.GpuInfo object with process count from gpu_processes
                 gpu = models.GpuInfo(
                     index=index,
@@ -79,13 +90,17 @@ def get_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
                     is_available=False,
                 )
                 gpu.is_available = is_gpu_available(gpu)
+                logger.debug(f"GPU {index} availability: {gpu.is_available}")
 
                 gpus.append(gpu)
             except (ValueError, IndexError) as e:
+                logger.error(f"Error parsing GPU info: {e}")
                 warnings.warn(f"Error parsing GPU info: {e}")
                 continue
+        logger.debug(f"Total GPUs found: {len(gpus)}")
         return gpus if gpus else get_mock_gpus(state)
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.error(f"nvidia-smi not available or failed: {e}")
         warnings.warn(
             f"nvidia-smi not available or failed: {e}. Using mock GPU information.",
             RuntimeWarning,
@@ -96,6 +111,7 @@ def get_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
 # Mock GPUs for testing/development
 def get_mock_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
     """Generate mock GPUs for testing purposes."""
+    logger.debug("Generating mock GPUs")
     running_jobs = {j.gpu_index: j.id for j in state.jobs if j.status == "running"}
     mock_gpus = [
         models.GpuInfo(
@@ -122,5 +138,7 @@ def get_mock_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
 
     for gpu in mock_gpus:
         gpu.is_available = is_gpu_available(gpu)
+        logger.debug(f"Mock GPU {gpu.index} availability: {gpu.is_available}")
 
+    logger.debug(f"Total mock GPUs generated: {len(mock_gpus)}")
     return mock_gpus
