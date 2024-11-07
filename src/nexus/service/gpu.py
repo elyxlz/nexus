@@ -71,7 +71,7 @@ def get_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
 
         # Get process information for each GPU
         gpus = []
-        logger.debug(f"Processing {len(output.strip().split('\n'))} lines of nvidia-smi output")
+        # logger.debug(f"Processing {len(output.strip().split('\n'))} lines of nvidia-smi GPU information output")
         for line in output.strip().split("\n"):
             try:
                 # Parse GPU information
@@ -100,11 +100,7 @@ def get_gpus(state: models.ServiceState) -> list[models.GpuInfo]:
         logger.debug(f"Total GPUs found: {len(gpus)}")
         return gpus if gpus else get_mock_gpus(state)
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        logger.error(f"nvidia-smi not available or failed: {e}")
-        warnings.warn(
-            f"nvidia-smi not available or failed: {e}. Using mock GPU information.",
-            RuntimeWarning,
-        )
+        logger.error(f"Using mock gpus: nvidia-smi not available or failed: {e}")
         return get_mock_gpus(state)
 
 

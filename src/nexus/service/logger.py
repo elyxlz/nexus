@@ -61,4 +61,5 @@ def create_service_logger(
 
 config = load_config()
 nexus_dir = pathlib.Path.home() / ".nexus_service"
-logger = create_service_logger(str(nexus_dir))
+log_level = getattr(logging, config.log_level.upper())
+logger = create_service_logger(str(nexus_dir), log_level=log_level)
