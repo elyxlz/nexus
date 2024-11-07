@@ -109,7 +109,7 @@ async def send_webhook(message_data: dict, wait: bool = False) -> str | None:
                         return data.get("id")
                     return None
                 else:
-                    logger.error(f"Failed to send webhook: {response.status}")
+                    logger.error(f"Failed to send webhook: Status {response.status}, Message: {await response.text()}")
                     return None
     except Exception as e:
         logger.error(f"Error sending webhook: {e}")
