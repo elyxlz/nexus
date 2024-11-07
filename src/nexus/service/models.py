@@ -31,6 +31,7 @@ class GpuInfo(pyd.BaseModel):
     process_count: int
     is_blacklisted: bool
     running_job_id: str | None
+    is_available: bool
 
 
 class ServiceState(pyd.BaseModel):

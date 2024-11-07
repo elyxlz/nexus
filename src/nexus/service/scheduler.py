@@ -5,7 +5,7 @@ from nexus.service import models
 from nexus.service.config import NexusServiceConfig
 from nexus.service.format import format_job_action
 from nexus.service.git import cleanup_git_tag
-from nexus.service.gpu import get_available_gpus
+from nexus.service.gpu import get_gpus
 from nexus.service.job import end_job, get_job_logs, is_job_session_running, kill_job_session, start_job
 from nexus.service.logger import logger
 from nexus.service.state import (
@@ -102,7 +102,7 @@ async def clean_old_jobs(state: models.ServiceState, config: NexusServiceConfig)
 
 async def start_queued_jobs(state: models.ServiceState, config: NexusServiceConfig):
     """Start queued jobs on available GPUs."""
-    available_gpus = get_available_gpus(state)
+    available_gpus = [g for g in get_gpus(state) if g.is_available]
     queued_jobs = [j for j in state.jobs if j.status == "queued"]
 
     if not queued_jobs:
