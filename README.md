@@ -20,11 +20,14 @@
 - [x] cli: put runtime and time started on same line
 - [x] cli: filter history with command regex
 - [x] cli: in history put failed and completed together, then I shuold be able to see which  and which completed
+- [ ] figure out why git tag removal fails some times
+- [ ] installation walkthrough with the service
+- [ ] figure out why job failed webhook failes sometimes
 - [ ] cli: More job details when printing job stuff, especially when removing or killing
 - [ ] Automatically check for updates
 - [ ] multi gpu jobs
 - [ ] dependent jobs (a after b is done)
-- [ ] cli: ensure cli and api version align, else restart
+- [ ] cli: ensure cli and api version align
 - [ ] refactor, move more things away from cli and to the api
 - [ ] sqlite for state management
 
