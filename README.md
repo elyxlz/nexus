@@ -20,6 +20,9 @@
 - [x] cli: put runtime and time started on same line
 - [x] cli: filter history with command regex
 - [x] cli: in history put failed and completed together, then I shuold be able to see which  and which completed
+- [ ] its starting jobs on non available gpus
+- [ ] actually get gpu processes
+- [ ] cli: follow logs with -f
 - [ ] figure out why git tag removal fails some times
 - [ ] installation walkthrough with the service
 - [ ] figure out why job failed webhook failes sometimes
