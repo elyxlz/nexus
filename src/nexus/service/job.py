@@ -76,6 +76,8 @@ def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file:
     env.update(parse_env_file(env_file))
     github_token = env.get("GITHUB_TOKEN", None)
 
+    breakpoint()
+
     # Prepare a GIT_ASKPASS script if a token is available
     askpass_path = None
     if github_token:
