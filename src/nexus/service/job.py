@@ -77,6 +77,8 @@ def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file:
     env["GIT_TERMINAL_PROMPT"] = "0"
     github_token = env.get("GITHUB_TOKEN", None)
 
+    breakpoint()
+
     # Check if we need GitHub token
     if "github.com" in job.git_repo_url:
         try:
