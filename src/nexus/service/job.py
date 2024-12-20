@@ -74,12 +74,13 @@ def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file:
 
     env = os.environ.copy()
     env.update(parse_env_file(env_file))
+    env["GIT_TERMINAL_PROMPT"] = "0"
     github_token = env.get("GITHUB_TOKEN", None)
 
     # Check if we need GitHub token
     if "github.com" in job.git_repo_url:
         try:
-            subprocess.run(["git", "ls-remote", job.git_repo_url, "HEAD"], env={"GIT_TERMINAL_PROMPT": "0"}, capture_output=True, check=True)
+            subprocess.run(["git", "ls-remote", job.git_repo_url, "HEAD"], env=env, capture_output=True, check=True)
         except subprocess.CalledProcessError:
             if not github_token:
                 raise RuntimeError(
