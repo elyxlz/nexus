@@ -73,6 +73,7 @@ def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file:
     job_repo_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
+    env.update({"CUDA_VISIBLE_DEVICES": str(gpu_index)})
     env.update(parse_env_file(env_file))
     github_token = env.get("GITHUB_TOKEN", None)
 
