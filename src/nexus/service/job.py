@@ -65,56 +65,49 @@ def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None, 
 def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file: pathlib.Path) -> models.Job:
     """Start a job on a specific GPU"""
     session_name = get_job_session_name(job.id)
-
     # Setup logging directory
     job_dir = jobs_dir / job.id
     job_dir.mkdir(parents=True, exist_ok=True)
     log = job_dir / "output.log"
-
     job_repo_dir = job_dir / "repo"
     job_repo_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
     env.update(parse_env_file(env_file))
-
     github_token = env.get("GITHUB_TOKEN", None)
 
-    # Attempt to check if the repo is accessible anonymously:
-    # We'll try `git ls-remote` and see if it fails. If it fails, assume private.
-    repo_accessible = True
-
-    env["GIT_TERMINAL_PROMPT"] = "0"  # force git to fail if credentials dont exist
-    breakpoint()
-    try:
-        result = subprocess.run(["git", "ls-remote", job.git_repo_url, "HEAD"], env=env, capture_output=True, text=True)
-        # Check specifically for authentication errors in stderr
-        if "could not read Username" in result.stderr:
-            repo_accessible = False
-        else:
-            repo_accessible = result.returncode == 0 and not result.stderr
-    except subprocess.CalledProcessError:
-        repo_accessible = False
-
-    # If the repo is not accessible anonymously and host is GitHub, assume private.
-    if not repo_accessible and "github.com" in job.git_repo_url:
-        if not github_token:
-            raise RuntimeError(
-                f"Failed to access private GitHub repository {job.git_repo_url}. "
-                "GITHUB_TOKEN not found in .env. Please provide a valid token."
-            )
-        # Inject token into the URL for authenticated cloning
-        # Format: from https://github.com/org/repo to https://<token>@github.com/org/repo
-        job.git_repo_url = job.git_repo_url.replace("https://", f"https://{github_token}@")
+    # Check if we need GitHub token
+    if "github.com" in job.git_repo_url:
+        try:
+            subprocess.run(["git", "ls-remote", job.git_repo_url, "HEAD"], env={"GIT_TERMINAL_PROMPT": "0"}, capture_output=True, check=True)
+        except subprocess.CalledProcessError:
+            if not github_token:
+                raise RuntimeError(
+                    f"Failed to access repository {job.git_repo_url}. " "GITHUB_TOKEN not found in .env. Please provide a valid token."
+                )
 
     # Proceed to run the job command within a screen session
     script_path = job_dir / "run.sh"
     script_content = f"""#!/bin/bash
 set -e
+
+# Setup git credentials if token exists
+if [ ! -z "{github_token}" ]; then
+    git config --global credential.helper store
+    echo "https://{github_token}:x-oauth-basic@github.com" > $HOME/.git-credentials
+fi
+
 script -f -q -c "
 git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {job.git_repo_url} '{job_repo_dir}'
 cd '{job_repo_dir}'
 {job.command}
 " "{log}"
+
+# Cleanup git credentials
+if [ ! -z "{github_token}" ]; then
+    rm $HOME/.git-credentials
+    git config --global --unset credential.helper
+fi
 """
     script_path.write_text(script_content)
     script_path.chmod(0o755)
