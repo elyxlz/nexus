@@ -77,6 +77,8 @@ def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file:
     env["GIT_TERMINAL_PROMPT"] = "0"
     github_token = env.get("GITHUB_TOKEN", None)
 
+    print("WHAT THE FUCK IS GOING ON")
+
     breakpoint()
 
     # Check if we need GitHub token
