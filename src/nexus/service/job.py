@@ -84,6 +84,7 @@ def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file:
     repo_accessible = True
 
     env["GIT_TERMINAL_PROMPT"] = "0"  # force git to fail if credentials dont exist
+    breakpoint()
     try:
         result = subprocess.run(["git", "ls-remote", job.git_repo_url, "HEAD"], env=env, capture_output=True, text=True)
         # Check specifically for authentication errors in stderr
