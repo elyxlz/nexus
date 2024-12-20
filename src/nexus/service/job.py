@@ -78,6 +78,7 @@ def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file:
     env.update(parse_env_file(env_file))
 
     github_token = env.get("GITHUB_TOKEN", None)
+    env["GIT_TERMINAL_PROMPT"] = "0"
 
     # Attempt to check if the repo is accessible anonymously:
     # We'll try `git ls-remote` and see if it fails. If it fails, assume private.
