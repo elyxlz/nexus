@@ -7,6 +7,7 @@ import pathlib
 import typing
 
 import fastapi as fa
+import requests
 import uvicorn
 
 from nexus.service import models
@@ -35,6 +36,9 @@ state = load_state(config.state_path)
 
 @contextlib.asynccontextmanager
 async def lifespan(app: fa.FastAPI):
+    current_version = importlib.metadata.version("nexusai")
+    check_for_new_version(current_version)
+
     scheduler_task = asyncio.create_task(job_scheduler(state, config))
     logger.info("Nexus service started")
     yield
@@ -55,6 +59,18 @@ app = fa.FastAPI(
 )
 
 
+def check_for_new_version(current_version: str) -> None:
+    try:
+        pypi_response = requests.get("https://pypi.org/pypi/nexusai/json", timeout=2)
+        pypi_response.raise_for_status()
+        data = pypi_response.json()
+        latest_version = data["info"]["version"]
+        if latest_version != current_version:
+            logger.warning(f"A newer version of nexusai ({latest_version}) is available on PyPI. Current: {current_version}")
+    except Exception as e:
+        logger.debug(f"Failed to check for new version: {e}")
+
+
 # Service Endpoints
 @app.get("/v1/service/status", response_model=models.ServiceStatusResponse)
 async def get_status():
@@ -71,6 +87,7 @@ async def get_status():
         running_jobs=running,
         completed_jobs=completed,
         service_user=getpass.getuser(),
+        service_version=importlib.metadata.version("nexusai"),
     )
     logger.info(f"Service status: {response}")
     return response

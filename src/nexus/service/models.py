@@ -92,3 +92,4 @@ class ServiceStatusResponse(pyd.BaseModel):
     running_jobs: int
     completed_jobs: int
     service_user: str
+    service_version: str

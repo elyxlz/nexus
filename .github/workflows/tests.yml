@@ -1,4 +1,4 @@
-name: Pyright
+name: Tests
 
 on:
   push:
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pyright:
+  tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,5 +19,5 @@ jobs:
       - name: Set up uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
-      - name: Run Pyright
-        run: uv run --group test pyright --threads 8
+      - name: Run tests
+        run: uv run --group test pytest --maxfail=1 --disable-warnings -v
