@@ -2,9 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,8 +26,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install test dependencies
-        # Installs the main package plus test extras: nexusai[test]
-        run: uv pip install .[test]
+        run: uv sync --group test
 
       - name: Run tests
-        run: uv pytest --maxfail=1 --disable-warnings -v
+        run: uv run pytest --maxfail=1 --disable-warnings -v
