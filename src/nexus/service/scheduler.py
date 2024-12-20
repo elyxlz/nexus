@@ -45,9 +45,9 @@ async def update_running_jobs(state: models.ServiceState, config: NexusServiceCo
                 await notify_func(updated_job, jobs_dir=config.jobs_dir)
 
             if action == "failed":
-                last_lines = get_job_logs(updated_job.id, jobs_dir=config.jobs_dir, last_n_lines=5)
+                last_lines = get_job_logs(updated_job.id, jobs_dir=config.jobs_dir, last_n_lines=10)
                 if last_lines is not None:
-                    logger.error(f"Last 5 lines of job log:\n{''.join(last_lines)}")
+                    logger.error(f"Last 10 lines of job log:\n{''.join(last_lines)}")
 
         jobs_to_update.append(updated_job)
 
