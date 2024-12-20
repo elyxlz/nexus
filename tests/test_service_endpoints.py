@@ -97,7 +97,7 @@ def test_blacklist_gpu(client):
 
 def test_remove_queued_jobs(client):
     # Remove the previously added job if it's still queued
-    resp = client.delete("/v1/jobs/queued", json=[TEST_JOB_ID])
+    resp = client.request("DELETE", "/v1/jobs/queued", json=[TEST_JOB_ID])
     assert resp.status_code == 200
     data = resp.json()
     assert TEST_JOB_ID in data["removed"]
