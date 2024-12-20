@@ -82,6 +82,8 @@ def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file:
     # Attempt to check if the repo is accessible anonymously:
     # We'll try `git ls-remote` and see if it fails. If it fails, assume private.
     repo_accessible = True
+
+    env["GIT_TERMINAL_PROMPT"] = "0"  # force git to fail if credentials dont exist
     try:
         # Use git ls-remote to check repository access. This will fail if private and no creds.
         subprocess.run(["git", "ls-remote", job.git_repo_url, "HEAD"], env=env, check=True, capture_output=True, text=True)
