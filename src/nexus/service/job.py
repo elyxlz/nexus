@@ -74,22 +74,32 @@ def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file:
 
     env = os.environ.copy()
     env.update(parse_env_file(env_file))
-    env["GIT_TERMINAL_PROMPT"] = "0"
     github_token = env.get("GITHUB_TOKEN", None)
 
-    print("WHAT THE FUCK IS GOING ON")
-
     breakpoint()
+    print("WHAT THE FUCK THIS IS A CHECK")
 
-    # Check if we need GitHub token
-    if "github.com" in job.git_repo_url:
-        try:
-            subprocess.run(["git", "ls-remote", job.git_repo_url, "HEAD"], env=env, capture_output=True, check=True)
-        except subprocess.CalledProcessError:
-            if not github_token:
-                raise RuntimeError(
-                    f"Failed to access repository {job.git_repo_url}. " "GITHUB_TOKEN not found in .env. Please provide a valid token."
-                )
+    # Attempt to check if the repo is accessible anonymously:
+    # We'll try `git ls-remote` and see if it fails. If it fails, assume private.
+    repo_accessible = True
+    env["GIT_TERMINAL_PROMPT"] = "0"  # force git to fail if credentials dont exist
+    try:
+        result = subprocess.run(["git", "ls-remote", job.git_repo_url, "HEAD"], env=env, capture_output=True, text=True)
+        # Check specifically for authentication errors in stderr
+        if "could not read Username" in result.stderr:
+            repo_accessible = False
+        else:
+            repo_accessible = result.returncode == 0 and not result.stderr
+    except subprocess.CalledProcessError:
+        repo_accessible = False
+
+    # If the repo is not accessible anonymously and host is GitHub, assume private.
+    if not repo_accessible and "github.com" in job.git_repo_url:
+        if not github_token:
+            raise RuntimeError(
+                f"Failed to access private GitHub repository {job.git_repo_url}. "
+                "GITHUB_TOKEN not found in .env. Please provide a valid token."
+            )
 
     # Proceed to run the job command within a screen session
     script_path = job_dir / "run.sh"
@@ -107,12 +117,6 @@ git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {jo
 cd '{job_repo_dir}'
 {job.command}
 " "{log}"
-
-# Cleanup git credentials
-if [ ! -z "{github_token}" ]; then
-    rm $HOME/.git-credentials
-    git config --global --unset credential.helper
-fi
 """
     script_path.write_text(script_content)
     script_path.chmod(0o755)
