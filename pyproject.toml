@@ -19,7 +19,7 @@ dependencies = [
   "aiohttp>=3.10.10",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 test = ["pytest>=7.4.2", "requests-mock>=1.11.0", "pytest-asyncio>=0.21.0"]
 
 [build-system]
@@ -29,6 +29,9 @@ build-backend = "setuptools.build_meta"
 [tool.ruff]
 line-length = 144
 indent-width = 4
+
+[tool.pyright]
+exclude = ["build", "dist", ".venv"]
 
 [project.scripts]
 nexus = "nexus.cli.main:main"
