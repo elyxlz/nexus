@@ -1,4 +1,3 @@
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -89,8 +88,8 @@ def test_blacklist_gpu(client):
         data = resp.json()
         assert gpu_index in data.get("blacklisted", [])
 
-        # Remove from blacklist
-        resp = client.delete("/v1/gpus/blacklist", json=[gpu_index])
+        # Remove from blacklist using request() instead of delete()
+        resp = client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_index])
         assert resp.status_code == 200
         data = resp.json()
         assert gpu_index in data.get("removed", [])
