@@ -178,9 +178,19 @@ def print_status_snapshot() -> None:
     try:
         assert is_service_running(), "nexus service is not running"
 
-        response = requests.get(f"{get_api_base_url()}/service/status")
-        response.raise_for_status()
-        status = response.json()
+        # After fetching the service status in print_status_snapshot() or main()
+        status = None
+        try:
+            response = requests.get(f"{get_api_base_url()}/service/status")
+            response.raise_for_status()
+            status = response.json()
+
+            service_version = status.get("service_version", "unknown")
+            if service_version != VERSION:
+                print(colored(f"WARNING: Nexus client version ({VERSION}) does not match Nexus service version ({service_version}).", "yellow"))
+        except requests.RequestException as e:
+            print(colored(f"Error fetching version: {e}", "red"))
+        assert status is not None
 
         queued = status.get("queued_jobs", 0)
 

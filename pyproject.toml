@@ -1,6 +1,6 @@
 [project]
 name = "nexusai"
-version = "0.2.9"
+version = "0.3.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -18,6 +18,9 @@ dependencies = [
   "wandb>=0.18.5",
   "aiohttp>=3.10.10",
 ]
+
+[project.optional-dependencies]
+test = ["pytest>=7.4.2", "requests-mock>=1.11.0", "pytest-asyncio>=0.21.0"]
 
 [build-system]
 requires = ["setuptools", "wheel"]

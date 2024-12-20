@@ -74,31 +74,49 @@ def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file:
     job_repo_dir = job_dir / "repo"
     job_repo_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        env = os.environ.copy()
-        env.update({"CUDA_VISIBLE_DEVICES": str(gpu_index)})
-        env.update(parse_env_file(env_file))
-        env = {k: v for k, v in env.items() if not k.startswith("SCREEN_")}
+    env = os.environ.copy()
+    env.update(parse_env_file(env_file))
 
-        # Create the job script with git clone and command execution
-        script_path = job_dir / "run.sh"
-        script_content = f"""#!/bin/bash
-set -e  # Exit on error
+    github_token = env.get("GITHUB_TOKEN", None)
+
+    # Attempt to check if the repo is accessible anonymously:
+    # We'll try `git ls-remote` and see if it fails. If it fails, assume private.
+    repo_accessible = True
+    try:
+        # Use git ls-remote to check repository access. This will fail if private and no creds.
+        subprocess.run(["git", "ls-remote", job.git_repo_url, "HEAD"], env=env, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError:
+        repo_accessible = False
+
+    # If the repo is not accessible anonymously and host is GitHub, assume private.
+    if not repo_accessible and "github.com" in job.git_repo_url:
+        if not github_token:
+            raise RuntimeError(
+                f"Failed to access private GitHub repository {job.git_repo_url}. "
+                "GITHUB_TOKEN not found in .env. Please provide a valid token."
+            )
+        # Inject token into the URL for authenticated cloning
+        # Format: from https://github.com/org/repo to https://<token>@github.com/org/repo
+        job.git_repo_url = job.git_repo_url.replace("https://", f"https://{github_token}@")
+
+    # Proceed to run the job command within a screen session
+    script_path = job_dir / "run.sh"
+    script_content = f"""#!/bin/bash
+set -e
 script -f -q -c "
 git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {job.git_repo_url} '{job_repo_dir}'
 cd '{job_repo_dir}'
 {job.command}
 " "{log}"
 """
-        script_path.write_text(script_content)
-        script_path.chmod(0o755)
+    script_path.write_text(script_content)
+    script_path.chmod(0o755)
 
+    try:
         subprocess.run(["screen", "-dmS", session_name, str(script_path)], env=env, check=True)
-
         job.started_at = dt.datetime.now().timestamp()
         job.gpu_index = gpu_index
         job.status = "running"
-
     except subprocess.CalledProcessError as e:
         job.status = "failed"
         job.error_message = str(e)
@@ -186,9 +204,24 @@ def get_job_logs(job_id: str, jobs_dir: pathlib.Path, last_n_lines: int | None =
 
 
 def kill_job_session(job_id: str) -> None:
-    """Kill a running job session"""
     session_name = get_job_session_name(job_id)
+
+    # Kill the screen session
     try:
         subprocess.run(["screen", "-S", session_name, "-X", "quit"], check=True)
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to kill job: {e}")
+    except subprocess.CalledProcessError:
+        # Session may not exist, ignore
+        pass
+
+    # Now ensure all processes under that session are killed
+    # We can try to find processes by session name
+    try:
+        # Find PIDs associated with that job_id (assuming we have run.sh started by screen)
+        # For example:
+        # pgrep -f can match the command that contains job_id or session_name
+        result = subprocess.run(["pgrep", "-f", f"nexus_job_{job_id}"], capture_output=True, text=True)
+        pids = [pid.strip() for pid in result.stdout.split("\n") if pid.strip()]
+        for pid in pids:
+            subprocess.run(["kill", "-9", pid], check=False)
+    except Exception as e:
+        logger.error(f"Failed to kill all processes for job {job_id}: {e}")
