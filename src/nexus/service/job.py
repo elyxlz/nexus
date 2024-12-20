@@ -63,7 +63,7 @@ def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None, 
 
 
 def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file: pathlib.Path) -> models.Job:
-    """Start a job on a specific GPU"""
+    """Start a job on a specific GPU."""
     session_name = get_job_session_name(job.id)
     # Setup logging directory
     job_dir = jobs_dir / job.id
@@ -76,48 +76,38 @@ def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file:
     env.update(parse_env_file(env_file))
     github_token = env.get("GITHUB_TOKEN", None)
 
-    breakpoint()
-    print("WHAT THE FUCK THIS IS A CHECK")
-
-    # Attempt to check if the repo is accessible anonymously:
-    # We'll try `git ls-remote` and see if it fails. If it fails, assume private.
-    repo_accessible = True
-    env["GIT_TERMINAL_PROMPT"] = "0"  # force git to fail if credentials dont exist
-    try:
-        result = subprocess.run(["git", "ls-remote", job.git_repo_url, "HEAD"], env=env, capture_output=True, text=True)
-        # Check specifically for authentication errors in stderr
-        if "could not read Username" in result.stderr:
-            repo_accessible = False
-        else:
-            repo_accessible = result.returncode == 0 and not result.stderr
-    except subprocess.CalledProcessError:
-        repo_accessible = False
-
-    # If the repo is not accessible anonymously and host is GitHub, assume private.
-    if not repo_accessible and "github.com" in job.git_repo_url:
-        if not github_token:
-            raise RuntimeError(
-                f"Failed to access private GitHub repository {job.git_repo_url}. "
-                "GITHUB_TOKEN not found in .env. Please provide a valid token."
-            )
-
-    # Proceed to run the job command within a screen session
-    script_path = job_dir / "run.sh"
-    script_content = f"""#!/bin/bash
-set -e
-
-# Setup git credentials if token exists
-if [ ! -z "{github_token}" ]; then
-    git config --global credential.helper store
-    echo "https://{github_token}:x-oauth-basic@github.com" > $HOME/.git-credentials
-fi
-
-script -f -q -c "
-git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet {job.git_repo_url} '{job_repo_dir}'
-cd '{job_repo_dir}'
-{job.command}
-" "{log}"
+    # Prepare a GIT_ASKPASS script if a token is available
+    askpass_path = None
+    if github_token:
+        askpass_path = job_dir / "askpass.sh"
+        askpass_script = f"""#!/usr/bin/env bash
+echo "{github_token}"
 """
+        askpass_path.write_text(askpass_script)
+        askpass_path.chmod(0o700)
+
+    # Construct the script that will run inside the screen session
+    script_path = job_dir / "run.sh"
+    script_lines = [
+        "#!/bin/bash",
+        "set -e",
+        # Disable terminal prompt for git
+        "export GIT_TERMINAL_PROMPT=0",
+    ]
+
+    # If we have a token, set GIT_ASKPASS so that any git operation (including those by pip)
+    # can authenticate without modifying home directory or global configuration.
+    if askpass_path:
+        script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
+
+    # The main commands to clone the repository and run the job
+    script_lines.append('script -f -q -c "')
+    script_lines.append(f"git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet '{job.git_repo_url}' '{job_repo_dir}'")
+    script_lines.append(f"cd '{job_repo_dir}'")
+    script_lines.append(f"{job.command}")
+    script_lines.append(f'" "{log}"')
+
+    script_content = "\n".join(script_lines)
     script_path.write_text(script_content)
     script_path.chmod(0o755)
 
