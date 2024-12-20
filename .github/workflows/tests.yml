@@ -21,12 +21,5 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install test dependencies
-        run: uv sync --group test
-
       - name: Run tests
-        run: uv run pytest --maxfail=1 --disable-warnings -v
+        run: uv run --group test pytest --maxfail=1 --disable-warnings -v
