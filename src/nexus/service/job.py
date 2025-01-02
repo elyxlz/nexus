@@ -205,6 +205,6 @@ def get_job_logs(job_id: str, jobs_dir: pathlib.Path, last_n_lines: int | None =
 
 def kill_job_session(job_id: str) -> None:
     try:
-        subprocess.run(f"pkill -f nexus_job_{job_id}", shell=True)
+        subprocess.run(f"pkill -f {job_id}", shell=True)
     except Exception as e:
-        logger.error(f"Failed to kill all processes for job {job_id}: {e}")
+        logger.error(f"failed to kill all processes for job {job_id}: {e}")
