@@ -204,24 +204,7 @@ def get_job_logs(job_id: str, jobs_dir: pathlib.Path, last_n_lines: int | None =
 
 
 def kill_job_session(job_id: str) -> None:
-    session_name = get_job_session_name(job_id)
-
-    # Kill the screen session
     try:
-        subprocess.run(["screen", "-S", session_name, "-X", "quit"], check=True)
-    except subprocess.CalledProcessError:
-        # Session may not exist, ignore
-        pass
-
-    # Now ensure all processes under that session are killed
-    # We can try to find processes by session name
-    try:
-        # Find PIDs associated with that job_id (assuming we have run.sh started by screen)
-        # For example:
-        # pgrep -f can match the command that contains job_id or session_name
-        result = subprocess.run(["pgrep", "-f", f"nexus_job_{job_id}"], capture_output=True, text=True)
-        pids = [pid.strip() for pid in result.stdout.split("\n") if pid.strip()]
-        for pid in pids:
-            subprocess.run(["kill", "-9", pid], check=False)
+        subprocess.run(f"pkill -f nexus_job_{job_id}", shell=True)
     except Exception as e:
         logger.error(f"Failed to kill all processes for job {job_id}: {e}")
