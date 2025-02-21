@@ -1,20 +1,13 @@
 import asyncio
-import contextlib
 import getpass
 import importlib.metadata
 import os
 import pathlib as pl
-import shutil
-import traceback
-from collections.abc import AsyncGenerator
 
 import fastapi as fa
-import uvicorn
 from fastapi import Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
 
-from nexus.service import config, job, logger, models, scheduler, state, git, gpu, format
-
+from nexus.service import config, format, git, gpu, job, logger, models
 
 router = fa.APIRouter()
 

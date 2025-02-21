@@ -1,11 +1,12 @@
 import asyncio
-import shutil
 import contextlib
 import importlib.metadata
+import shutil
+
 import uvicorn
 from fastapi import FastAPI
 
-from nexus.service import state, scheduler, logger, models, router, config
+from nexus.service import config, logger, models, router, scheduler, state
 
 
 def check_for_new_version(current_version: str) -> None:
@@ -17,9 +18,7 @@ def check_for_new_version(current_version: str) -> None:
         data = r.json()
         latest = data["info"]["version"]
         if latest != current_version:
-            logger.warning(
-                f"A newer version of nexusai ({latest}) is available on PyPI. Current: {current_version}"
-            )
+            logger.warning(f"A newer version of nexusai ({latest}) is available on PyPI. Current: {current_version}")
     except Exception as e:
         logger.debug(f"Failed to check for new version: {e}")
 

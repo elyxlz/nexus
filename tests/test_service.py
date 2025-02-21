@@ -1,11 +1,12 @@
-from typing import Any
 import pathlib as pl
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 
+from nexus.service.config import NexusServiceConfig
 from nexus.service.main import create_app
 from nexus.service.models import NexusServiceState
-from nexus.service.config import NexusServiceConfig
 
 # Create mock state and config for testing.
 mock_state = NexusServiceState(status="running", jobs=(), blacklisted_gpus=())

@@ -2,7 +2,7 @@ import asyncio
 import dataclasses as dc
 import datetime as dt
 
-from nexus.service import config, job, logger, models, state, git, gpu, wandb_finder, webhooks, format
+from nexus.service import config, format, git, gpu, job, logger, models, state, wandb_finder, webhooks
 
 
 async def update_running_jobs(_state: models.NexusServiceState, _config: config.NexusServiceConfig) -> None:
