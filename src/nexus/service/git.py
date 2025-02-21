@@ -1,18 +1,21 @@
-import pathlib
+import pathlib as pl
 import re
 import shutil
 import subprocess
 
-from nexus.service import models
-from nexus.service.logger import logger
-
-GIT_URL_PATTERN = re.compile(r"^(?:https?://|git@)(?:[\w.@:/\-~]+)(?:\.git)?/?$")
+from nexus.service import logger
 
 # Patterns for different Git URL formats
+GIT_URL_PATTERN = re.compile(r"^(?:https?://|git@)(?:[\w.@:/\-~]+)(?:\.git)?/?$")
 SSH_PATTERN = re.compile(r"^git@(?P<host>[\w\.]+):(?P<path>[\w\-\.~]+/[\w\-\.~]+?)(?:\.git)?/?$")
 GIT_PROTOCOL_PATTERN = re.compile(r"^git://(?P<host>[\w\.]+)/(?P<path>[\w\-\.~]+/[\w\-\.~]+?)(?:\.git)?/?$")
 HTTPS_PATTERN = re.compile(r"^https://(?P<host>[\w\.]+)/(?P<path>[\w\-\.~]+/[\w\-\.~]+?)(?:\.git)?/?$")
-HOST_MAPPINGS = {"github.com": "github.com", "gitlab.com": "gitlab.com", "bitbucket.org": "bitbucket.org", "ssh.dev.azure.com": "dev.azure.com"}
+HOST_MAPPINGS = {
+    "github.com": "github.com",
+    "gitlab.com": "gitlab.com",
+    "bitbucket.org": "bitbucket.org",
+    "ssh.dev.azure.com": "dev.azure.com",
+}
 
 
 def validate_git_url(url: str) -> bool:
@@ -20,50 +23,19 @@ def validate_git_url(url: str) -> bool:
     return bool(GIT_URL_PATTERN.match(url))
 
 
-def cleanup_repo(jobs_dir: pathlib.Path, job_id: str) -> None:
+def cleanup_repo(jobs_dir: pl.Path, job_id: str) -> None:
     job_repo_dir = jobs_dir / job_id / "repo"
-    try:
-        if job_repo_dir.exists():
-            shutil.rmtree(job_repo_dir, ignore_errors=True)
-    except Exception as e:
-        logger.error(f"Error cleaning up repository directory {job_repo_dir}: {e}")
+    if job_repo_dir.exists():
+        shutil.rmtree(job_repo_dir, ignore_errors=True)
+        logger.logger.info(f"Successfully cleaned up {job_repo_dir}")
 
 
-def cleanup_git_tag(completed_job: models.Job, running_jobs: list[models.Job]) -> None:
-    if not (completed_job.git_tag and completed_job.git_repo_url):
-        return
-
-    # Check if any other running jobs use this tag
-    if any(job.git_tag == completed_job.git_tag for job in running_jobs):
-        return
-
-    try:
-        # Delete tag from remote, using the specific repository
-        subprocess.run(
-            ["git", "push", completed_job.git_repo_url, "--delete", completed_job.git_tag], check=True, capture_output=True, text=True
-        )
-        logger.info(f"Cleaned up git tag {completed_job.git_tag} from {completed_job.git_repo_url} for job {completed_job.id}")
-    except subprocess.CalledProcessError as e:
-        logger.error(
-            f"Failed to cleanup git tag {completed_job.git_tag} from {completed_job.git_repo_url} for job {completed_job.id}: {e.stderr}"
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error cleaning up git tag {completed_job.git_tag} from {completed_job.git_repo_url}: {e}")
+def cleanup_git_tag(git_tag: str, git_repo_url: str) -> None:
+    subprocess.run(["git", "push", git_repo_url, "--delete", git_tag], check=True, capture_output=True, text=True)
+    logger.logger.info(f"Cleaned up git tag {git_tag} from {git_repo_url} for job {id}")
 
 
 def normalize_git_url(url: str) -> str:
-    """
-    Normalize a Git URL to HTTPS format.
-
-    Args:
-        url: Git URL in any supported format (HTTPS, SSH, Git protocol)
-
-    Returns:
-        Normalized HTTPS URL
-
-    Raises:
-        ValueError: If URL format is invalid or host is unknown
-    """
     url = url.strip()
 
     # Already HTTPS format

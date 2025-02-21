@@ -187,7 +187,12 @@ def print_status_snapshot() -> None:
 
             service_version = status.get("service_version", "unknown")
             if service_version != VERSION:
-                print(colored(f"WARNING: Nexus client version ({VERSION}) does not match Nexus service version ({service_version}).", "yellow"))
+                print(
+                    colored(
+                        f"WARNING: Nexus client version ({VERSION}) does not match Nexus service version ({service_version}).",
+                        "yellow",
+                    )
+                )
         except requests.RequestException as e:
             print(colored(f"Error fetching version: {e}", "red"))
         assert status is not None
@@ -239,7 +244,10 @@ def ensure_git_reproducibility(id: str, dirty: bool) -> tuple[str, str]:
     result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
     if result.stdout.strip() and not dirty:
         changes = result.stdout.strip()
-        raise RuntimeError(f"Uncommitted changes present in repository:\n{changes}\n" "Cannot create reproducible job without clean git state")
+        raise RuntimeError(
+            f"Uncommitted changes present in repository:\n{changes}\n"
+            "Cannot create reproducible job without clean git state"
+        )
 
     # Get repository URL
     result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True, check=True)
@@ -249,7 +257,9 @@ def ensure_git_reproducibility(id: str, dirty: bool) -> tuple[str, str]:
     tag_name = f"nexus-{id}"
     try:
         subprocess.run(["git", "tag", tag_name], check=True)
-        subprocess.run(["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         return git_repo_url, tag_name
 
     except subprocess.CalledProcessError as e:
@@ -258,7 +268,14 @@ def ensure_git_reproducibility(id: str, dirty: bool) -> tuple[str, str]:
         raise RuntimeError(f"Failed to create/push git tag: {e}")
 
 
-def add_jobs(commands: list[str], repeat: int, dirty: bool, user: str | None, discord_id: str | None, bypass_confirm: bool = False) -> None:
+def add_jobs(
+    commands: list[str],
+    repeat: int,
+    dirty: bool,
+    user: str | None,
+    discord_id: str | None,
+    bypass_confirm: bool = False,
+) -> None:
     try:
         # Expand commands first to show what will be added
         expanded_commands = expand_job_commands(commands, repeat=repeat)
@@ -270,7 +287,9 @@ def add_jobs(commands: list[str], repeat: int, dirty: bool, user: str | None, di
         for cmd in expanded_commands:
             print(f"  {colored('•', 'blue')} {cmd}")
 
-        if not confirm_action(f"Add {colored(str(len(expanded_commands)), 'cyan')} jobs to the queue?", bypass=bypass_confirm):
+        if not confirm_action(
+            f"Add {colored(str(len(expanded_commands)), 'cyan')} jobs to the queue?", bypass=bypass_confirm
+        ):
             print(colored("Operation cancelled.", "yellow"))
             return
 
@@ -501,7 +520,9 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
         for info in jobs_info:
             print(f"  {colored('•', 'blue')} {info}")
 
-        if not confirm_action(f"Remove {colored(str(len(jobs_to_remove)), 'cyan')} jobs from queue?", bypass=bypass_confirm):
+        if not confirm_action(
+            f"Remove {colored(str(len(jobs_to_remove)), 'cyan')} jobs from queue?", bypass=bypass_confirm
+        ):
             print(colored("Operation cancelled.", "yellow"))
             return
 
@@ -743,7 +764,9 @@ def create_parser() -> argparse.ArgumentParser:
 
     # Blacklist management
     blacklist_parser = subparsers.add_parser("blacklist", help="Manage GPU blacklist")
-    blacklist_subparsers = blacklist_parser.add_subparsers(dest="blacklist_action", help="Blacklist commands", required=True)
+    blacklist_subparsers = blacklist_parser.add_subparsers(
+        dest="blacklist_action", help="Blacklist commands", required=True
+    )
 
     blacklist_add = blacklist_subparsers.add_parser("add", help="Add GPUs to blacklist")
     blacklist_add.add_argument("gpus", help="Comma-separated GPU indexes to blacklist (e.g., '0,1,2')")
@@ -776,7 +799,12 @@ def main() -> None:
         "stop": lambda: stop_service(),
         "restart": lambda: restart_service(),
         "add": lambda: add_jobs(
-            args.commands, repeat=args.repeat, dirty=args.dirty, user=args.user, discord_id=args.discord_id, bypass_confirm=args.yes
+            args.commands,
+            repeat=args.repeat,
+            dirty=args.dirty,
+            user=args.user,
+            discord_id=args.discord_id,
+            bypass_confirm=args.yes,
         ),
         "queue": lambda: show_queue(),
         "history": lambda: show_history(getattr(args, "pattern", None)),

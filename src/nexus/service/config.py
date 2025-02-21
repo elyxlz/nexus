@@ -1,83 +1,100 @@
-import pathlib
+import json
+import pathlib as pl
 import typing
 
-import dotenv
 import pydantic as pyd
 import pydantic_settings as pyds
+import toml
+
+
+def get_env_path(service_dir: pl.Path) -> pl.Path:
+    return service_dir / ".env"
+
+
+def get_config_path(service_dir: pl.Path) -> pl.Path:
+    return service_dir / "config.toml"
+
+
+def get_state_path(service_dir: pl.Path) -> pl.Path:
+    return service_dir / "state.json"
+
+
+def get_jobs_dir(service_dir: pl.Path) -> pl.Path:
+    return service_dir / "jobs"
+
+
+class NexusServiceEnv(pyds.BaseSettings):
+    github_token: str = pyd.Field(default="")
+    discord_webhook_url: str = pyd.Field(default="")
+    wandb_api_key: str = pyd.Field(default="")
+    wandb_entity: str = pyd.Field(default="")
+
+    model_config = pyds.SettingsConfigDict(frozen=True, env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
 
 class NexusServiceConfig(pyds.BaseSettings):
-    jobs_dir: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus_service" / "jobs")
-    state_path: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus_service" / "state.json")
-    env_file: pathlib.Path = pyd.Field(default_factory=lambda: pathlib.Path.home() / ".nexus_service" / ".env")
+    model_config = pyds.SettingsConfigDict(env_prefix="ns_", frozen=True)
+
+    service_dir: pl.Path = pyd.Field(default_factory=lambda: pl.Path.home() / ".nexus_service")
     refresh_rate: int = pyd.Field(default=5)
     history_limit: int = pyd.Field(default=1000)
     host: str = pyd.Field(default="localhost")
     port: int = pyd.Field(default=54323)
-    webhooks_enabled: bool = pyd.Field(default=True)
-    log_level: typing.Literal["info", "debug"] = pyd.Field(default="info")
+    webhooks_enabled: bool = pyd.Field(default=False)
     node_name: str | None = pyd.Field(default=None)
+    log_level: typing.Literal["info", "debug"] = pyd.Field(default="info")
+    mock_gpus: bool = pyd.Field(default=False)
+    persist_to_disk: bool = pyd.Field(default=True)
 
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: typing.Type[pyds.BaseSettings],
+        settings_cls: type[pyds.BaseSettings],
         init_settings: pyds.PydanticBaseSettingsSource,
         env_settings: pyds.PydanticBaseSettingsSource,
         dotenv_settings: pyds.PydanticBaseSettingsSource,
         file_secret_settings: pyds.PydanticBaseSettingsSource,
     ) -> tuple[pyds.PydanticBaseSettingsSource, ...]:
-        return (init_settings, pyds.TomlConfigSettingsSource(settings_cls, toml_file=pathlib.Path.home() / ".nexus_service" / "config.toml"))
+        field = cls.model_fields["service_dir"]
+        default_service_dir = field.default_factory() if field.default_factory is not None else field.default
+        return (
+            init_settings,
+            pyds.TomlConfigSettingsSource(settings_cls, toml_file=get_config_path(default_service_dir)),
+            env_settings,
+        )
 
 
-def create_default_config() -> None:
-    """Create default configuration files if they don't exist."""
-    config_dir = pathlib.Path.home() / ".nexus_service"
-    config_path = config_dir / "config.toml"
-    env_path = config_dir / ".env"
-
-    # Create nexus directory if it doesn't exist
-    config_dir.mkdir(parents=True, exist_ok=True)
-
-    DEFAULT_ENV_TEMPLATE = """# Nexus Service Environment Configuration
-GITHUB_TOKEN=
-NEXUS_DISCORD_WEBHOOK_URL=
-WANDB_API_KEY=
-WANDB_ENTITY=
-    """
-
-    # Create default .env if it doesn't exist
-    if not env_path.exists():
-        env_path.write_text(DEFAULT_ENV_TEMPLATE)
-
-    if not config_path.exists():
-        # Create default config if it doesn't exist
-        config = NexusServiceConfig()
-        # Write default config
-        with open(config_path, "w") as f:
-            f.write(f"""# Nexus Service Configuration
-jobs_dir = "{config.jobs_dir}"
-state_path = "{config.state_path}"
-env_file = "{config.env_file}"
-refresh_rate = {config.refresh_rate}
-host = "{config.host}"
-port = "{config.port}"
-webhooks_enabled = "{config.webhooks_enabled}"
-log_level = "{config.log_level}"
-# node_name = 
-""")
+def save_config(config: NexusServiceConfig) -> None:
+    config_dict = json.loads(config.model_dump_json())
+    with get_config_path(config.service_dir).open("w") as f:
+        toml.dump(config_dict, f)
 
 
-def load_config() -> NexusServiceConfig:
-    """Load configuration."""
-    create_default_config()
+def save_env(env: NexusServiceEnv, env_path: pl.Path) -> None:
+    env_dict = env.model_dump()
+    with env_path.open("w", encoding="utf-8") as f:
+        for key, value in env_dict.items():
+            f.write(f"{key.upper()}={value}\n")
 
+
+def create_required_files_and_dirs(config: NexusServiceConfig, env: NexusServiceEnv) -> None:
+    if config.persist_to_disk:
+        config.service_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create the environment file if it doesn't exist
+        if not get_env_path(config.service_dir).exists():
+            save_env(env, env_path=get_env_path(config.service_dir))
+
+        # Ensure the jobs directory exists
+        get_jobs_dir(config.service_dir).mkdir(parents=True, exist_ok=True)
+
+        # Create the configuration file if it doesn't exist
+        if not get_config_path(config.service_dir).exists():
+            save_config(config)
+
+
+def load_config_and_env() -> tuple[NexusServiceConfig, NexusServiceEnv]:
     config = NexusServiceConfig()
-
-    # Ensure directories exist
-    config.jobs_dir.mkdir(parents=True, exist_ok=True)
-
-    # Load environment variables
-    dotenv.load_dotenv(config.env_file)
-
-    return config
+    env = NexusServiceEnv(_env_file=get_env_path(config.service_dir))  # type: ignore
+    create_required_files_and_dirs(config, env=env)
+    return config, env

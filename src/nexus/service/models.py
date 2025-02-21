@@ -1,3 +1,4 @@
+import dataclasses
 import typing
 
 import pydantic as pyd
@@ -5,7 +6,9 @@ import pydantic as pyd
 JobStatus = typing.Literal["queued", "running", "completed", "failed"]
 
 
-class Job(pyd.BaseModel):
+# we use these instead of frozen basemodels because the type checker recognizes immutability
+@dataclasses.dataclass(frozen=True)
+class Job:
     id: str
     command: str
     git_repo_url: str
@@ -23,7 +26,8 @@ class Job(pyd.BaseModel):
     marked_for_kill: bool
 
 
-class GpuInfo(pyd.BaseModel):
+@dataclasses.dataclass(frozen=True)
+class GpuInfo:
     index: int
     name: str
     memory_total: int
@@ -34,17 +38,22 @@ class GpuInfo(pyd.BaseModel):
     is_available: bool
 
 
-class ServiceState(pyd.BaseModel):
+# we keep the state mutable because we have multiple consumers (scheduler + endpoints), everything inside of it is immutable however
+@dataclasses.dataclass(frozen=False)
+class NexusServiceState:
     status: typing.Literal["running", "stopped", "error"]
-    jobs: list[Job]
-    blacklisted_gpus: list[int]
-    last_updated: float
+    jobs: tuple[Job, ...]
+    blacklisted_gpus: tuple[int, ...]
 
 
 # Response and Request models
 
 
-class JobsRequest(pyd.BaseModel):
+class FrozenBaseModel(pyd.BaseModel):
+    model_config = pyd.ConfigDict(frozen=True)
+
+
+class JobsRequest(FrozenBaseModel):
     commands: list[str]
     git_repo_url: str
     git_tag: str
@@ -52,40 +61,40 @@ class JobsRequest(pyd.BaseModel):
     discord_id: str | None
 
 
-class ServiceLogsResponse(pyd.BaseModel):
+class ServiceLogsResponse(FrozenBaseModel):
     logs: str
 
 
-class ServiceActionResponse(pyd.BaseModel):
+class ServiceActionResponse(FrozenBaseModel):
     status: str
 
 
-class JobLogsResponse(pyd.BaseModel):
+class JobLogsResponse(FrozenBaseModel):
     logs: str
 
 
-class JobActionResponse(pyd.BaseModel):
+class JobActionResponse(FrozenBaseModel):
     killed: list[str]
     failed: list[dict]
 
 
-class JobQueueActionResponse(pyd.BaseModel):
+class JobQueueActionResponse(FrozenBaseModel):
     removed: list[str]
     failed: list[dict]
 
 
-class GpuActionError(pyd.BaseModel):
+class GpuActionError(FrozenBaseModel):
     index: int
     error: str
 
 
-class GpuActionResponse(pyd.BaseModel):
+class GpuActionResponse(FrozenBaseModel):
     blacklisted: list[int] | None
     removed: list[int] | None
     failed: list[GpuActionError]
 
 
-class ServiceStatusResponse(pyd.BaseModel):
+class ServiceStatusResponse(FrozenBaseModel):
     running: bool
     gpu_count: int
     queued_jobs: int

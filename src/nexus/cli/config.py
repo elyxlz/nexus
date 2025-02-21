@@ -1,5 +1,4 @@
-import pathlib
-import typing
+import pathlib as pl
 
 import pydantic as pyd
 import pydantic_settings as pyds
@@ -14,18 +13,21 @@ class NexusCliConfig(pyds.BaseSettings):
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: typing.Type[pyds.BaseSettings],
+        settings_cls: type[pyds.BaseSettings],
         init_settings: pyds.PydanticBaseSettingsSource,
         env_settings: pyds.PydanticBaseSettingsSource,
         dotenv_settings: pyds.PydanticBaseSettingsSource,
         file_secret_settings: pyds.PydanticBaseSettingsSource,
     ) -> tuple[pyds.PydanticBaseSettingsSource, ...]:
-        return (init_settings, pyds.TomlConfigSettingsSource(settings_cls, toml_file=pathlib.Path.home() / ".nexus" / "config.toml"))
+        return (
+            init_settings,
+            pyds.TomlConfigSettingsSource(settings_cls, toml_file=pl.Path.home() / ".nexus" / "config.toml"),
+        )
 
 
 def create_default_config() -> None:
     """Create default configuration files if they don't exist."""
-    config_dir = pathlib.Path.home() / ".nexus"
+    config_dir = pl.Path.home() / ".nexus"
     config_path = config_dir / "config.toml"
 
     # Create nexus directory if it doesn't exist

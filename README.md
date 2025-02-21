@@ -20,28 +20,29 @@
 - [x] cli: put runtime and time started on same line
 - [x] cli: filter history with command regex
 - [x] cli: in history put failed and completed together, then I shuold be able to see which  and which completed
+- [x] sometimes a job doesnt die, should probably SIGKILL
+- [x] its starting jobs on non available gpus
+- [x] actually get gpu processes
+- [x] cli: ensure cli and api version align
+- [x] make all functions pure
+- [x] enlarge failed job logs
+- [x] Automatically check for updates
+- [x] Look for wandb in longer intervals in the scheduler, then if not found after a while update original message
+- [ ] add branch information on job
+- [ ] git branch mode
+- [ ] multi gpu jobs
 - [ ] cli: nx should also work
-- [ ] sometimes a job doesnt die, should probably SIGKILL
-- [ ] Look for wandb in longer intervals in the scheduler, then if not found after a while update original message
 - [ ] easy way to show logs for running jobs on discord
-- [ ] add tests
-- [ ] its starting jobs on non available gpus
-- [ ] actually get gpu processes
 - [ ] cli: follow logs with -f
 - [ ] figure out why git tag removal fails some times
-- [ ] installation walkthrough with the service
+- [ ] installation walkthrough with the service + optionally interactive config
 - [ ] figure out why job failed webhook failes sometimes
 - [ ] cli: More job details when printing job stuff, especially when removing or killing
-- [ ] Automatically check for updates
-- [ ] multi gpu jobs
 - [ ] dependent jobs (a after b is done)
-- [ ] cli: ensure cli and api version align
 - [ ] refactor, move more things away from cli and to the api
-- [ ] sqlite for state management
 
 ## Longterm TODO
 
-- [ ] systemd service
 - [ ] multi node
 - [ ] priority jobs
 - [ ] vram / flop minimum

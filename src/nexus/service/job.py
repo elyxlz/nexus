@@ -1,19 +1,16 @@
+import dataclasses as dc
 import datetime as dt
 import hashlib
 import os
-import pathlib
+import pathlib as pl
 import subprocess
 import time
 
 import base58
 
-from nexus.service import models
-from nexus.service.format import format_job_action
-from nexus.service.git import cleanup_repo
-from nexus.service.logger import logger
+from nexus.service import logger, models
 
 
-# Utility functions
 def generate_job_id() -> str:
     """Generate a unique job ID using timestamp and random bytes"""
     timestamp = str(time.time()).encode()
@@ -23,7 +20,8 @@ def generate_job_id() -> str:
     return base58.b58encode(hash_bytes).decode()[:6].lower()
 
 
-def parse_env_file(env_file: pathlib.Path) -> dict:
+def parse_env_file(env_file: pl.Path) -> dict[str, str]:
+    """Parse environment file and return new environment dict"""
     env = {}
     if env_file.exists():
         with env_file.open() as f:
@@ -35,10 +33,10 @@ def parse_env_file(env_file: pathlib.Path) -> dict:
 
 
 def get_job_session_name(job_id: str) -> str:
+    """Get the screen session name for a job"""
     return f"nexus_job_{job_id}"
 
 
-# Core job lifecycle functions
 def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None, discord_id: str | None) -> models.Job:
     """Create a new job with the given command and git info"""
     job_id = generate_job_id()
@@ -62,23 +60,26 @@ def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None, 
     )
 
 
-def start_job(job: models.Job, gpu_index: int, jobs_dir: pathlib.Path, env_file: pathlib.Path) -> models.Job:
-    """Start a job on a specific GPU."""
+def build_job_env(gpu_index: int, env_file: pl.Path) -> dict[str, str]:
+    base_env = os.environ.copy()
+    file_env = parse_env_file(env_file)
+    env = {**base_env, "CUDA_VISIBLE_DEVICES": str(gpu_index), **file_env}
+    return env
+
+
+def start_job(job: models.Job, gpu_index: int, jobs_dir: pl.Path, env_file: pl.Path) -> models.Job:
+    """Start a job on a specific GPU. Returns new job instance."""
     session_name = get_job_session_name(job.id)
-    # Setup logging directory
     job_dir = jobs_dir / job.id
     job_dir.mkdir(parents=True, exist_ok=True)
     log = job_dir / "output.log"
     job_repo_dir = job_dir / "repo"
     job_repo_dir.mkdir(parents=True, exist_ok=True)
 
-    env = os.environ.copy()
-    env.update({"CUDA_VISIBLE_DEVICES": str(gpu_index)})
-    env.update(parse_env_file(env_file))
-    github_token = env.get("GITHUB_TOKEN", None)
+    env = build_job_env(gpu_index, env_file=env_file)
+    github_token = env.get("GITHUB_TOKEN")
 
-    # Prepare a GIT_ASKPASS script if a token is available
-    askpass_path = None
+    # Setup files
     if github_token:
         askpass_path = job_dir / "askpass.sh"
         askpass_script = f"""#!/usr/bin/env bash
@@ -86,54 +87,44 @@ echo "{github_token}"
 """
         askpass_path.write_text(askpass_script)
         askpass_path.chmod(0o700)
+    else:
+        askpass_path = None
 
-    # Construct the script that will run inside the screen session
-    script_path = job_dir / "run.sh"
     script_lines = [
         "#!/bin/bash",
         "set -e",
-        # Disable terminal prompt for git
         "export GIT_TERMINAL_PROMPT=0",
     ]
 
-    # If we have a token, set GIT_ASKPASS so that any git operation (including those by pip)
-    # can authenticate without modifying home directory or global configuration.
     if askpass_path:
         script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
 
-    # The main commands to clone the repository and run the job
-    script_lines.append('script -f -q -c "')
-    script_lines.append(f"git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet '{job.git_repo_url}' '{job_repo_dir}'")
-    script_lines.append(f"cd '{job_repo_dir}'")
-    script_lines.append(f"{job.command}")
-    script_lines.append(f'" "{log}"')
+    script_lines.extend(
+        [
+            'script -f -q -c "',
+            f"git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet '{job.git_repo_url}' '{job_repo_dir}'",
+            f"cd '{job_repo_dir}'",
+            f"{job.command}",
+            f'" "{log}"',
+        ]
+    )
 
+    script_path = job_dir / "run.sh"
     script_content = "\n".join(script_lines)
     script_path.write_text(script_content)
     script_path.chmod(0o755)
 
     try:
         subprocess.run(["screen", "-dmS", session_name, str(script_path)], env=env, check=True)
-        job.started_at = dt.datetime.now().timestamp()
-        job.gpu_index = gpu_index
-        job.status = "running"
+        return dc.replace(job, started_at=dt.datetime.now().timestamp(), gpu_index=gpu_index, status="running")
     except subprocess.CalledProcessError as e:
-        job.status = "failed"
-        job.error_message = str(e)
-        job.completed_at = dt.datetime.now().timestamp()
-        cleanup_repo(jobs_dir, job_id=job.id)
-        logger.info(format_job_action(job, "failed"))
-        logger.error(f"Failed to start job {job.id}: {e}")
-        raise
-
-    return job
+        logger.logger.error(f"Failed to start job {job.id}: {e}")
+        return dc.replace(job, status="failed", error_message=str(e), completed_at=dt.datetime.now().timestamp())
 
 
-# Job status and monitoring functions
 def is_job_session_running(job_id: str) -> bool:
     """Check if a job's screen session is still running"""
     session_name = get_job_session_name(job_id)
-
     try:
         output = subprocess.check_output(["screen", "-ls", session_name], stderr=subprocess.DEVNULL, text=True)
         return session_name in output
@@ -141,52 +132,58 @@ def is_job_session_running(job_id: str) -> bool:
         return False
 
 
-def end_job(job: models.Job, jobs_dir: pathlib.Path, killed: bool) -> models.Job:
-    """Check if a job has completed and update its status"""
+def end_job(job: models.Job, jobs_dir: pl.Path, killed: bool) -> models.Job:
+    """Check if a job has completed and update its status. Returns new job instance."""
     if is_job_session_running(job.id):
         return job
 
-    # Get job logs and exit code
     job_log = get_job_logs(job.id, jobs_dir=jobs_dir)
     exit_code = get_job_exit_code(job.id, jobs_dir=jobs_dir)
 
     if killed:
-        job.status = "failed"
-        job.error_message = "Killed by user"
+        new_job = dc.replace(
+            job, status="failed", error_message="Killed by user", completed_at=dt.datetime.now().timestamp()
+        )
     elif job_log is None:
-        job.status = "failed"
-        job.error_message = "No output log found"
+        new_job = dc.replace(
+            job, status="failed", error_message="No output log found", completed_at=dt.datetime.now().timestamp()
+        )
     elif exit_code is None:
-        job.status = "failed"
-        job.error_message = "Could not find exit code in log"
+        new_job = dc.replace(
+            job,
+            status="failed",
+            error_message="Could not find exit code in log",
+            completed_at=dt.datetime.now().timestamp(),
+        )
     else:
-        job.exit_code = exit_code
-        job.status = "completed" if exit_code == 0 else "failed"
-        job.error_message = None if exit_code == 0 else f"Job failed with exit code {exit_code}"
+        new_job = dc.replace(
+            job,
+            exit_code=exit_code,
+            status="completed" if exit_code == 0 else "failed",
+            error_message=None if exit_code == 0 else f"Job failed with exit code {exit_code}",
+            completed_at=dt.datetime.now().timestamp(),
+        )
 
-    job.completed_at = dt.datetime.now().timestamp()
-    cleanup_repo(jobs_dir, job_id=job.id)
-    return job
+    return new_job
 
 
-def get_job_exit_code(job_id: str, jobs_dir: pathlib.Path) -> int | None:
-    """Get the exit code of a job given its job id"""
-    content = get_job_logs(job_id, jobs_dir, last_n_lines=1)
-    if content is None:
-        return None
-
+def get_job_exit_code(job_id: str, jobs_dir: pl.Path) -> int | None:
     try:
+        content = get_job_logs(job_id, jobs_dir, last_n_lines=1)
+        if content is None:
+            raise ValueError("No output log found")
         last_line = content.strip()
         if "COMMAND_EXIT_CODE=" in last_line:
             exit_code_str = last_line.split('COMMAND_EXIT_CODE="')[1].split('"')[0]
             return int(exit_code_str)
-    except (ValueError, AttributeError):
-        pass
+        raise ValueError("Could not determine exit code")
+    except Exception:
+        logger.logger.exception("Error determining exit code for job %s", job_id)
+        return None
 
-    return None
 
-
-def get_job_logs(job_id: str, jobs_dir: pathlib.Path, last_n_lines: int | None = None) -> str | None:
+def get_job_logs(job_id: str, jobs_dir: pl.Path, last_n_lines: int | None = None) -> str | None:
+    """Get job logs"""
     job_dir = jobs_dir / job_id
 
     if not job_dir.exists():
@@ -204,24 +201,8 @@ def get_job_logs(job_id: str, jobs_dir: pathlib.Path, last_n_lines: int | None =
 
 
 def kill_job_session(job_id: str) -> None:
-    session_name = get_job_session_name(job_id)
-
-    # Kill the screen session
+    """Kill a job session"""
     try:
-        subprocess.run(["screen", "-S", session_name, "-X", "quit"], check=True)
-    except subprocess.CalledProcessError:
-        # Session may not exist, ignore
-        pass
-
-    # Now ensure all processes under that session are killed
-    # We can try to find processes by session name
-    try:
-        # Find PIDs associated with that job_id (assuming we have run.sh started by screen)
-        # For example:
-        # pgrep -f can match the command that contains job_id or session_name
-        result = subprocess.run(["pgrep", "-f", f"nexus_job_{job_id}"], capture_output=True, text=True)
-        pids = [pid.strip() for pid in result.stdout.split("\n") if pid.strip()]
-        for pid in pids:
-            subprocess.run(["kill", "-9", pid], check=False)
+        subprocess.run(f"pkill -f {job_id}", shell=True)
     except Exception as e:
-        logger.error(f"Failed to kill all processes for job {job_id}: {e}")
+        logger.logger.error(f"failed to kill all processes for job {job_id}: {e}")
