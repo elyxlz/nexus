@@ -14,7 +14,7 @@ def load_state(state_path: pl.Path) -> models.NexusServiceState:
     """Load service state from disk"""
     data = json.loads(state_path.read_text())
     state = models.NexusServiceState(**data)
-    logger.logger.info("Successfully loaded state from disk.")
+    logger.info("Successfully loaded state from disk.")
     return state
 
 

@@ -14,7 +14,7 @@ def get_gpu_processes() -> dict[int, int]:
     """Query nvidia-smi pmon for process information per GPU.
     Returns a dictionary mapping GPU indices to their process counts."""
     try:
-        logger.logger.debug("Executing nvidia-smi pmon command")
+        logger.debug("Executing nvidia-smi pmon command")
         output = subprocess.check_output(["nvidia-smi", "pmon", "-c", "1"], text=True)
 
         # Initialize process counts for all GPUs
@@ -23,7 +23,7 @@ def get_gpu_processes() -> dict[int, int]:
         # Skip header lines (there are typically 2 header lines)
         lines = output.strip().split("\n")[2:]
 
-        logger.logger.debug(f"Processing {len(lines)} lines of nvidia-smi pmon output")
+        logger.debug(f"Processing {len(lines)} lines of nvidia-smi pmon output")
         for line in lines:
             if not line.strip():
                 continue
@@ -38,15 +38,15 @@ def get_gpu_processes() -> dict[int, int]:
                 try:
                     gpu_index = int(parts[0])
                     gpu_processes[gpu_index] = gpu_processes.get(gpu_index, 0) + 1
-                    logger.logger.debug(f"GPU {gpu_index}: process count incremented to {gpu_processes[gpu_index]}")
+                    logger.debug(f"GPU {gpu_index}: process count incremented to {gpu_processes[gpu_index]}")
                 except (ValueError, IndexError):
-                    logger.logger.debug(f"Failed to parse line: {line}")
+                    logger.debug(f"Failed to parse line: {line}")
                     continue
 
-        logger.logger.debug(f"Final GPU process counts: {gpu_processes}")
+        logger.debug(f"Final GPU process counts: {gpu_processes}")
         return gpu_processes
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        logger.logger.error(f"nvidia-smi pmon failed: {e}")
+        logger.error(f"nvidia-smi pmon failed: {e}")
         warnings.warn(f"nvidia-smi pmon failed: {e}", RuntimeWarning)
         return {}
 
@@ -80,11 +80,11 @@ def create_gpu_info(
 
 def get_gpus(state: models.NexusServiceState, mock_gpus: bool) -> list[models.GpuInfo]:
     if mock_gpus:
-        logger.logger.info("MOCK_GPUS parameter is True. Returning mock GPU information.")
+        logger.info("MOCK_GPUS parameter is True. Returning mock GPU information.")
         return get_mock_gpus(state)
 
     try:
-        logger.logger.debug("Executing nvidia-smi command for GPU stats")
+        logger.debug("Executing nvidia-smi command for GPU stats")
         output = subprocess.check_output(
             [
                 "nvidia-smi",
@@ -118,22 +118,22 @@ def get_gpus(state: models.NexusServiceState, mock_gpus: bool) -> list[models.Gp
                 )
                 gpus.append(gpu)
             except (ValueError, IndexError) as e:
-                logger.logger.error(f"Error parsing GPU info: {e}")
+                logger.error(f"Error parsing GPU info: {e}")
                 continue
 
-        logger.logger.debug(f"Total GPUs found: {len(gpus)}")
+        logger.debug(f"Total GPUs found: {len(gpus)}")
         if not gpus:
             raise RuntimeError("No GPUs detected via nvidia-smi.")
         return gpus
 
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        logger.logger.error(f"nvidia-smi not available or failed: {e}")
+        logger.error(f"nvidia-smi not available or failed: {e}")
         raise RuntimeError(f"nvidia-smi not available or failed: {e}")
 
 
 def get_mock_gpus(state: models.NexusServiceState) -> list[models.GpuInfo]:
     """Generate mock GPUs for testing purposes."""
-    logger.logger.debug("Generating mock GPUs")
+    logger.debug("Generating mock GPUs")
     running_jobs = {j.gpu_index: j.id for j in state.jobs if j.status == "running" and j.gpu_index is not None}
     blacklisted_gpus = set(state.blacklisted_gpus)
 
@@ -156,7 +156,7 @@ def get_mock_gpus(state: models.NexusServiceState) -> list[models.GpuInfo]:
     ]
 
     for gpu in mock_gpus:
-        logger.logger.debug(f"Mock GPU {gpu.index} availability: {gpu.is_available}")
+        logger.debug(f"Mock GPU {gpu.index} availability: {gpu.is_available}")
 
-    logger.logger.debug(f"Total mock GPUs generated: {len(mock_gpus)}")
+    logger.debug(f"Total mock GPUs generated: {len(mock_gpus)}")
     return mock_gpus

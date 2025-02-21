@@ -17,11 +17,11 @@ def check_for_new_version(current_version: str) -> None:
         data = r.json()
         latest = data["info"]["version"]
         if latest != current_version:
-            logger.logger.warning(
+            logger.warning(
                 f"A newer version of nexusai ({latest}) is available on PyPI. Current: {current_version}"
             )
     except Exception as e:
-        logger.logger.debug(f"Failed to check for new version: {e}")
+        logger.debug(f"Failed to check for new version: {e}")
 
 
 def check_external_dependencies() -> None:
@@ -74,7 +74,7 @@ def create_app(
             # Save state to disk if persistence is enabled.
             if app.state.config.persist_to_disk:
                 state.save_state(app.state.state, state_path=app.state.config.state_path)
-            logger.logger.info("Nexus service stopped")
+            logger.info("Nexus service stopped")
 
     app.router.lifespan_context = lifespan
 

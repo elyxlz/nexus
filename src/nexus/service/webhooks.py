@@ -29,7 +29,7 @@ def load_webhook_state(state_path: pl.Path) -> WebhookState:
             data = json.loads(state_path.read_text())
             return WebhookState(message_ids=data.get("message_ids", {}))
         except Exception as e:
-            logger.logger.error(f"Error loading webhook state: {e}")
+            logger.error(f"Error loading webhook state: {e}")
     return WebhookState()
 
 
@@ -38,7 +38,7 @@ def save_webhook_state(state: WebhookState, state_path: pl.Path) -> None:
     try:
         state_path.write_text(json.dumps({"message_ids": state.message_ids}))
     except Exception as e:
-        logger.logger.error(f"Error saving webhook state: {e}")
+        logger.error(f"Error saving webhook state: {e}")
 
 
 def format_job_message_for_webhook(
@@ -91,7 +91,7 @@ async def send_webhook(message_data: dict, wait: bool = False) -> str | None:
     """Send a message to Discord webhook. Returns message ID if wait=True."""
     webhook_url = os.getenv("NEXUS_DISCORD_WEBHOOK_URL")
     if not webhook_url:
-        logger.logger.warning("Discord webhook URL not configured")
+        logger.warning("Discord webhook URL not configured")
         return None
 
     try:
@@ -106,12 +106,12 @@ async def send_webhook(message_data: dict, wait: bool = False) -> str | None:
                         return data.get("id")
                     return None
                 else:
-                    logger.logger.error(
+                    logger.error(
                         f"Failed to send webhook: Status {response.status}, Message: {await response.text()}"
                     )
                     return None
     except Exception as e:
-        logger.logger.error(f"Error sending webhook: {e}")
+        logger.error(f"Error sending webhook: {e}")
         return None
 
 
@@ -129,7 +129,7 @@ async def edit_webhook_message(message_id: str, message_data: dict) -> bool:
             async with session.patch(edit_url, json=webhook_data.model_dump()) as response:
                 return response.status == 200
     except Exception as e:
-        logger.logger.error(f"Error editing webhook message: {e}")
+        logger.error(f"Error editing webhook message: {e}")
         return False
 
 
@@ -151,7 +151,7 @@ async def notify_job_started(job: models.Job) -> None:
 async def update_job_wandb(job: models.Job) -> None:
     """Update job webhook message with W&B URL if found."""
     if not job.wandb_url:
-        logger.logger.debug(f"No W&B URL found for job {job.id}. Skipping update.")
+        logger.debug(f"No W&B URL found for job {job.id}. Skipping update.")
         return
 
     state_path = pl.Path.home() / ".nexus_service" / "webhook_state.json"
@@ -162,7 +162,7 @@ async def update_job_wandb(job: models.Job) -> None:
         message_data = format_job_message_for_webhook(job, "started")
         success = await edit_webhook_message(message_id, message_data)
         if success:
-            logger.logger.info(f"Updated webhook message for job {job.id} with W&B URL")
+            logger.info(f"Updated webhook message for job {job.id} with W&B URL")
 
 
 async def notify_job_completed(job: models.Job) -> None:

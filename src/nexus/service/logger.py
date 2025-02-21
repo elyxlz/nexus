@@ -4,6 +4,8 @@ from logging.handlers import RotatingFileHandler
 
 from colorlog import ColoredFormatter
 
+__all__ = ["info", "debug", "warning", "error", "critical", "exception", "log"]
+
 
 def create_service_logger(
     log_dir: pl.Path = pl.Path.home() / ".nexus_service",
@@ -60,4 +62,13 @@ def create_service_logger(
     return logger
 
 
-logger = create_service_logger()
+_logger = create_service_logger()
+
+# Expose the logger methods directly in the module
+info = _logger.info
+debug = _logger.debug
+warning = _logger.warning
+error = _logger.error
+critical = _logger.critical
+exception = _logger.exception
+log = _logger.log

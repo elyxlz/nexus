@@ -118,7 +118,7 @@ echo "{github_token}"
         subprocess.run(["screen", "-dmS", session_name, str(script_path)], env=env, check=True)
         return dc.replace(job, started_at=dt.datetime.now().timestamp(), gpu_index=gpu_index, status="running")
     except subprocess.CalledProcessError as e:
-        logger.logger.error(f"Failed to start job {job.id}: {e}")
+        logger.error(f"Failed to start job {job.id}: {e}")
         return dc.replace(job, status="failed", error_message=str(e), completed_at=dt.datetime.now().timestamp())
 
 
@@ -178,7 +178,7 @@ def get_job_exit_code(job_id: str, jobs_dir: pl.Path) -> int | None:
             return int(exit_code_str)
         raise ValueError("Could not determine exit code")
     except Exception:
-        logger.logger.exception("Error determining exit code for job %s", job_id)
+        logger.exception("Error determining exit code for job %s", job_id)
         return None
 
 
@@ -205,4 +205,4 @@ def kill_job_session(job_id: str) -> None:
     try:
         subprocess.run(f"pkill -f {job_id}", shell=True)
     except Exception as e:
-        logger.logger.error(f"failed to kill all processes for job {job_id}: {e}")
+        logger.error(f"failed to kill all processes for job {job_id}: {e}")

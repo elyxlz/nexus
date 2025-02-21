@@ -44,7 +44,7 @@ async def get_status(
         service_user=getpass.getuser(),
         service_version=importlib.metadata.version("nexusai"),
     )
-    logger.logger.info(f"Service status: {response}")
+    logger.info(f"Service status: {response}")
     return response
 
 
@@ -53,7 +53,7 @@ async def get_service_logs():
     nexus_dir: pl.Path = pl.Path.home() / ".nexus_service"
     log_path: pl.Path = nexus_dir / "service.log"
     logs: str = log_path.read_text() if log_path.exists() else ""
-    logger.logger.info(f"Service logs retrieved, size: {len(logs)} characters")
+    logger.info(f"Service logs retrieved, size: {len(logs)} characters")
     return models.ServiceLogsResponse(logs=logs)
 
 
@@ -68,7 +68,7 @@ async def list_jobs(
         filtered = [j for j in filtered if j.status == status]
     if gpu_index is not None:
         filtered = [j for j in filtered if j.gpu_index == gpu_index]
-    logger.logger.info(f"Found {len(filtered)} jobs matching criteria")
+    logger.info(f"Found {len(filtered)} jobs matching criteria")
     return filtered
 
 
@@ -91,8 +91,8 @@ async def add_jobs(
     ]
     _state.jobs = _state.jobs + tuple(new_jobs)
     for _job in new_jobs:
-        logger.logger.info(format.format_job_action(_job, action="added"))
-    logger.logger.info(f"Added {len(new_jobs)} new jobs")
+        logger.info(format.format_job_action(_job, action="added"))
+    logger.info(f"Added {len(new_jobs)} new jobs")
     return new_jobs
 
 
@@ -100,9 +100,9 @@ async def add_jobs(
 async def get_job(job_id: str, _state: models.NexusServiceState = Depends(get_state)):
     job_instance = next((j for j in _state.jobs if j.id == job_id), None)
     if not job_instance:
-        logger.logger.warning(f"Job not found: {job_id}")
+        logger.warning(f"Job not found: {job_id}")
         raise HTTPException(status_code=404, detail="Job not found")
-    logger.logger.info(f"Job found: {job_instance}")
+    logger.info(f"Job found: {job_instance}")
     return job_instance
 
 
@@ -132,7 +132,7 @@ async def kill_running_jobs(job_ids: list[str], _state: models.NexusServiceState
                 updated = __import__("dataclasses").replace(_job, marked_for_kill=True)
                 new_jobs[idx] = updated
                 killed.append(_job.id)
-                logger.logger.info(f"Marked job {_job.id} for termination")
+                logger.info(f"Marked job {_job.id} for termination")
     _state.jobs = tuple(new_jobs)
     return models.JobActionResponse(killed=killed, failed=failed)
 
@@ -166,7 +166,7 @@ async def remove_gpu_blacklist(gpu_indexes: list[int], _state: models.NexusServi
         else:
             new_list.remove(_gpu)
             removed.append(_gpu)
-            logger.logger.info(f"Removed GPU {_gpu} from blacklist")
+            logger.info(f"Removed GPU {_gpu} from blacklist")
     _state.blacklisted_gpus = tuple(new_list)
     return models.GpuActionResponse(removed=removed, failed=failed, blacklisted=None)
 
@@ -185,7 +185,7 @@ async def remove_queued_jobs(job_ids: list[str], _state: models.NexusServiceStat
         else:
             remaining.append(_job)
     _state.jobs = tuple(remaining)
-    logger.logger.info(f"Removed {len(removed)} queued jobs; {len(failed)} failed removals")
+    logger.info(f"Removed {len(removed)} queued jobs; {len(failed)} failed removals")
     return models.JobQueueActionResponse(removed=removed, failed=failed)
 
 
@@ -194,13 +194,13 @@ async def list_gpus(
     _state: models.NexusServiceState = Depends(get_state), _config: config.NexusServiceConfig = Depends(get_config)
 ):
     gpus = gpu.get_gpus(_state, mock_gpus=_config.mock_gpus)
-    logger.logger.info(f"Found {len(gpus)} GPUs")
+    logger.info(f"Found {len(gpus)} GPUs")
     return gpus
 
 
 @router.post("/v1/service/stop", response_model=models.ServiceActionResponse)
 async def stop_service():
-    logger.logger.info("Service shutdown initiated by API request")
+    logger.info("Service shutdown initiated by API request")
     asyncio.create_task(shutdown_service())
     return models.ServiceActionResponse(status="stopping")
 

@@ -27,9 +27,9 @@ async def update_running_jobs(_state: models.NexusServiceState, _config: config.
             action = "completed" if updated.status == "completed" else "failed"
 
             if action == "completed":
-                logger.logger.info(format.format_job_action(updated, action=action))
+                logger.info(format.format_job_action(updated, action=action))
             else:
-                logger.logger.error(format.format_job_action(updated, action=action))
+                logger.error(format.format_job_action(updated, action=action))
 
             running_jobs = [j for j in jobs_list if j.status == "running"]
 
@@ -50,7 +50,7 @@ async def update_running_jobs(_state: models.NexusServiceState, _config: config.
                     updated.id, jobs_dir=config.get_jobs_dir(_config.service_dir), last_n_lines=20
                 )
                 if last_lines:
-                    logger.logger.error(f"Last 20 lines of job log:\n{''.join(last_lines)}")
+                    logger.error(f"Last 20 lines of job log:\n{''.join(last_lines)}")
         jobs_list[idx] = updated
     _state.jobs = tuple(jobs_list)
 
@@ -73,7 +73,7 @@ async def update_wandb_urls(_state: models.NexusServiceState, _config: config.Ne
             if wandb_url:
                 updated = dc.replace(_job, wandb_url=wandb_url)
                 jobs_list[idx] = updated
-                logger.logger.info(f"Associated job {_job.id} with W&B run: {wandb_url}")
+                logger.info(f"Associated job {_job.id} with W&B run: {wandb_url}")
 
                 if _config.webhooks_enabled:
                     await webhooks.update_job_wandb(updated)
@@ -93,7 +93,7 @@ async def clean_old_jobs(_state: models.NexusServiceState, _config: config.Nexus
     _state.jobs = tuple(active + completed_failed)
 
     if len(_state.jobs) < initial:
-        logger.logger.debug(f"Cleaned {initial - len(_state.jobs)} old completed jobs")
+        logger.debug(f"Cleaned {initial - len(_state.jobs)} old completed jobs")
 
 
 async def start_queued_jobs(_state: models.NexusServiceState, _config: config.NexusServiceConfig) -> None:
@@ -101,12 +101,12 @@ async def start_queued_jobs(_state: models.NexusServiceState, _config: config.Ne
     queued = [_job for _job in _state.jobs if _job.status == "queued"]
 
     if not queued:
-        logger.logger.debug("No jobs in queue")
+        logger.debug("No jobs in queue")
         return
 
     if not available_gpus:
         running_count = len([job for job in _state.jobs if job.status == "running"])
-        logger.logger.debug(f"No available GPUs. {running_count} jobs running")
+        logger.debug(f"No available GPUs. {running_count} jobs running")
         return
 
     jobs_list = list(_state.jobs)
@@ -126,12 +126,12 @@ async def start_queued_jobs(_state: models.NexusServiceState, _config: config.Ne
                 jobs_list[i] = started
                 break
 
-        logger.logger.info(format.format_job_action(started, action="started"))
+        logger.info(format.format_job_action(started, action="started"))
         if _config.webhooks_enabled:
             await webhooks.notify_job_started(started)
 
     _state.jobs = tuple(jobs_list)
-    logger.logger.info(f"Started jobs on available GPUs; remaining queued jobs: {len(queued)}")
+    logger.info(f"Started jobs on available GPUs; remaining queued jobs: {len(queued)}")
 
 
 async def scheduler_loop(_state: models.NexusServiceState, _config: config.NexusServiceConfig):
@@ -146,5 +146,5 @@ async def scheduler_loop(_state: models.NexusServiceState, _config: config.Nexus
                 state.save_state(_state, state_path=config.get_state_path(_config.service_dir))
 
         except Exception:
-            logger.logger.exception("Scheduler encountered an error:")
+            logger.exception("Scheduler encountered an error:")
         await asyncio.sleep(_config.refresh_rate)
