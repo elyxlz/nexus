@@ -1,8 +1,10 @@
 import asyncio
 import dataclasses as dc
 import datetime as dt
+import pathlib as pl
+import tempfile
 
-from nexus.service import config, format, git, gpu, job, logger, models, state, wandb_finder, webhooks
+from nexus.service import config, env, format, git, gpu, job, logger, models, state, wandb_finder, webhooks
 
 
 async def update_running_jobs(_state: models.NexusServiceState, _config: config.NexusServiceConfig) -> None:
@@ -81,22 +83,9 @@ async def update_wandb_urls(_state: models.NexusServiceState, _config: config.Ne
     _state.jobs = tuple(jobs_list)
 
 
-async def clean_old_jobs(_state: models.NexusServiceState, _config: config.NexusServiceConfig) -> None:
-    initial = len(_state.jobs)
-    active = [job for job in _state.jobs if job.status not in ("completed", "failed")]
-
-    completed_failed = sorted(
-        [job for job in _state.jobs if job.status in ("completed", "failed")],
-        key=lambda j: j.completed_at or 0,
-        reverse=True,
-    )[: _config.history_limit]
-    _state.jobs = tuple(active + completed_failed)
-
-    if len(_state.jobs) < initial:
-        logger.debug(f"Cleaned {initial - len(_state.jobs)} old completed jobs")
-
-
-async def start_queued_jobs(_state: models.NexusServiceState, _config: config.NexusServiceConfig) -> None:
+async def start_queued_jobs(
+    _state: models.NexusServiceState, _config: config.NexusServiceConfig, _env: env.NexusServiceEnv
+) -> None:
     available_gpus = [g for g in gpu.get_gpus(_state, mock_gpus=_config.mock_gpus) if g.is_available]
     queued = [_job for _job in _state.jobs if _job.status == "queued"]
 
@@ -115,18 +104,18 @@ async def start_queued_jobs(_state: models.NexusServiceState, _config: config.Ne
             break
 
         _job = queued.pop(0)
-        started = job.start_job(
-            _job,
-            gpu_index=_gpu.index,
-            jobs_dir=config.get_jobs_dir(_config.service_dir),
-            env_file=config.get_jobs_dir(_config.service_dir).parent / ".env",
+        jobs_dir = (
+            config.get_jobs_dir(_config.service_dir) if not _config.persist_to_disk else pl.Path(tempfile.mkdtemp())
         )
+
+        started = await job.async_start_job(_job, gpu_index=_gpu.index, jobs_dir=jobs_dir, _env=_env.model_dump())
         for i, j in enumerate(jobs_list):
             if j.id == _job.id:
                 jobs_list[i] = started
                 break
 
         logger.info(format.format_job_action(started, action="started"))
+
         if _config.webhooks_enabled:
             await webhooks.notify_job_started(started)
 
@@ -134,13 +123,14 @@ async def start_queued_jobs(_state: models.NexusServiceState, _config: config.Ne
     logger.info(f"Started jobs on available GPUs; remaining queued jobs: {len(queued)}")
 
 
-async def scheduler_loop(_state: models.NexusServiceState, _config: config.NexusServiceConfig):
+async def scheduler_loop(
+    _state: models.NexusServiceState, _config: config.NexusServiceConfig, _env: env.NexusServiceEnv
+):
     while True:
         try:
             await update_running_jobs(_state, _config=_config)
             await update_wandb_urls(_state, _config=_config)
-            await clean_old_jobs(_state, _config=_config)
-            await start_queued_jobs(_state, _config=_config)
+            await start_queued_jobs(_state, _config=_config, _env=_env)
 
             if _config.persist_to_disk:
                 state.save_state(_state, state_path=config.get_state_path(_config.service_dir))

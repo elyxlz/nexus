@@ -2,13 +2,11 @@ import logging
 import pathlib as pl
 from logging.handlers import RotatingFileHandler
 
-from colorlog import ColoredFormatter
-
-__all__ = ["info", "debug", "warning", "error", "critical", "exception", "log"]
+import colorlog as cl
 
 
 def create_service_logger(
-    log_dir: pl.Path = pl.Path.home() / ".nexus_service",
+    log_dir: pl.Path,
     name: str = "service",
     log_file: str = "service.log",
     log_level: int = logging.INFO,
@@ -16,7 +14,6 @@ def create_service_logger(
     backup_count: int = 5,
     console_output: bool = True,
 ) -> logging.Logger:
-    # Ensure the log directory exists
     log_dir.mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger(name)
@@ -41,7 +38,7 @@ def create_service_logger(
 
     if console_output:
         console_format = "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s%(reset)s"
-        console_formatter = ColoredFormatter(
+        console_formatter = cl.ColoredFormatter(
             console_format,
             datefmt="%Y-%m-%d %H:%M:%S",
             reset=True,
@@ -60,15 +57,3 @@ def create_service_logger(
         logger.addHandler(console_handler)
 
     return logger
-
-
-_logger = create_service_logger()
-
-# Expose the logger methods directly in the module
-info = _logger.info
-debug = _logger.debug
-warning = _logger.warning
-error = _logger.error
-critical = _logger.critical
-exception = _logger.exception
-log = _logger.log

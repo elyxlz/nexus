@@ -37,7 +37,6 @@ class NexusServiceConfig(pyds.BaseSettings):
 
     service_dir: pl.Path = pyd.Field(default_factory=lambda: pl.Path.home() / ".nexus_service")
     refresh_rate: int = pyd.Field(default=5)
-    history_limit: int = pyd.Field(default=1000)
     host: str = pyd.Field(default="localhost")
     port: int = pyd.Field(default=54323)
     webhooks_enabled: bool = pyd.Field(default=False)
@@ -75,26 +74,3 @@ def save_env(env: NexusServiceEnv, env_path: pl.Path) -> None:
     with env_path.open("w", encoding="utf-8") as f:
         for key, value in env_dict.items():
             f.write(f"{key.upper()}={value}\n")
-
-
-def create_required_files_and_dirs(config: NexusServiceConfig, env: NexusServiceEnv) -> None:
-    if config.persist_to_disk:
-        config.service_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create the environment file if it doesn't exist
-        if not get_env_path(config.service_dir).exists():
-            save_env(env, env_path=get_env_path(config.service_dir))
-
-        # Ensure the jobs directory exists
-        get_jobs_dir(config.service_dir).mkdir(parents=True, exist_ok=True)
-
-        # Create the configuration file if it doesn't exist
-        if not get_config_path(config.service_dir).exists():
-            save_config(config)
-
-
-def load_config_and_env() -> tuple[NexusServiceConfig, NexusServiceEnv]:
-    config = NexusServiceConfig()
-    env = NexusServiceEnv(_env_file=get_env_path(config.service_dir))  # type: ignore
-    create_required_files_and_dirs(config, env=env)
-    return config, env

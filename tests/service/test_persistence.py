@@ -4,16 +4,15 @@ import pathlib
 import pytest
 import toml
 
-from nexus.service.models import NexusServiceState
-from nexus.service.state import save_state, load_state
 from nexus.service.config import (
     NexusServiceConfig,
     NexusServiceEnv,
     get_config_path,
-    get_env_path,
     save_config,
     save_env,
 )
+from nexus.service.models import NexusServiceState
+from nexus.service.state import load_state, save_state
 
 # --- State Persistence Tests ---
 
@@ -42,14 +41,12 @@ def test_save_and_load_config(tmp_path: pathlib.Path):
     dummy_config = NexusServiceConfig(
         service_dir=tmp_path / "nexus_service",
         refresh_rate=10,
-        history_limit=500,
         host="127.0.0.1",
         port=8000,
         webhooks_enabled=True,
         node_name="test_node",
         log_level="debug",
         mock_gpus=False,
-        persist_to_disk=True,
     )
     # Ensure the service directory exists.
     dummy_config.service_dir.mkdir(parents=True, exist_ok=True)

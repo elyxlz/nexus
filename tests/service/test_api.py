@@ -13,14 +13,12 @@ mock_state = NexusServiceState(status="running", jobs=(), blacklisted_gpus=())
 mock_config = NexusServiceConfig(
     service_dir=pl.Path("./nexus_tests"),
     refresh_rate=5,
-    history_limit=1000,
     host="localhost",
     port=54324,
     webhooks_enabled=False,
     node_name="test_node",
     log_level="debug",
     mock_gpus=True,
-    persist_to_disk=False,
 )
 
 app = create_app(custom_state=mock_state, custom_config=mock_config)

@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses as dc
 import datetime as dt
 import hashlib
@@ -18,18 +19,6 @@ def generate_job_id() -> str:
     hash_input = timestamp + random_bytes
     hash_bytes = hashlib.sha256(hash_input).digest()[:4]
     return base58.b58encode(hash_bytes).decode()[:6].lower()
-
-
-def parse_env_file(env_file: pl.Path) -> dict[str, str]:
-    """Parse environment file and return new environment dict"""
-    env = {}
-    if env_file.exists():
-        with env_file.open() as f:
-            for line in f:
-                if line.strip() and not line.startswith("#"):
-                    key, value = line.strip().split("=", 1)
-                    env[key] = value
-    return env
 
 
 def get_job_session_name(job_id: str) -> str:
@@ -60,64 +49,61 @@ def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None, 
     )
 
 
-def build_job_env(gpu_index: int, env_file: pl.Path) -> dict[str, str]:
+def build_job_env(gpu_index: int, _env: dict[str, str]) -> dict[str, str]:
     base_env = os.environ.copy()
-    file_env = parse_env_file(env_file)
-    env = {**base_env, "CUDA_VISIBLE_DEVICES": str(gpu_index), **file_env}
-    return env
+    return {**base_env, "CUDA_VISIBLE_DEVICES": str(gpu_index), **_env}
 
 
-def start_job(job: models.Job, gpu_index: int, jobs_dir: pl.Path, env_file: pl.Path) -> models.Job:
-    """Start a job on a specific GPU. Returns new job instance."""
+async def async_start_job(job: models.Job, gpu_index: int, jobs_dir: pl.Path, _env: dict[str, str]) -> models.Job:
     session_name = get_job_session_name(job.id)
     job_dir = jobs_dir / job.id
     job_dir.mkdir(parents=True, exist_ok=True)
-    log = job_dir / "output.log"
+    log_file = job_dir / "output.log"
     job_repo_dir = job_dir / "repo"
     job_repo_dir.mkdir(parents=True, exist_ok=True)
 
-    env = build_job_env(gpu_index, env_file=env_file)
+    env = build_job_env(gpu_index, _env=_env)
+    # Setup Git credentials if available.
     github_token = env.get("GITHUB_TOKEN")
-
-    # Setup files
     if github_token:
         askpass_path = job_dir / "askpass.sh"
-        askpass_script = f"""#!/usr/bin/env bash
-echo "{github_token}"
-"""
+        askpass_script = f'#!/usr/bin/env bash\necho "{github_token}"\n'
         askpass_path.write_text(askpass_script)
         askpass_path.chmod(0o700)
     else:
         askpass_path = None
 
+    # Build the shell script to run the job.
     script_lines = [
         "#!/bin/bash",
         "set -e",
         "export GIT_TERMINAL_PROMPT=0",
     ]
-
     if askpass_path:
         script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
-
     script_lines.extend(
         [
             'script -f -q -c "',
             f"git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet '{job.git_repo_url}' '{job_repo_dir}'",
             f"cd '{job_repo_dir}'",
             f"{job.command}",
-            f'" "{log}"',
+            f'" "{log_file}"',
         ]
     )
 
     script_path = job_dir / "run.sh"
-    script_content = "\n".join(script_lines)
-    script_path.write_text(script_content)
+    script_path.write_text("\n".join(script_lines))
     script_path.chmod(0o755)
 
     try:
-        subprocess.run(["screen", "-dmS", session_name, str(script_path)], env=env, check=True)
+        # Launch the job using an asynchronous subprocess call.
+        await asyncio.create_subprocess_exec("screen", "-dmS", session_name, str(script_path), env=env)
+        # Optionally, wait briefly to ensure the process is spawned.
+        await asyncio.sleep(0.1)
+
+        # Update the job status (assuming the job is now running in background).
         return dc.replace(job, started_at=dt.datetime.now().timestamp(), gpu_index=gpu_index, status="running")
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         logger.error(f"Failed to start job {job.id}: {e}")
         return dc.replace(job, status="failed", error_message=str(e), completed_at=dt.datetime.now().timestamp())
 

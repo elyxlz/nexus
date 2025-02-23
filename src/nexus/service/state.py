@@ -13,6 +13,7 @@ def create_default_state() -> models.NexusServiceState:
 def load_state(state_path: pl.Path) -> models.NexusServiceState:
     """Load service state from disk"""
     data = json.loads(state_path.read_text())
+    data: dict = {k: tuple(v) if isinstance(v, list) else v for k, v in data.items()}
     state = models.NexusServiceState(**data)
     logger.info("Successfully loaded state from disk.")
     return state
@@ -36,17 +37,6 @@ def save_state(state: models.NexusServiceState, state_path: pl.Path) -> None:
 def get_job_by_id(state: models.NexusServiceState, job_id: str) -> models.Job | None:
     """Get a job by its ID"""
     return next((job for job in state.jobs if job.id == job_id), None)
-
-
-def remove_completed_jobs(state: models.NexusServiceState, history_limit: int) -> models.NexusServiceState:
-    """Remove old completed jobs keeping only the most recent ones"""
-    completed = [j for j in state.jobs if j.status in ("completed", "failed")]
-    if len(completed) > history_limit:
-        completed.sort(key=lambda x: x.completed_at or 0, reverse=True)
-        keep_jobs = completed[:history_limit]
-        active_jobs = [j for j in state.jobs if j.status in ("queued", "running")]
-        state = dc.replace(state, jobs=active_jobs + keep_jobs)
-    return state
 
 
 def update_jobs_in_state(state: models.NexusServiceState, jobs: list[models.Job]) -> models.NexusServiceState:
