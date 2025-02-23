@@ -10,7 +10,7 @@ from nexus.service import logger
 __all__ = ["find_wandb_run_by_nexus_id"]
 
 
-def check_project_for_run(project, run_id: str, api) -> str | None:
+def check_project_for_run(logger: logger.NexusServiceLogger, project, run_id: str, api) -> str | None:
     logger.debug(f"Checking project {project.name} for run {run_id}")
     try:
         api.run(f"{project.entity}/{project.name}/{run_id}")
@@ -22,7 +22,7 @@ def check_project_for_run(project, run_id: str, api) -> str | None:
         return None
 
 
-def find_run_id_from_metadata(dirs: list[str], nexus_job_id: str) -> str | None:
+def find_run_id_from_metadata(logger: logger.NexusServiceLogger, dirs: list[str], nexus_job_id: str) -> str | None:
     logger.debug(f"Searching for nexus job ID {nexus_job_id} in directories: {dirs}")
     for root_dir in dirs:
         root_path = pl.Path(root_dir)
@@ -42,9 +42,9 @@ def find_run_id_from_metadata(dirs: list[str], nexus_job_id: str) -> str | None:
     return None
 
 
-def find_wandb_run_by_nexus_id(dirs: list[str], nexus_job_id: str) -> str | None:
+def find_wandb_run_by_nexus_id(logger: logger.NexusServiceLogger, dirs: list[str], nexus_job_id: str) -> str | None:
     logger.debug(f"Starting search for nexus job ID: {nexus_job_id}")
-    run_id = find_run_id_from_metadata(dirs, nexus_job_id)
+    run_id = find_run_id_from_metadata(logger, dirs, nexus_job_id)
     if not run_id:
         logger.debug("No run ID found in metadata")
         return None
@@ -65,7 +65,9 @@ def find_wandb_run_by_nexus_id(dirs: list[str], nexus_job_id: str) -> str | None
 
     logger.debug("Starting parallel project search")
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(check_project_for_run, project, run_id, api): project for project in projects}
+        futures = {
+            executor.submit(check_project_for_run, logger, project, run_id, api): project for project in projects
+        }
 
         for future in concurrent.futures.as_completed(futures):
             try:

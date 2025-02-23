@@ -22,7 +22,7 @@ class WebhookState(pyd.BaseModel):
     message_ids: dict[str, str] = {}  # job_id -> message_id
 
 
-def load_webhook_state(state_path: pl.Path) -> WebhookState:
+def load_webhook_state(logger: logger.NexusServiceLogger, state_path: pl.Path) -> WebhookState:
     """Load webhook state from disk."""
     if state_path.exists():
         try:
@@ -33,7 +33,7 @@ def load_webhook_state(state_path: pl.Path) -> WebhookState:
     return WebhookState()
 
 
-def save_webhook_state(state: WebhookState, state_path: pl.Path) -> None:
+def save_webhook_state(logger: logger.NexusServiceLogger, state: WebhookState, state_path: pl.Path) -> None:
     """Save webhook state to disk."""
     try:
         state_path.write_text(json.dumps({"message_ids": state.message_ids}))
@@ -87,7 +87,7 @@ def format_job_message_for_webhook(
     }
 
 
-async def send_webhook(message_data: dict, wait: bool = False) -> str | None:
+async def send_webhook(logger: logger.NexusServiceLogger, message_data: dict, wait: bool = False) -> str | None:
     """Send a message to Discord webhook. Returns message ID if wait=True."""
     webhook_url = os.getenv("NEXUS_DISCORD_WEBHOOK_URL")
     if not webhook_url:
@@ -113,7 +113,7 @@ async def send_webhook(message_data: dict, wait: bool = False) -> str | None:
         return None
 
 
-async def edit_webhook_message(message_id: str, message_data: dict) -> bool:
+async def edit_webhook_message(logger: logger.NexusServiceLogger, message_id: str, message_data: dict) -> bool:
     """Edit an existing webhook message."""
     webhook_url = os.getenv("NEXUS_DISCORD_WEBHOOK_URL")
     if not webhook_url:
@@ -131,45 +131,45 @@ async def edit_webhook_message(message_id: str, message_data: dict) -> bool:
         return False
 
 
-async def notify_job_started(job: models.Job) -> None:
+async def notify_job_started(logger: logger.NexusServiceLogger, job: models.Job) -> None:
     """Send webhook notification for job start and store message ID."""
     message_data = format_job_message_for_webhook(job, "started")
 
     # Send with wait=True to get message ID
-    message_id = await send_webhook(message_data, wait=True)
+    message_id = await send_webhook(logger, message_data, wait=True)
 
     if message_id:
         # Update webhook state
         state_path = pl.Path.home() / ".nexus_service" / "webhook_state.json"
-        webhook_state = load_webhook_state(state_path)
+        webhook_state = load_webhook_state(logger, state_path)
         webhook_state.message_ids[job.id] = message_id
-        save_webhook_state(webhook_state, state_path)
+        save_webhook_state(logger, webhook_state, state_path)
 
 
-async def update_job_wandb(job: models.Job) -> None:
+async def update_job_wandb(logger: logger.NexusServiceLogger, job: models.Job) -> None:
     """Update job webhook message with W&B URL if found."""
     if not job.wandb_url:
         logger.debug(f"No W&B URL found for job {job.id}. Skipping update.")
         return
 
     state_path = pl.Path.home() / ".nexus_service" / "webhook_state.json"
-    webhook_state = load_webhook_state(state_path)
+    webhook_state = load_webhook_state(logger, state_path)
     message_id = webhook_state.message_ids.get(job.id)
 
     if message_id:
         message_data = format_job_message_for_webhook(job, "started")
-        success = await edit_webhook_message(message_id, message_data)
+        success = await edit_webhook_message(logger, message_id, message_data)
         if success:
             logger.info(f"Updated webhook message for job {job.id} with W&B URL")
 
 
-async def notify_job_completed(job: models.Job) -> None:
+async def notify_job_completed(logger: logger.NexusServiceLogger, job: models.Job) -> None:
     """Send webhook notification for job completion."""
     message_data = format_job_message_for_webhook(job, "completed")
-    await send_webhook(message_data)
+    await send_webhook(logger, message_data)
 
 
-async def notify_job_failed(job: models.Job, job_logs: str | None) -> None:
+async def notify_job_failed(logger: logger.NexusServiceLogger, job: models.Job, job_logs: str | None) -> None:
     """Send webhook notification for job failure with last few log lines."""
     message_data = format_job_message_for_webhook(job, "failed")
 
@@ -177,4 +177,4 @@ async def notify_job_failed(job: models.Job, job_logs: str | None) -> None:
     if job_logs:
         message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": f"```\n{job_logs}\n```"})
 
-    await send_webhook(message_data)
+    await send_webhook(logger, message_data)

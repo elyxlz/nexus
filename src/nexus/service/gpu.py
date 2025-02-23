@@ -5,12 +5,12 @@ import warnings
 from nexus.service import logger, models
 
 
-def is_gpu_available(gpu_info: models.GpuInfo) -> bool:
+def is_gpu_available(logger: logger.NexusServiceLogger, gpu_info: models.GpuInfo) -> bool:
     """Check if a GPU is available for use"""
     return not gpu_info.is_blacklisted and gpu_info.running_job_id is None and gpu_info.process_count == 0
 
 
-def get_gpu_processes() -> dict[int, int]:
+def get_gpu_processes(logger: logger.NexusServiceLogger) -> dict[int, int]:
     """Query nvidia-smi pmon for process information per GPU.
     Returns a dictionary mapping GPU indices to their process counts."""
     try:
@@ -52,6 +52,7 @@ def get_gpu_processes() -> dict[int, int]:
 
 
 def create_gpu_info(
+    logger: logger.NexusServiceLogger,
     index: int,
     name: str,
     total_memory: float | str,
@@ -75,13 +76,15 @@ def create_gpu_info(
         running_job_id=running_jobs.get(index),
         is_available=False,  # Will be updated below
     )
-    return dc.replace(gpu, is_available=is_gpu_available(gpu))
+    return dc.replace(gpu, is_available=is_gpu_available(logger, gpu))
 
 
-def get_gpus(state: models.NexusServiceState, mock_gpus: bool) -> list[models.GpuInfo]:
+def get_gpus(
+    logger: logger.NexusServiceLogger, state: models.NexusServiceState, mock_gpus: bool
+) -> list[models.GpuInfo]:
     if mock_gpus:
         logger.info("MOCK_GPUS parameter is True. Returning mock GPU information.")
-        return get_mock_gpus(state)
+        return get_mock_gpus(logger, state)
 
     try:
         logger.debug("Executing nvidia-smi command for GPU stats")
@@ -98,7 +101,7 @@ def get_gpus(state: models.NexusServiceState, mock_gpus: bool) -> list[models.Gp
                 "nvidia-smi returned no output. Ensure that nvidia-smi is installed and GPUs are available."
             )
 
-        gpu_processes = get_gpu_processes()
+        gpu_processes = get_gpu_processes(logger)
         running_jobs = {j.gpu_index: j.id for j in state.jobs if j.status == "running" and j.gpu_index is not None}
         blacklisted_gpus = set(state.blacklisted_gpus)
         gpus = []
@@ -108,6 +111,7 @@ def get_gpus(state: models.NexusServiceState, mock_gpus: bool) -> list[models.Gp
                 index, name, total, used = (x.strip() for x in line.split(","))
                 index = int(index)
                 gpu = create_gpu_info(
+                    logger,
                     index=index,
                     name=name,
                     total_memory=total,
@@ -131,7 +135,7 @@ def get_gpus(state: models.NexusServiceState, mock_gpus: bool) -> list[models.Gp
         raise RuntimeError(f"nvidia-smi not available or failed: {e}")
 
 
-def get_mock_gpus(state: models.NexusServiceState) -> list[models.GpuInfo]:
+def get_mock_gpus(logger: logger.NexusServiceLogger, state: models.NexusServiceState) -> list[models.GpuInfo]:
     """Generate mock GPUs for testing purposes."""
     logger.debug("Generating mock GPUs")
     running_jobs = {j.gpu_index: j.id for j in state.jobs if j.status == "running" and j.gpu_index is not None}
@@ -144,6 +148,7 @@ def get_mock_gpus(state: models.NexusServiceState) -> list[models.GpuInfo]:
 
     mock_gpus = [
         create_gpu_info(
+            logger,
             index=index,
             name=name,
             total_memory=total,

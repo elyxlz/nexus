@@ -5,6 +5,10 @@ from logging.handlers import RotatingFileHandler
 import colorlog as cl
 
 
+class NexusServiceLogger(logging.Logger):
+    pass
+
+
 def create_service_logger(
     log_dir: pl.Path,
     name: str = "service",
@@ -13,10 +17,10 @@ def create_service_logger(
     max_bytes: int = 10 * 1024 * 1024,
     backup_count: int = 5,
     console_output: bool = True,
-) -> logging.Logger:
+) -> NexusServiceLogger:
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    logger = logging.getLogger(name)
+    logger = NexusServiceLogger(name)
     logger.setLevel(log_level)
     logger.handlers = []
 

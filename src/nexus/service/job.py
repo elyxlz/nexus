@@ -54,7 +54,9 @@ def build_job_env(gpu_index: int, _env: dict[str, str]) -> dict[str, str]:
     return {**base_env, "CUDA_VISIBLE_DEVICES": str(gpu_index), **_env}
 
 
-async def async_start_job(job: models.Job, gpu_index: int, jobs_dir: pl.Path, _env: dict[str, str]) -> models.Job:
+async def async_start_job(
+    logger: logger.NexusServiceLogger, job: models.Job, gpu_index: int, jobs_dir: pl.Path, _env: dict[str, str]
+) -> models.Job:
     session_name = get_job_session_name(job.id)
     job_dir = jobs_dir / job.id
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -118,13 +120,13 @@ def is_job_session_running(job_id: str) -> bool:
         return False
 
 
-def end_job(job: models.Job, jobs_dir: pl.Path, killed: bool) -> models.Job:
+def end_job(logger: logger.NexusServiceLogger, job: models.Job, jobs_dir: pl.Path, killed: bool) -> models.Job:
     """Check if a job has completed and update its status. Returns new job instance."""
     if is_job_session_running(job.id):
         return job
 
     job_log = get_job_logs(job.id, jobs_dir=jobs_dir)
-    exit_code = get_job_exit_code(job.id, jobs_dir=jobs_dir)
+    exit_code = get_job_exit_code(logger, job_id=job.id, jobs_dir=jobs_dir)
 
     if killed:
         new_job = dc.replace(
@@ -153,7 +155,7 @@ def end_job(job: models.Job, jobs_dir: pl.Path, killed: bool) -> models.Job:
     return new_job
 
 
-def get_job_exit_code(job_id: str, jobs_dir: pl.Path) -> int | None:
+def get_job_exit_code(logger: logger.NexusServiceLogger, job_id: str, jobs_dir: pl.Path) -> int | None:
     try:
         content = get_job_logs(job_id, jobs_dir, last_n_lines=1)
         if content is None:
@@ -186,7 +188,7 @@ def get_job_logs(job_id: str, jobs_dir: pl.Path, last_n_lines: int | None = None
             return "".join(f.readlines()[-last_n_lines:])
 
 
-def kill_job_session(job_id: str) -> None:
+def kill_job_session(logger: logger.NexusServiceLogger, job_id: str) -> None:
     """Kill a job session"""
     try:
         subprocess.run(f"pkill -f {job_id}", shell=True)

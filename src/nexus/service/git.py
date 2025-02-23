@@ -23,14 +23,14 @@ def validate_git_url(url: str) -> bool:
     return bool(GIT_URL_PATTERN.match(url))
 
 
-def cleanup_repo(jobs_dir: pl.Path, job_id: str) -> None:
+def cleanup_repo(logger: logger.NexusServiceLogger, jobs_dir: pl.Path, job_id: str) -> None:
     job_repo_dir = jobs_dir / job_id / "repo"
     if job_repo_dir.exists():
         shutil.rmtree(job_repo_dir, ignore_errors=True)
         logger.info(f"Successfully cleaned up {job_repo_dir}")
 
 
-def cleanup_git_tag(git_tag: str, git_repo_url: str) -> None:
+def cleanup_git_tag(logger: logger.NexusServiceLogger, git_tag: str, git_repo_url: str) -> None:
     subprocess.run(["git", "push", git_repo_url, "--delete", git_tag], check=True, capture_output=True, text=True)
     logger.info(f"Cleaned up git tag {git_tag} from {git_repo_url} for job {id}")
 

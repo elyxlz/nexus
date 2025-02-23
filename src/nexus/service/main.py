@@ -6,25 +6,20 @@ import sys
 import fastapi as fa
 import uvicorn
 
-from nexus.service import config, logger, models, router, scheduler, setup, state
+from nexus.service import config, logger, models, router, scheduler, setup, state, context
 
 
-def create_app(
-    _state: models.NexusServiceState, _config: config.NexusServiceConfig, _env: config.NexusServiceEnv
-) -> fa.FastAPI:
-    # Create the FastAPI application.
+def create_app(ctx: context.NexusServiceContext) -> fa.FastAPI:
     app = fa.FastAPI(
         title="Nexus GPU Job Service",
         description="GPU Job Management Service",
         version=importlib.metadata.version("nexusai"),
     )
-    app.state.config = _config
-    app.state.state = _state
+    app.state.context = ctx
 
     @contextlib.asynccontextmanager
     async def lifespan(app: fa.FastAPI):
-        # Start the scheduler loop.
-        scheduler_task = asyncio.create_task(scheduler.scheduler_loop(_state=app.state.state, _config=app.state.config))
+        scheduler_task = asyncio.create_task(scheduler.scheduler_loop(ctx=app.state.context))
         try:
             yield
         finally:
@@ -36,11 +31,9 @@ def create_app(
             # Save state to disk if persistence is enabled.
             if app.state.config.persist_to_disk:
                 state.save_state(app.state.state, state_path=app.state.config.state_path)
-            logger.info("Nexus service stopped")
+            ctx.logger.info("Nexus service stopped")
 
     app.router.lifespan_context = lifespan
-
-    # Include the API routes.
     app.include_router(router.router)
 
     return app

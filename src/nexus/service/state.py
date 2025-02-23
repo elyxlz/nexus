@@ -10,7 +10,7 @@ def create_default_state() -> models.NexusServiceState:
     return default_state
 
 
-def load_state(state_path: pl.Path) -> models.NexusServiceState:
+def load_state(logger: logger.NexusServiceLogger, state_path: pl.Path) -> models.NexusServiceState:
     """Load service state from disk"""
     data = json.loads(state_path.read_text())
     data: dict = {k: tuple(v) if isinstance(v, list) else v for k, v in data.items()}
