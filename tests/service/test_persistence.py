@@ -4,10 +4,10 @@ import pathlib
 import pytest
 import toml
 
-from nexus.service.config import NexusServiceConfig, get_config_path, save_config
-from nexus.service.env import NexusServiceEnv, save_env
-from nexus.service.logger import create_service_logger
-from nexus.service.models import NexusServiceState
+from nexus.service.core.config import NexusServiceConfig, get_config_path, save_config
+from nexus.service.core.env import NexusServiceEnv, save_env
+from nexus.service.core.logger import create_service_logger
+from nexus.service.core.models import NexusServiceState
 from nexus.service.state import load_state, save_state
 
 

@@ -4,12 +4,12 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from nexus.service.config import NexusServiceConfig
-from nexus.service.context import NexusServiceContext
-from nexus.service.env import NexusServiceEnv
-from nexus.service.logger import create_service_logger
+from nexus.service.core.config import NexusServiceConfig
+from nexus.service.core.context import NexusServiceContext
+from nexus.service.core.env import NexusServiceEnv
+from nexus.service.core.logger import create_service_logger
+from nexus.service.core.models import NexusServiceState
 from nexus.service.main import create_app
-from nexus.service.models import NexusServiceState
 
 # Create mock state and config for testing.
 mock_state = NexusServiceState(status="running", jobs=(), blacklisted_gpus=())
