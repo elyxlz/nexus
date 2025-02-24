@@ -59,21 +59,22 @@ async def async_start_job(
     logger: logger.NexusServiceLogger,
     job: models.Job,
     gpu_index: int,
-    jobs_dir: pl.Path,
     github_token: str | None,
     job_env: dict[str, str],
 ) -> models.Job:
     session_name = get_job_session_name(job.id)
-    job_dir = jobs_dir / job.id
-    job_dir.mkdir(parents=True, exist_ok=True)
-    log_file = job_dir / "output.log"
-    job_repo_dir = job_dir / "repo"
+    if job.dir is None:
+        raise ValueError
+
+    job.dir.mkdir(parents=True, exist_ok=True)
+    log_file = job.dir / "output.log"
+    job_repo_dir = job.dir / "repo"
     job_repo_dir.mkdir(parents=True, exist_ok=True)
 
     env = build_job_env(gpu_index, _env=job_env)
-    # Setup Git credentials if available.
+
     if github_token:
-        askpass_path = job_dir / "askpass.sh"
+        askpass_path = job.dir / "askpass.sh"
         askpass_script = f'#!/usr/bin/env bash\necho "{github_token}"\n'
         askpass_path.write_text(askpass_script)
         askpass_path.chmod(0o700)
@@ -88,6 +89,7 @@ async def async_start_job(
     ]
     if askpass_path:
         script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
+
     script_lines.extend(
         [
             'script -f -q -c "',
@@ -98,7 +100,7 @@ async def async_start_job(
         ]
     )
 
-    script_path = job_dir / "run.sh"
+    script_path = job.dir / "run.sh"
     script_path.write_text("\n".join(script_lines))
     script_path.chmod(0o755)
 

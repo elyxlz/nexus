@@ -37,15 +37,14 @@ class GpuInfo:
     process_count: int
     is_blacklisted: bool
     running_job_id: str | None
-    is_available: bool
 
 
-# we keep the state mutable because we have multiple consumers (scheduler + endpoints), everything inside of it is immutable however
-@dataclasses.dataclass(frozen=False)
-class NexusServiceState:
-    status: typing.Literal["running", "stopped", "error"]
-    jobs: tuple[Job, ...]
-    blacklisted_gpus: tuple[int, ...]
+# # we keep the state mutable because we have multiple consumers (scheduler + endpoints), everything inside of it is immutable however
+# @dataclasses.dataclass(frozen=False)
+# class NexusServiceState:
+#     status: typing.Literal["running", "stopped", "error"]
+#     jobs: tuple[Job, ...]
+#     blacklisted_gpus: tuple[int, ...]
 
 
 # Response and Request models

@@ -28,8 +28,8 @@ def get_config_path(service_dir: pl.Path) -> pl.Path:
     return service_dir / "config.toml"
 
 
-def get_state_path(service_dir: pl.Path) -> pl.Path:
-    return service_dir / "state.json"
+def get_db_path(service_dir: pl.Path) -> pl.Path:
+    return service_dir / "nexus_service.db"
 
 
 def get_jobs_dir(service_dir: pl.Path) -> pl.Path:
