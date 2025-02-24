@@ -39,6 +39,7 @@ def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None, 
         discord_id=discord_id,
         git_repo_url=git_repo_url,
         git_tag=git_tag,
+        dir=None,
         started_at=None,
         completed_at=None,
         gpu_index=None,
@@ -55,7 +56,12 @@ def build_job_env(gpu_index: int, _env: dict[str, str]) -> dict[str, str]:
 
 
 async def async_start_job(
-    logger: logger.NexusServiceLogger, job: models.Job, gpu_index: int, jobs_dir: pl.Path, _env: dict[str, str]
+    logger: logger.NexusServiceLogger,
+    job: models.Job,
+    gpu_index: int,
+    jobs_dir: pl.Path,
+    github_token: str | None,
+    job_env: dict[str, str],
 ) -> models.Job:
     session_name = get_job_session_name(job.id)
     job_dir = jobs_dir / job.id
@@ -64,9 +70,8 @@ async def async_start_job(
     job_repo_dir = job_dir / "repo"
     job_repo_dir.mkdir(parents=True, exist_ok=True)
 
-    env = build_job_env(gpu_index, _env=_env)
+    env = build_job_env(gpu_index, _env=job_env)
     # Setup Git credentials if available.
-    github_token = env.get("GITHUB_TOKEN")
     if github_token:
         askpass_path = job_dir / "askpass.sh"
         askpass_script = f'#!/usr/bin/env bash\necho "{github_token}"\n'
@@ -120,32 +125,32 @@ def is_job_session_running(job_id: str) -> bool:
         return False
 
 
-def end_job(logger: logger.NexusServiceLogger, job: models.Job, jobs_dir: pl.Path, killed: bool) -> models.Job:
+def end_job(logger: logger.NexusServiceLogger, _job: models.Job, killed: bool) -> models.Job:
     """Check if a job has completed and update its status. Returns new job instance."""
-    if is_job_session_running(job.id):
-        return job
+    if is_job_session_running(_job.id):
+        return _job
 
-    job_log = get_job_logs(job.id, jobs_dir=jobs_dir)
-    exit_code = get_job_exit_code(logger, job_id=job.id, jobs_dir=jobs_dir)
+    job_log = get_job_logs(_job.dir)
+    exit_code = get_job_exit_code(logger, job_id=_job.id, job_dir=_job.dir)
 
     if killed:
         new_job = dc.replace(
-            job, status="failed", error_message="Killed by user", completed_at=dt.datetime.now().timestamp()
+            _job, status="failed", error_message="Killed by user", completed_at=dt.datetime.now().timestamp()
         )
     elif job_log is None:
         new_job = dc.replace(
-            job, status="failed", error_message="No output log found", completed_at=dt.datetime.now().timestamp()
+            _job, status="failed", error_message="No output log found", completed_at=dt.datetime.now().timestamp()
         )
     elif exit_code is None:
         new_job = dc.replace(
-            job,
+            _job,
             status="failed",
             error_message="Could not find exit code in log",
             completed_at=dt.datetime.now().timestamp(),
         )
     else:
         new_job = dc.replace(
-            job,
+            _job,
             exit_code=exit_code,
             status="completed" if exit_code == 0 else "failed",
             error_message=None if exit_code == 0 else f"Job failed with exit code {exit_code}",
@@ -155,9 +160,12 @@ def end_job(logger: logger.NexusServiceLogger, job: models.Job, jobs_dir: pl.Pat
     return new_job
 
 
-def get_job_exit_code(logger: logger.NexusServiceLogger, job_id: str, jobs_dir: pl.Path) -> int | None:
+def get_job_exit_code(logger: logger.NexusServiceLogger, job_id: str, job_dir: pl.Path | None) -> int | None:
+    if job_dir is None:
+        return None
+
     try:
-        content = get_job_logs(job_id, jobs_dir, last_n_lines=1)
+        content = get_job_logs(job_dir, last_n_lines=1)
         if content is None:
             raise ValueError("No output log found")
         last_line = content.strip()
@@ -170,11 +178,8 @@ def get_job_exit_code(logger: logger.NexusServiceLogger, job_id: str, jobs_dir: 
         return None
 
 
-def get_job_logs(job_id: str, jobs_dir: pl.Path, last_n_lines: int | None = None) -> str | None:
-    """Get job logs"""
-    job_dir = jobs_dir / job_id
-
-    if not job_dir.exists():
+def get_job_logs(job_dir: pl.Path | None, last_n_lines: int | None = None) -> str | None:
+    if job_dir is None:
         return None
 
     logs = job_dir / "output.log"

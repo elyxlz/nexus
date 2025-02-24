@@ -10,7 +10,7 @@ class NexusServiceLogger(logging.Logger):
 
 
 def create_service_logger(
-    log_dir: pl.Path,
+    log_dir: pl.Path | None,
     name: str = "service",
     log_file: str = "service.log",
     log_level: int = logging.INFO,
@@ -18,8 +18,6 @@ def create_service_logger(
     backup_count: int = 5,
     console_output: bool = True,
 ) -> NexusServiceLogger:
-    log_dir.mkdir(parents=True, exist_ok=True)
-
     logger = NexusServiceLogger(name)
     logger.setLevel(log_level)
     logger.handlers = []
@@ -27,18 +25,20 @@ def create_service_logger(
     file_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     file_formatter = logging.Formatter(file_format, datefmt="%Y-%m-%d %H:%M:%S")
 
-    log_file_path = log_dir / log_file
-    log_file_path.touch()  # Now this will succeed
+    if log_dir is not None:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file_path = log_dir / log_file
+        log_file_path.touch()  # Ensures the file exists
 
-    file_handler = RotatingFileHandler(
-        filename=str(log_file_path),
-        maxBytes=max_bytes,
-        backupCount=backup_count,
-        encoding="utf-8",
-    )
-    file_handler.setFormatter(file_formatter)
-    file_handler.setLevel(log_level)
-    logger.addHandler(file_handler)
+        file_handler = RotatingFileHandler(
+            filename=str(log_file_path),
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(file_formatter)
+        file_handler.setLevel(log_level)
+        logger.addHandler(file_handler)
 
     if console_output:
         console_format = "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s%(reset)s"

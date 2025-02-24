@@ -1,4 +1,5 @@
 import dataclasses
+import pathlib as pl
 import typing
 
 import pydantic as pyd
@@ -15,6 +16,7 @@ class Job:
     git_tag: str
     status: JobStatus
     created_at: float
+    dir: pl.Path | None
     started_at: float | None
     completed_at: float | None
     gpu_index: int | None

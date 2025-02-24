@@ -10,30 +10,6 @@ def create_default_state() -> models.NexusServiceState:
     return default_state
 
 
-def load_state(logger: logger.NexusServiceLogger, state_path: pl.Path) -> models.NexusServiceState:
-    """Load service state from disk"""
-    data = json.loads(state_path.read_text())
-    data: dict = {k: tuple(v) if isinstance(v, list) else v for k, v in data.items()}
-    state = models.NexusServiceState(**data)
-    logger.info("Successfully loaded state from disk.")
-    return state
-
-
-def save_state(state: models.NexusServiceState, state_path: pl.Path) -> None:
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.touch(exist_ok=True)
-    temp_path = state_path.with_suffix(".json.tmp")
-    try:
-        json_data = dc.asdict(state)
-        serialized = json.dumps(json_data, default=str, indent=2)
-        temp_path.write_text(serialized)
-        temp_path.replace(state_path)
-    except Exception:
-        if temp_path.exists():
-            temp_path.unlink()
-        raise
-
-
 def get_job_by_id(state: models.NexusServiceState, job_id: str) -> models.Job | None:
     """Get a job by its ID"""
     return next((job for job in state.jobs if job.id == job_id), None)
@@ -74,3 +50,27 @@ def clean_old_completed_jobs_in_state(state: models.NexusServiceState, max_compl
     new_jobs = [j for j in state.jobs if j.status not in ["completed", "failed"] or j.id in job_ids_to_keep]
 
     return dc.replace(state, jobs=new_jobs)
+
+
+def save_state(state: models.NexusServiceState, state_path: pl.Path) -> None:
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.touch(exist_ok=True)
+    temp_path = state_path.with_suffix(".json.tmp")
+    try:
+        json_data = dc.asdict(state)
+        serialized = json.dumps(json_data, default=str, indent=2)
+        temp_path.write_text(serialized)
+        temp_path.replace(state_path)
+    except Exception:
+        if temp_path.exists():
+            temp_path.unlink()
+        raise
+
+
+def load_state(logger: logger.NexusServiceLogger, state_path: pl.Path) -> models.NexusServiceState:
+    """Load service state from disk"""
+    data = json.loads(state_path.read_text())
+    data: dict = {k: tuple(v) if isinstance(v, list) else v for k, v in data.items()}
+    state = models.NexusServiceState(**data)
+    logger.info("Successfully loaded state from disk.")
+    return state

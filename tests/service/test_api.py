@@ -24,7 +24,7 @@ mock_config = NexusServiceConfig(
     mock_gpus=True,
 )
 mock_env = NexusServiceEnv()
-mock_logger = create_service_logger(mock_config.service_dir / "logs", name="nexus_test")
+mock_logger = create_service_logger(log_dir=None, name="nexus_test")
 mock_context = NexusServiceContext(state=mock_state, config=mock_config, env=mock_env, logger=mock_logger)
 
 app = create_app(ctx=mock_context)

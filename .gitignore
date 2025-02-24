@@ -163,3 +163,4 @@ cython_debug/
 .avante*/
 *_nexus.png
 *.html
+nexus_tests/

@@ -117,14 +117,13 @@ async def get_job(
 async def get_job_logs_endpoint(
     job_id: str,
     _state: models.NexusServiceState = fa.Depends(get_state),
-    _config: config.NexusServiceConfig = fa.Depends(get_config),
     _logger: logger.NexusServiceLogger = fa.Depends(get_logger),
 ):
     _job = next((j for j in _state.jobs if j.id == job_id), None)
     if not _job:
         _logger.warning(f"Job not found: {job_id}")
         raise fa.HTTPException(status_code=404, detail="Job not found")
-    logs = job.get_job_logs(_job.id, jobs_dir=config.get_jobs_dir(_config.service_dir))
+    logs = job.get_job_logs(_job.dir)
     logs = logs or ""
     _logger.info(f"Retrieved logs for job {job_id}, size: {len(logs)} characters")
     return models.JobLogsResponse(logs=logs or "")

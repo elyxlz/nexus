@@ -19,49 +19,42 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
 
         if _job.marked_for_kill and job.is_job_session_running(_job.id):
             job.kill_job_session(ctx.logger, job_id=_job.id)
-            updated = job.end_job(
-                ctx.logger, job=_job, jobs_dir=config.get_jobs_dir(ctx.config.service_dir), killed=True
-            )
-            git.cleanup_repo(ctx.logger, jobs_dir=config.get_jobs_dir(ctx.config.service_dir), job_id=_job.id)
+            updated_job = job.end_job(ctx.logger, _job=_job, killed=True)
+            await git.async_cleanup_repo(ctx.logger, job_dir=_job.dir)
 
         elif not job.is_job_session_running(_job.id):
-            updated = job.end_job(
-                ctx.logger, job=_job, jobs_dir=config.get_jobs_dir(ctx.config.service_dir), killed=False
-            )
-            git.cleanup_repo(ctx.logger, jobs_dir=config.get_jobs_dir(ctx.config.service_dir), job_id=_job.id)
+            updated_job = job.end_job(ctx.logger, _job=_job, killed=False)
+            await git.async_cleanup_repo(ctx.logger, job_dir=_job.dir)
 
         else:
             continue
 
-        if updated.status != "running":
-            action = "completed" if updated.status == "completed" else "failed"
+        if updated_job.status != "running":
+            action = "completed" if updated_job.status == "completed" else "failed"
 
             if action == "completed":
-                ctx.logger.info(format.format_job_action(updated, action=action))
+                ctx.logger.info(format.format_job_action(updated_job, action=action))
             else:
-                ctx.logger.error(format.format_job_action(updated, action=action))
+                ctx.logger.error(format.format_job_action(updated_job, action=action))
 
             running_jobs = [j for j in jobs_list if j.status == "running"]
 
-            if not any(job.git_tag == updated.git_tag for job in running_jobs):
-                git.cleanup_git_tag(ctx.logger, git_tag=_job.git_tag, git_repo_url=_job.git_repo_url)
+            if not any(job.git_tag == updated_job.git_tag for job in running_jobs):
+                await git.async_cleanup_git_tag(ctx.logger, git_tag=_job.git_tag, git_repo_url=_job.git_repo_url)
 
             if ctx.config.webhooks_enabled:
                 if action == "completed":
                     await webhooks.notify_job_completed(ctx.logger, job=_job)
+
                 elif action == "failed":
-                    job_logs = job.get_job_logs(
-                        _job.id, jobs_dir=config.get_jobs_dir(ctx.config.service_dir), last_n_lines=20
-                    )
+                    job_logs = job.get_job_logs(_job.dir, last_n_lines=20)
                     await webhooks.notify_job_failed(ctx.logger, job=_job, job_logs=job_logs)
 
             if action == "failed":
-                last_lines = job.get_job_logs(
-                    updated.id, jobs_dir=config.get_jobs_dir(ctx.config.service_dir), last_n_lines=20
-                )
+                last_lines = job.get_job_logs(_job.dir, last_n_lines=20)
                 if last_lines:
                     ctx.logger.error(f"Last 20 lines of job log:\n{''.join(last_lines)}")
-        jobs_list[idx] = updated
+        jobs_list[idx] = updated_job
     ctx.state.jobs = tuple(jobs_list)
 
 
@@ -75,13 +68,7 @@ async def update_wandb_urls(ctx: context.NexusServiceContext) -> None:
             if runtime > 720:
                 continue
 
-            job_repo_dir = config.get_jobs_dir(ctx.config.service_dir) / _job.id / "repo"
-            if not job_repo_dir.exists():
-                continue
-
-            wandb_url = wandb_finder.find_wandb_run_by_nexus_id(
-                ctx.logger, dirs=[str(job_repo_dir)], nexus_job_id=_job.id
-            )
+            wandb_url = wandb_finder.find_wandb_run_by_nexus_id(ctx.logger, dirs=[str(_job.dir)], nexus_job_id=_job.id)
             if wandb_url:
                 updated = dc.replace(_job, wandb_url=wandb_url)
                 jobs_list[idx] = updated
@@ -114,14 +101,20 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
             break
 
         _job = queued.pop(0)
-        jobs_dir = (
-            config.get_jobs_dir(ctx.config.service_dir)
-            if not ctx.config.persist_to_disk
-            else pl.Path(tempfile.mkdtemp())
-        )
+
+        jobs_dir = pl.Path(tempfile.mkdtemp())
+        if ctx.config.service_dir is not None:
+            jobs_dir = config.get_jobs_dir(ctx.config.service_dir)
+
+        _job = dc.replace(_job, dir=jobs_dir / _job.id)
 
         started = await job.async_start_job(
-            ctx.logger, job=_job, gpu_index=_gpu.index, jobs_dir=jobs_dir, _env=ctx.env.model_dump()
+            ctx.logger,
+            job=_job,
+            gpu_index=_gpu.index,
+            jobs_dir=jobs_dir,
+            github_token=ctx.env.github_token,
+            job_env=ctx.env.model_dump(),
         )
         for i, j in enumerate(jobs_list):
             if j.id == _job.id:
@@ -144,7 +137,7 @@ async def scheduler_loop(ctx: context.NexusServiceContext):
             await update_wandb_urls(ctx=ctx)
             await start_queued_jobs(ctx=ctx)
 
-            if ctx.config.persist_to_disk:
+            if ctx.config.service_dir is not None:
                 state.save_state(ctx.state, state_path=config.get_state_path(ctx.config.service_dir))
 
         except Exception:
