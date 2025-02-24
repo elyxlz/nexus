@@ -5,8 +5,7 @@ import warnings
 from nexus.service.core import logger, models
 
 
-def is_gpu_available(logger: logger.NexusServiceLogger, gpu_info: models.GpuInfo) -> bool:
-    """Check if a GPU is available for use"""
+def is_gpu_available(gpu_info: models.GpuInfo) -> bool:
     return not gpu_info.is_blacklisted and gpu_info.running_job_id is None and gpu_info.process_count == 0
 
 
@@ -76,7 +75,7 @@ def create_gpu_info(
         running_job_id=running_jobs.get(index),
         is_available=False,  # Will be updated below
     )
-    return dc.replace(gpu, is_available=is_gpu_available(logger, gpu))
+    return dc.replace(gpu, is_available=is_gpu_available(gpu))
 
 
 def get_gpus(
