@@ -33,7 +33,8 @@ from nexus.service.core import config, env
 
 __all__ = ["install", "uninstall", "verify_external_dependencies"]
 
-MARKER_FILE = pl.Path("/etc/nexus_service/nexus_service_installed")
+NEXUS_SERVICE_DIR = pl.Path("/etc/nexus_service")
+MARKER_FILE = NEXUS_SERVICE_DIR / "nexus_service_installed"
 SYSTEMD_DIR = pl.Path("/etc/systemd/system")
 SERVICE_FILENAME = "nexus_service.service"
 SCRIPT_DIR = pl.Path(__file__).parent
@@ -156,6 +157,9 @@ def remove_nexus_service_user() -> bool:
 
 
 def create_persistent_directory(_config: config.NexusServiceConfig, _env: env.NexusServiceEnv) -> None:
+    if _config.service_dir is None:
+        raise ValueError
+
     _config.service_dir.mkdir(parents=True, exist_ok=True)
 
     # Create the environment file if it doesn't exist

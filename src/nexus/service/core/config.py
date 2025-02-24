@@ -1,6 +1,5 @@
 import json
 import pathlib as pl
-import typing
 
 import pydantic as pyd
 import pydantic_settings as pyds
@@ -16,7 +15,7 @@ class NexusServiceConfig(pyds.BaseSettings):
     port: int = pyd.Field(default=54323)
     webhooks_enabled: bool = pyd.Field(default=False)
     node_name: str | None = pyd.Field(default=None)
-    log_level: typing.Literal["info", "debug"] = pyd.Field(default="info")
+    log_level: str = pyd.Field(default="info")
     mock_gpus: bool = pyd.Field(default=False)
 
 
@@ -30,6 +29,10 @@ def get_config_path(service_dir: pl.Path) -> pl.Path:
 
 def get_db_path(service_dir: pl.Path) -> pl.Path:
     return service_dir / "nexus_service.db"
+
+
+def get_log_dir(service_dir: pl.Path) -> pl.Path:
+    return service_dir / "logs"
 
 
 def get_jobs_dir(service_dir: pl.Path) -> pl.Path:

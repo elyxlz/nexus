@@ -13,13 +13,23 @@ def create_service_logger(
     log_dir: pl.Path | None,
     name: str = "service",
     log_file: str = "service.log",
-    log_level: int = logging.INFO,
+    log_level: str = "info",  # Changed to string literal
     max_bytes: int = 10 * 1024 * 1024,
     backup_count: int = 5,
     console_output: bool = True,
 ) -> NexusServiceLogger:
+    # Convert string log level to logging level
+    log_level_map = {
+        "debug": logging.DEBUG,
+        "info": logging.INFO,
+        "warning": logging.WARNING,
+        "error": logging.ERROR,
+        "critical": logging.CRITICAL,
+    }
+    numeric_log_level = log_level_map.get(log_level.lower(), logging.INFO)
+
     logger = NexusServiceLogger(name)
-    logger.setLevel(log_level)
+    logger.setLevel(numeric_log_level)
     logger.handlers = []
 
     file_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -29,7 +39,6 @@ def create_service_logger(
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file_path = log_dir / log_file
         log_file_path.touch()  # Ensures the file exists
-
         file_handler = RotatingFileHandler(
             filename=str(log_file_path),
             maxBytes=max_bytes,
@@ -37,7 +46,7 @@ def create_service_logger(
             encoding="utf-8",
         )
         file_handler.setFormatter(file_formatter)
-        file_handler.setLevel(log_level)
+        file_handler.setLevel(numeric_log_level)
         logger.addHandler(file_handler)
 
     if console_output:
@@ -54,10 +63,9 @@ def create_service_logger(
                 "CRITICAL": "red,bg_white",
             },
         )
-
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(log_level)
+        console_handler.setLevel(numeric_log_level)
         logger.addHandler(console_handler)
 
     return logger

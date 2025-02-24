@@ -4,7 +4,7 @@ import pathlib as pl
 from nexus.service.core.db import (
     add_blacklisted_gpu,
     add_job,
-    connect,
+    create_connection,
     delete_queued_job,
     get_job,
     list_blacklisted_gpus,
@@ -18,7 +18,7 @@ from nexus.service.job import create_job
 def test_add_and_get_job(tmp_path: pl.Path):
     # Create a temporary database file and initialize tables.
     db_path = tmp_path / "test.db"
-    conn = connect(str(db_path))
+    conn = create_connection(str(db_path))
 
     # Create a new job using the job creation helper.
     job = create_job(
@@ -42,7 +42,7 @@ def test_add_and_get_job(tmp_path: pl.Path):
 
 def test_update_job(tmp_path: pl.Path):
     db_path = tmp_path / "test.db"
-    conn = connect(str(db_path))
+    conn = create_connection(str(db_path))
 
     job = create_job(
         "echo 'Initial Command'",
@@ -67,7 +67,7 @@ def test_update_job(tmp_path: pl.Path):
 
 def test_list_and_delete_jobs(tmp_path: pl.Path):
     db_path = tmp_path / "test.db"
-    conn = connect(str(db_path))
+    conn = create_connection(str(db_path))
 
     # Create two jobs.
     job1 = create_job("echo 'Job1'", "https://github.com/elyxlz/nexus", "main", "user1", None)
@@ -105,7 +105,7 @@ def test_list_and_delete_jobs(tmp_path: pl.Path):
 
 def test_blacklisted_gpus(tmp_path: pl.Path):
     db_path = tmp_path / "test.db"
-    conn = connect(str(db_path))
+    conn = create_connection(str(db_path))
 
     # Initially, no GPUs should be blacklisted.
     bl = list_blacklisted_gpus(conn)

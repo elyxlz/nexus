@@ -78,7 +78,7 @@ def get_gpus(
     Retrieve GPU information using nvidia-smi, or return mock data if requested.
     """
     if mock_gpus:
-        logger.info("MOCK_GPUS parameter is True. Returning mock GPU information.")
+        logger.debug("MOCK_GPUS parameter is True. Returning mock GPU information.")
         return get_mock_gpus(logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted_gpus)
 
     logger.debug("Executing nvidia-smi command for GPU stats")
