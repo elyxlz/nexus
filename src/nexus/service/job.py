@@ -9,7 +9,7 @@ import time
 
 import base58
 
-from nexus.service import logger, models
+from nexus.service.core import logger, models
 
 
 def generate_job_id() -> str:

@@ -6,7 +6,10 @@ import sys
 import fastapi as fa
 import uvicorn
 
-from nexus.service import config, logger, models, router, scheduler, setup, state, context
+from nexus.service import state
+from nexus.service.api import router, scheduler
+from nexus.service.core import config, context
+from nexus.service.installation import setup
 
 
 def create_app(ctx: context.NexusServiceContext) -> fa.FastAPI:

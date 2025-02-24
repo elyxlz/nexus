@@ -29,7 +29,7 @@ import shutil
 import subprocess
 import sys
 
-from nexus.service import config
+from nexus.service.core import config, env
 
 __all__ = ["install", "uninstall", "verify_external_dependencies"]
 
@@ -155,12 +155,12 @@ def remove_nexus_service_user() -> bool:
         return False
 
 
-def create_persistent_directory(_config: config.NexusServiceConfig, _env: config.NexusServiceEnv) -> None:
+def create_persistent_directory(_config: config.NexusServiceConfig, _env: env.NexusServiceEnv) -> None:
     _config.service_dir.mkdir(parents=True, exist_ok=True)
 
     # Create the environment file if it doesn't exist
     if not config.get_env_path(_config.service_dir).exists():
-        config.save_env(_env, env_path=config.get_env_path(_config.service_dir))
+        env.save_env(_env, env_path=config.get_env_path(_config.service_dir))
 
     # Ensure the jobs directory exists
     config.get_jobs_dir(_config.service_dir).mkdir(parents=True, exist_ok=True)

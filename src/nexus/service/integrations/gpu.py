@@ -2,7 +2,7 @@ import dataclasses as dc
 import subprocess
 import warnings
 
-from nexus.service import logger, models
+from nexus.service.core import logger, models
 
 
 def is_gpu_available(logger: logger.NexusServiceLogger, gpu_info: models.GpuInfo) -> bool:

@@ -4,7 +4,10 @@ import datetime as dt
 import pathlib as pl
 import tempfile
 
-from nexus.service import config, context, format, git, gpu, job, state, wandb_finder, webhooks
+from nexus.service import job, state
+from nexus.service.core import config, context
+from nexus.service.integrations import git, gpu, wandb_finder, webhooks
+from nexus.service.utils import format
 
 
 async def update_running_jobs(ctx: context.NexusServiceContext) -> None:

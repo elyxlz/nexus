@@ -1,6 +1,6 @@
 import dataclasses as dc
 
-from nexus.service import config, env, logger, models
+from nexus.service.core import config, env, logger, models
 
 
 @dc.dataclass(frozen=True)

@@ -7,7 +7,7 @@ import typing
 import aiohttp
 import pydantic as pyd
 
-from nexus.service import logger, models
+from nexus.service.core import logger, models
 
 EMOJI_MAPPING = {"started": ":rocket:", "completed": ":checkered_flag:", "failed": ":interrobang:"}
 

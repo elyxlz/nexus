@@ -5,7 +5,7 @@ import pathlib as pl
 import wandb
 import wandb.errors
 
-from nexus.service import logger
+from nexus.service.core import logger
 
 __all__ = ["find_wandb_run_by_nexus_id"]
 

@@ -1,34 +1,37 @@
 import asyncio
+import dataclasses as dc
 import getpass
 import importlib.metadata
 import os
 import pathlib as pl
 
 import fastapi as fa
-from fastapi import Depends, HTTPException, Request
 
-from nexus.service import config, format, git, gpu, job, logger, models
+from nexus.service import job
+from nexus.service.core import config, logger, models
+from nexus.service.integrations import git, gpu
+from nexus.service.utils import format
 
 router = fa.APIRouter()
 
 
-def get_state(request: Request) -> models.NexusServiceState:
+def get_state(request: fa.Request) -> models.NexusServiceState:
     return request.app.state.context.state
 
 
-def get_config(request: Request) -> config.NexusServiceConfig:
+def get_config(request: fa.Request) -> config.NexusServiceConfig:
     return request.app.state.context.config
 
 
-def get_logger(request: Request) -> logger.NexusServiceLogger:
+def get_logger(request: fa.Request) -> logger.NexusServiceLogger:
     return request.app.state.context.logger
 
 
 @router.get("/v1/service/status", response_model=models.ServiceStatusResponse)
 async def get_status(
-    _state: models.NexusServiceState = Depends(get_state),
-    _config: config.NexusServiceConfig = Depends(get_config),
-    _logger: logger.NexusServiceLogger = Depends(get_logger),
+    _state: models.NexusServiceState = fa.Depends(get_state),
+    _config: config.NexusServiceConfig = fa.Depends(get_config),
+    _logger: logger.NexusServiceLogger = fa.Depends(get_logger),
 ):
     gpus = gpu.get_gpus(_logger, state=_state, mock_gpus=_config.mock_gpus)
     queued = sum(1 for j in _state.jobs if j.status == "queued")
@@ -48,7 +51,7 @@ async def get_status(
 
 
 @router.get("/v1/service/logs", response_model=models.ServiceLogsResponse)
-async def get_service_logs(_logger: logger.NexusServiceLogger = Depends(get_logger)):
+async def get_service_logs(_logger: logger.NexusServiceLogger = fa.Depends(get_logger)):
     nexus_dir: pl.Path = pl.Path.home() / ".nexus_service"
     log_path: pl.Path = nexus_dir / "service.log"
     logs: str = log_path.read_text() if log_path.exists() else ""
@@ -60,8 +63,8 @@ async def get_service_logs(_logger: logger.NexusServiceLogger = Depends(get_logg
 async def list_jobs(
     status: str | None = None,
     gpu_index: int | None = None,
-    _state: models.NexusServiceState = Depends(get_state),
-    _logger: logger.NexusServiceLogger = Depends(get_logger),
+    _state: models.NexusServiceState = fa.Depends(get_state),
+    _logger: logger.NexusServiceLogger = fa.Depends(get_logger),
 ):
     filtered = list(_state.jobs)
     if status:
@@ -75,8 +78,8 @@ async def list_jobs(
 @router.post("/v1/jobs", response_model=list[models.Job])
 async def add_jobs(
     job_request: models.JobsRequest,
-    _state: models.NexusServiceState = Depends(get_state),
-    _logger: logger.NexusServiceLogger = Depends(get_logger),
+    _state: models.NexusServiceState = fa.Depends(get_state),
+    _logger: logger.NexusServiceLogger = fa.Depends(get_logger),
 ):
     norm_url: str = git.normalize_git_url(job_request.git_repo_url)
     new_jobs = [
@@ -99,13 +102,13 @@ async def add_jobs(
 @router.get("/v1/jobs/{job_id}", response_model=models.Job)
 async def get_job(
     job_id: str,
-    _state: models.NexusServiceState = Depends(get_state),
-    _logger: logger.NexusServiceLogger = Depends(get_logger),
+    _state: models.NexusServiceState = fa.Depends(get_state),
+    _logger: logger.NexusServiceLogger = fa.Depends(get_logger),
 ):
     job_instance = next((j for j in _state.jobs if j.id == job_id), None)
     if not job_instance:
         _logger.warning(f"Job not found: {job_id}")
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise fa.HTTPException(status_code=404, detail="Job not found")
     _logger.info(f"Job found: {job_instance}")
     return job_instance
 
@@ -113,14 +116,14 @@ async def get_job(
 @router.get("/v1/jobs/{job_id}/logs", response_model=models.JobLogsResponse)
 async def get_job_logs_endpoint(
     job_id: str,
-    _state: models.NexusServiceState = Depends(get_state),
-    _config: config.NexusServiceConfig = Depends(get_config),
-    _logger: logger.NexusServiceLogger = Depends(get_logger),
+    _state: models.NexusServiceState = fa.Depends(get_state),
+    _config: config.NexusServiceConfig = fa.Depends(get_config),
+    _logger: logger.NexusServiceLogger = fa.Depends(get_logger),
 ):
     _job = next((j for j in _state.jobs if j.id == job_id), None)
     if not _job:
         _logger.warning(f"Job not found: {job_id}")
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise fa.HTTPException(status_code=404, detail="Job not found")
     logs = job.get_job_logs(_job.id, jobs_dir=config.get_jobs_dir(_config.service_dir))
     logs = logs or ""
     _logger.info(f"Retrieved logs for job {job_id}, size: {len(logs)} characters")
@@ -130,8 +133,8 @@ async def get_job_logs_endpoint(
 @router.delete("/v1/jobs/running", response_model=models.JobActionResponse)
 async def kill_running_jobs(
     job_ids: list[str],
-    _state: models.NexusServiceState = Depends(get_state),
-    _logger: logger.NexusServiceLogger = Depends(get_logger),
+    _state: models.NexusServiceState = fa.Depends(get_state),
+    _logger: logger.NexusServiceLogger = fa.Depends(get_logger),
 ):
     killed: list[str] = []
     failed: list[dict] = []
@@ -141,7 +144,7 @@ async def kill_running_jobs(
             if _job.status != "running":
                 failed.append({"id": _job.id, "error": "Job is not running"})
             else:
-                updated = __import__("dataclasses").replace(_job, marked_for_kill=True)
+                updated = dc.replace(_job, marked_for_kill=True)
                 new_jobs[idx] = updated
                 killed.append(_job.id)
                 _logger.info(f"Marked job {_job.id} for termination")
@@ -152,8 +155,8 @@ async def kill_running_jobs(
 @router.post("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
 async def blacklist_gpus(
     gpu_indexes: list[int],
-    _state: models.NexusServiceState = Depends(get_state),
-    _logger: logger.NexusServiceLogger = Depends(get_logger),
+    _state: models.NexusServiceState = fa.Depends(get_state),
+    _logger: logger.NexusServiceLogger = fa.Depends(get_logger),
 ):
     successful: list[int] = []
     failed: list[models.GpuActionError] = []
@@ -172,8 +175,8 @@ async def blacklist_gpus(
 @router.delete("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
 async def remove_gpu_blacklist(
     gpu_indexes: list[int],
-    _state: models.NexusServiceState = Depends(get_state),
-    _logger: logger.NexusServiceLogger = Depends(get_logger),
+    _state: models.NexusServiceState = fa.Depends(get_state),
+    _logger: logger.NexusServiceLogger = fa.Depends(get_logger),
 ):
     removed: list[int] = []
     failed: list[models.GpuActionError] = []
@@ -192,8 +195,8 @@ async def remove_gpu_blacklist(
 @router.delete("/v1/jobs/queued", response_model=models.JobQueueActionResponse)
 async def remove_queued_jobs(
     job_ids: list[str],
-    _state: models.NexusServiceState = Depends(get_state),
-    _logger: logger.NexusServiceLogger = Depends(get_logger),
+    _state: models.NexusServiceState = fa.Depends(get_state),
+    _logger: logger.NexusServiceLogger = fa.Depends(get_logger),
 ):
     removed: list[str] = []
     failed: list[dict] = []
@@ -213,9 +216,9 @@ async def remove_queued_jobs(
 
 @router.get("/v1/gpus", response_model=list[models.GpuInfo])
 async def list_gpus(
-    _state: models.NexusServiceState = Depends(get_state),
-    _config: config.NexusServiceConfig = Depends(get_config),
-    _logger: logger.NexusServiceLogger = Depends(get_logger),
+    _state: models.NexusServiceState = fa.Depends(get_state),
+    _config: config.NexusServiceConfig = fa.Depends(get_config),
+    _logger: logger.NexusServiceLogger = fa.Depends(get_logger),
 ):
     gpus = gpu.get_gpus(_logger, state=_state, mock_gpus=_config.mock_gpus)
     _logger.info(f"Found {len(gpus)} GPUs")
@@ -223,7 +226,7 @@ async def list_gpus(
 
 
 @router.post("/v1/service/stop", response_model=models.ServiceActionResponse)
-async def stop_service(_logger: logger.NexusServiceLogger = Depends(get_logger)):
+async def stop_service(_logger: logger.NexusServiceLogger = fa.Depends(get_logger)):
     _logger.info("Service shutdown initiated by API request")
     asyncio.create_task(shutdown_service())
     return models.ServiceActionResponse(status="stopping")

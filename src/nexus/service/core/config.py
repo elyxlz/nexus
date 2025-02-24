@@ -23,15 +23,6 @@ def get_jobs_dir(service_dir: pl.Path) -> pl.Path:
     return service_dir / "jobs"
 
 
-class NexusServiceEnv(pyds.BaseSettings):
-    github_token: str = pyd.Field(default="")
-    discord_webhook_url: str = pyd.Field(default="")
-    wandb_api_key: str = pyd.Field(default="")
-    wandb_entity: str = pyd.Field(default="")
-
-    model_config = pyds.SettingsConfigDict(frozen=True, env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
-
-
 class NexusServiceConfig(pyds.BaseSettings):
     model_config = pyds.SettingsConfigDict(env_prefix="ns_", frozen=True)
 
@@ -67,10 +58,3 @@ def save_config(config: NexusServiceConfig) -> None:
     config_dict = json.loads(config.model_dump_json())
     with get_config_path(config.service_dir).open("w") as f:
         toml.dump(config_dict, f)
-
-
-def save_env(env: NexusServiceEnv, env_path: pl.Path) -> None:
-    env_dict = env.model_dump()
-    with env_path.open("w", encoding="utf-8") as f:
-        for key, value in env_dict.items():
-            f.write(f"{key.upper()}={value}\n")

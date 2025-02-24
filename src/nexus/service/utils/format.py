@@ -1,7 +1,7 @@
 import datetime as dt
 import typing
 
-from nexus.service import models
+from nexus.service.core import models
 
 
 def format_runtime(seconds: float) -> str:

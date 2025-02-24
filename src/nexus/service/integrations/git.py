@@ -3,7 +3,7 @@ import re
 import shutil
 import subprocess
 
-from nexus.service import logger
+from nexus.service.core import logger
 
 # Patterns for different Git URL formats
 GIT_URL_PATTERN = re.compile(r"^(?:https?://|git@)(?:[\w.@:/\-~]+)(?:\.git)?/?$")

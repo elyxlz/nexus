@@ -4,17 +4,18 @@ import pathlib
 import pytest
 import toml
 
-from nexus.service.config import (
-    NexusServiceConfig,
-    NexusServiceEnv,
-    get_config_path,
-    save_config,
-    save_env,
-)
+from nexus.service.config import NexusServiceConfig, get_config_path, save_config
+from nexus.service.env import NexusServiceEnv, save_env
+from nexus.service.logger import create_service_logger
 from nexus.service.models import NexusServiceState
 from nexus.service.state import load_state, save_state
 
-# --- State Persistence Tests ---
+
+@pytest.fixture
+def real_logger(tmp_path: pathlib.Path):
+    # Create a logs directory within the temporary path.
+    log_dir = tmp_path / "logs"
+    return create_service_logger(log_dir, name="test_logger")
 
 
 @pytest.fixture
@@ -23,17 +24,14 @@ def dummy_state() -> NexusServiceState:
     return NexusServiceState(status="running", jobs=(), blacklisted_gpus=())
 
 
-def test_save_and_load_state(tmp_path: pathlib.Path, dummy_state: NexusServiceState):
+def test_save_and_load_state(tmp_path: pathlib.Path, dummy_state: NexusServiceState, real_logger):
     state_file = tmp_path / "state.json"
     # Save the dummy state to a temporary file.
     save_state(dummy_state, state_file)
-    # Load the state back from disk.
-    loaded_state = load_state(state_file)
+    # Load the state back from disk, passing in our real logger.
+    loaded_state = load_state(real_logger, state_file)
     # Compare the two states using dataclasses.asdict to check for equality.
     assert dataclasses.asdict(dummy_state) == dataclasses.asdict(loaded_state)
-
-
-# --- Configuration Persistence Tests ---
 
 
 def test_save_and_load_config(tmp_path: pathlib.Path):
@@ -58,9 +56,6 @@ def test_save_and_load_config(tmp_path: pathlib.Path):
     assert loaded_toml["refresh_rate"] == dummy_config.refresh_rate
     assert loaded_toml["host"] == dummy_config.host
     assert loaded_toml["port"] == dummy_config.port
-
-
-# --- Environment File Persistence Tests ---
 
 
 def test_save_and_load_env(tmp_path: pathlib.Path):

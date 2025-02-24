@@ -2,7 +2,7 @@ import dataclasses as dc
 import json
 import pathlib as pl
 
-from nexus.service import logger, models
+from nexus.service.core import logger, models
 
 
 def create_default_state() -> models.NexusServiceState:

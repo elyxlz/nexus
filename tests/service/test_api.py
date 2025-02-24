@@ -5,6 +5,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nexus.service.config import NexusServiceConfig
+from nexus.service.context import NexusServiceContext
+from nexus.service.env import NexusServiceEnv
+from nexus.service.logger import create_service_logger
 from nexus.service.main import create_app
 from nexus.service.models import NexusServiceState
 
@@ -20,8 +23,11 @@ mock_config = NexusServiceConfig(
     log_level="debug",
     mock_gpus=True,
 )
+mock_env = NexusServiceEnv()
+mock_logger = create_service_logger(mock_config.service_dir / "logs", name="nexus_test")
+mock_context = NexusServiceContext(state=mock_state, config=mock_config, env=mock_env, logger=mock_logger)
 
-app = create_app(custom_state=mock_state, custom_config=mock_config)
+app = create_app(ctx=mock_context)
 
 
 # Fixture to provide the TestClient instance.
