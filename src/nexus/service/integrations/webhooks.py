@@ -1,6 +1,6 @@
+import dataclasses as dc
 import datetime
 import json
-import pathlib as pl
 import typing as tp
 
 import aiohttp
@@ -18,25 +18,6 @@ class WebhookMessage(pyd.BaseModel):
     content: str
     embeds: list[dict] | None = None
     username: str = "Nexus"
-
-
-class WebhookState(pyd.BaseModel):
-    message_ids: dict[str, str] = {}  # job_id -> message_id
-
-
-@exc.handle_exception(json.JSONDecodeError, exc.WebhookError, message="Invalid webhook state JSON")
-def load_webhook_state(_logger: logger.NexusServiceLogger, state_path: pl.Path) -> WebhookState:
-    if not state_path.exists():
-        return WebhookState()
-
-    data = json.loads(state_path.read_text())
-    return WebhookState(message_ids=data.get("message_ids", {}))
-
-
-@exc.handle_exception(OSError, exc.WebhookError, message="Error writing webhook state file")
-def save_webhook_state(_logger: logger.NexusServiceLogger, state: WebhookState, state_path: pl.Path) -> None:
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(json.dumps({"message_ids": state.message_ids}))
 
 
 def format_job_message_for_webhook(job: schemas.Job, event_type: tp.Literal["started", "completed", "failed"]) -> dict:
@@ -129,36 +110,27 @@ async def edit_webhook_message(
 
 
 @exc.handle_exception(exc.WebhookError, message="Error notifying job start")
-async def notify_job_started(
-    _logger: logger.NexusServiceLogger, webhook_url: str, job: schemas.Job, state_path: pl.Path
-) -> None:
+async def notify_job_started(_logger: logger.NexusServiceLogger, webhook_url: str, job: schemas.Job) -> schemas.Job:
     message_data = format_job_message_for_webhook(job, "started")
 
     # Send with wait=True to get message ID
     message_id = await send_webhook(_logger, webhook_url, message_data, wait=True)
 
     if message_id:
-        # Update webhook state
-        webhook_state = load_webhook_state(_logger, state_path)
-        webhook_state.message_ids[job.id] = message_id
-        save_webhook_state(_logger, webhook_state, state_path)
+        # Return updated job with webhook message ID
+        return dc.replace(job, webhook_message_id=message_id)
+    return job
 
 
 @exc.handle_exception(exc.WebhookError, message="Error updating job W&B info")
-async def update_job_wandb(
-    _logger: logger.NexusServiceLogger, webhook_url: str, job: schemas.Job, state_path: pl.Path
-) -> None:
-    if not job.wandb_url:
-        _logger.debug(f"No W&B URL found for job {job.id}. Skipping update.")
+async def update_job_wandb(_logger: logger.NexusServiceLogger, webhook_url: str, job: schemas.Job) -> None:
+    if not job.wandb_url or not job.webhook_message_id:
+        _logger.debug(f"No W&B URL or webhook message ID found for job {job.id}. Skipping update.")
         return
 
-    webhook_state = load_webhook_state(_logger, state_path)
-    message_id = webhook_state.message_ids.get(job.id)
-
-    if message_id:
-        message_data = format_job_message_for_webhook(job, "started")
-        await edit_webhook_message(_logger, webhook_url, message_id, message_data)
-        _logger.info(f"Updated webhook message for job {job.id} with W&B URL")
+    message_data = format_job_message_for_webhook(job, "started")
+    await edit_webhook_message(_logger, webhook_url, job.webhook_message_id, message_data)
+    _logger.info(f"Updated webhook message for job {job.id} with W&B URL")
 
 
 @exc.handle_exception(exc.WebhookError, message="Error notifying job completion")

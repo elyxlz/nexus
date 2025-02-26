@@ -48,7 +48,8 @@ def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) 
             user TEXT,
             discord_id TEXT,
             marked_for_kill INTEGER,
-            dir TEXT
+            dir TEXT,
+            webhook_message_id TEXT
         )
     """)
     cur.execute("""
@@ -77,6 +78,7 @@ def row_to_job(row: sqlite3.Row) -> schemas.Job:
         discord_id=row["discord_id"],
         marked_for_kill=bool(row["marked_for_kill"]) if row["marked_for_kill"] is not None else False,
         dir=pl.Path(row["dir"]) if row["dir"] else None,
+        webhook_message_id=row["webhook_message_id"],
     )
 
 
@@ -89,9 +91,9 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: s
         INSERT INTO jobs (
             id, command, git_repo_url, git_tag, status, created_at, 
             started_at, completed_at, gpu_index, exit_code, error_message, 
-            wandb_url, user, discord_id, marked_for_kill, dir
+            wandb_url, user, discord_id, marked_for_kill, dir, webhook_message_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (
             job.id,
@@ -110,6 +112,7 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: s
             job.discord_id,
             int(job.marked_for_kill),
             str(job.dir) if job.dir else None,
+            job.webhook_message_id,
         ),
     )
 
@@ -134,7 +137,8 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             user = ?,
             discord_id = ?,
             marked_for_kill = ?,
-            dir = ?
+            dir = ?,
+            webhook_message_id = ?
         WHERE id = ?
     """,
         (
@@ -153,6 +157,7 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             job.discord_id,
             int(job.marked_for_kill),
             str(job.dir) if job.dir else None,
+            job.webhook_message_id,
             job.id,
         ),
     )

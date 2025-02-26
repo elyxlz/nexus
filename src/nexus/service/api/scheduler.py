@@ -84,7 +84,6 @@ async def update_wandb_urls(ctx: context.NexusServiceContext) -> None:
                     ctx.logger,
                     webhook_url=ctx.config.webhook_url,
                     job=updated,
-                    state_path=ctx.config.webhook_state_path,
                 )
 
 
@@ -134,9 +133,13 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
         ctx.logger.info(format.format_job_action(started, action="started"))
 
         if ctx.config.webhooks_enabled:
-            await webhooks.notify_job_started(
-                ctx.logger, webhook_url=ctx.config.webhook_url, job=started, state_path=ctx.config.webhook_state_path
+            # This now returns an updated job with webhook_message_id
+            job_with_webhook = await webhooks.notify_job_started(
+                ctx.logger, webhook_url=ctx.config.webhook_url, job=started
             )
+            # Update the job if a webhook message ID was added
+            if job_with_webhook.webhook_message_id:
+                db.update_job(ctx.logger, conn=ctx.db, job=job_with_webhook)
 
     remaining = len(db.list_jobs(ctx.logger, conn=ctx.db, status="queued"))
     ctx.logger.info(f"Started jobs on available GPUs; remaining queued jobs: {remaining}")

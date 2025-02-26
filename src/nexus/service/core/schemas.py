@@ -25,3 +25,4 @@ class Job:
     user: str | None
     discord_id: str | None
     marked_for_kill: bool
+    webhook_message_id: str | None = None
