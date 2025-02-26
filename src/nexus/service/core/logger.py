@@ -4,6 +4,8 @@ from logging.handlers import RotatingFileHandler
 
 import colorlog as cl
 
+__all__ = ["NexusServiceLogger", "create_service_logger"]
+
 
 class NexusServiceLogger(logging.Logger):
     pass

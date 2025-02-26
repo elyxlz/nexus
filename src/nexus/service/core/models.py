@@ -4,6 +4,22 @@ import typing
 
 import pydantic as pyd
 
+__all__ = [
+    "JobStatus",
+    "Job",
+    "GpuInfo",
+    "FrozenBaseModel",
+    "JobsRequest",
+    "ServiceLogsResponse",
+    "ServiceActionResponse",
+    "JobLogsResponse",
+    "JobActionResponse",
+    "JobQueueActionResponse",
+    "GpuActionError",
+    "GpuActionResponse",
+    "ServiceStatusResponse",
+]
+
 JobStatus = typing.Literal["queued", "running", "completed", "failed"]
 
 
@@ -37,14 +53,6 @@ class GpuInfo:
     process_count: int
     is_blacklisted: bool
     running_job_id: str | None
-
-
-# # we keep the state mutable because we have multiple consumers (scheduler + endpoints), everything inside of it is immutable however
-# @dataclasses.dataclass(frozen=False)
-# class NexusServiceState:
-#     status: typing.Literal["running", "stopped", "error"]
-#     jobs: tuple[Job, ...]
-#     blacklisted_gpus: tuple[int, ...]
 
 
 # Response and Request models

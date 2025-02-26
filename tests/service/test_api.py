@@ -8,16 +8,21 @@ from nexus.service.core.config import NexusServiceConfig
 from nexus.service.core.context import NexusServiceContext
 from nexus.service.core.db import create_tables
 from nexus.service.core.env import NexusServiceEnv
-from nexus.service.core.logger import create_service_logger
+from nexus.service.core.logger import NexusServiceLogger, create_service_logger
 from nexus.service.main import create_app
+
+
+@pytest.fixture
+def mock_logger() -> NexusServiceLogger:
+    return create_service_logger(log_dir=None, name="nexus_test")
 
 
 # Fixture to create an in-memory SQLite database and initialize tables.
 @pytest.fixture
-def test_db() -> Iterator[sqlite3.Connection]:
+def test_db(mock_logger) -> Iterator[sqlite3.Connection]:
     connection = sqlite3.connect(":memory:", check_same_thread=False)
     connection.row_factory = sqlite3.Row
-    create_tables(connection)
+    create_tables(_logger=mock_logger, conn=connection)
     yield connection
     connection.close()
 
@@ -124,8 +129,15 @@ def test_get_job_logs(app: TestClient, created_job: dict) -> None:
 
 
 def test_get_nonexistent_job(app: TestClient) -> None:
-    response = app.get("/v1/jobs/nonexistent")
-    assert response.status_code == 404
+    import pytest
+    from nexus.service.core import exceptions as exc
+    
+    # Using pytest.raises to catch the expected exception
+    with pytest.raises(exc.JobError) as excinfo:
+        app.get("/v1/jobs/nonexistent")
+    
+    # Verify the error message
+    assert "Job not found: nonexistent" in str(excinfo.value)
 
 
 def test_blacklist_and_remove_gpu(app: TestClient) -> None:

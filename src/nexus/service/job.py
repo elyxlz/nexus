@@ -9,7 +9,21 @@ import time
 
 import base58
 
+from nexus.service.core import exceptions as exc
 from nexus.service.core import logger, models
+
+__all__ = [
+    "generate_job_id",
+    "get_job_session_name",
+    "create_job",
+    "build_job_env",
+    "async_start_job",
+    "is_job_session_running",
+    "end_job",
+    "get_job_exit_code",
+    "get_job_logs",
+    "kill_job_session",
+]
 
 
 def generate_job_id() -> str:
@@ -55,85 +69,181 @@ def build_job_env(gpu_index: int, _env: dict[str, str]) -> dict[str, str]:
     return {**base_env, "CUDA_VISIBLE_DEVICES": str(gpu_index), **_env}
 
 
-async def async_start_job(
-    logger: logger.NexusServiceLogger,
-    job: models.Job,
-    gpu_index: int,
-    github_token: str | None,
-    job_env: dict[str, str],
-) -> models.Job:
-    session_name = get_job_session_name(job.id)
-    if job.dir is None:
-        raise ValueError
-
-    job.dir.mkdir(parents=True, exist_ok=True)
-    log_file = job.dir / "output.log"
-    job_repo_dir = job.dir / "repo"
+@exc.handle_exception(PermissionError, exc.JobError, message="Failed to create job directories")
+@exc.handle_exception(OSError, exc.JobError, message="Failed to create job directories")
+def create_directories(_logger: logger.NexusServiceLogger, dir_path: pl.Path) -> tuple[pl.Path, pl.Path]:
+    """Helper function to create job directories"""
+    dir_path.mkdir(parents=True, exist_ok=True)
+    log_file = dir_path / "output.log"
+    job_repo_dir = dir_path / "repo"
     job_repo_dir.mkdir(parents=True, exist_ok=True)
+    return log_file, job_repo_dir
 
-    env = build_job_env(gpu_index, _env=job_env)
 
-    if github_token:
-        askpass_path = job.dir / "askpass.sh"
-        askpass_script = f'#!/usr/bin/env bash\necho "{github_token}"\n'
-        askpass_path.write_text(askpass_script)
-        askpass_path.chmod(0o700)
-    else:
-        askpass_path = None
+@exc.handle_exception(PermissionError, exc.JobError, message="Failed to create GitHub token helper")
+@exc.handle_exception(OSError, exc.JobError, message="Failed to create GitHub token helper")
+def _create_github_token_helper(_logger: logger.NexusServiceLogger, dir_path: pl.Path, github_token: str) -> pl.Path:
+    """Create GitHub token helper script."""
+    askpass_path = dir_path / "askpass.sh"
+    askpass_script = f'#!/usr/bin/env bash\necho "{github_token}"\n'
+    askpass_path.write_text(askpass_script)
+    askpass_path.chmod(0o700)
+    return askpass_path
 
-    # Build the shell script to run the job.
+
+def setup_github_auth(_logger: logger.NexusServiceLogger, dir_path: pl.Path, github_token: str) -> pl.Path | None:
+    """Helper function to set up GitHub auth if token provided"""
+    if not github_token:
+        return None
+
+    return _create_github_token_helper(_logger, dir_path, github_token)
+
+
+def _build_script_content(
+    log_file: pl.Path,
+    job_repo_dir: pl.Path,
+    git_repo_url: str,
+    git_tag: str,
+    command: str,
+    askpass_path: pl.Path | None,
+) -> str:
+    """Build the shell script content to run the job."""
     script_lines = [
         "#!/bin/bash",
         "set -e",
         "export GIT_TERMINAL_PROMPT=0",
     ]
+
     if askpass_path:
         script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
 
     script_lines.extend(
         [
             'script -f -q -c "',
-            f"git clone --depth 1 --single-branch --no-tags --branch {job.git_tag} --quiet '{job.git_repo_url}' '{job_repo_dir}'",
+            f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet '{git_repo_url}' '{job_repo_dir}'",
             f"cd '{job_repo_dir}'",
-            f"{job.command}",
+            f"{command}",
             f'" "{log_file}"',
         ]
     )
 
-    script_path = job.dir / "run.sh"
-    script_path.write_text("\n".join(script_lines))
+    return "\n".join(script_lines)
+
+
+@exc.handle_exception(PermissionError, exc.JobError, message="Failed to create job script")
+@exc.handle_exception(OSError, exc.JobError, message="Failed to create job script")
+def _write_job_script(_logger: logger.NexusServiceLogger, job_dir: pl.Path, script_content: str) -> pl.Path:
+    """Write the job script to disk and set permissions."""
+    script_path = job_dir / "run.sh"
+    script_path.write_text(script_content)
     script_path.chmod(0o755)
+    return script_path
 
+
+def create_job_script(
+    _logger: logger.NexusServiceLogger,
+    job_dir: pl.Path,
+    log_file: pl.Path,
+    job_repo_dir: pl.Path,
+    git_repo_url: str,
+    git_tag: str,
+    command: str,
+    askpass_path: pl.Path | None,
+) -> pl.Path:
+    """Helper function to create the job script"""
+    # Build the shell script content
+    script_content = _build_script_content(log_file, job_repo_dir, git_repo_url, git_tag, command, askpass_path)
+
+    # Write the script to disk
+    return _write_job_script(_logger, job_dir, script_content)
+
+
+@exc.handle_exception(Exception, exc.JobError, message="Failed to build job environment")
+def _build_environment(_logger: logger.NexusServiceLogger, gpu_index: int, job_env: dict[str, str]) -> dict[str, str]:
+    """Build the environment variables for the job."""
+    return build_job_env(gpu_index, _env=job_env)
+
+
+@exc.handle_exception(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
+@exc.handle_exception(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
+async def _launch_screen_process(
+    _logger: logger.NexusServiceLogger, session_name: str, script_path: str, env: dict[str, str]
+) -> None:
+    """Launch the job using screen in a subprocess."""
+    process = await asyncio.create_subprocess_exec("screen", "-dmS", session_name, script_path, env=env)
+
+    if process.returncode is not None and process.returncode != 0:
+        raise exc.JobError(message=f"Screen process exited with code {process.returncode}")
+
+    # Wait briefly to ensure the process is spawned
+    await asyncio.sleep(0.1)
+
+
+async def async_start_job(
+    _logger: logger.NexusServiceLogger,
+    job: models.Job,
+    gpu_index: int,
+    github_token: str | None,
+    job_env: dict[str, str],
+) -> models.Job:
+    # Validate job directory
+    if job.dir is None:
+        raise exc.JobError(message=f"Job directory not set for job {job.id}")
+
+    # Create directories
+    log_file, job_repo_dir = create_directories(_logger, job_dir=job.dir)
+
+    # Set up environment
+    env = _build_environment(_logger, gpu_index=gpu_index, job_env=job_env)
+
+    # Set up GitHub token if provided
+    askpass_path = setup_github_auth(_logger, dir_path=job.dir, github_token=github_token) if github_token else None
+
+    # Create the job script
+    script_path = create_job_script(
+        _logger,
+        job_dir=job.dir,
+        log_file=log_file,
+        job_repo_dir=job_repo_dir,
+        git_repo_url=job.git_repo_url,
+        git_tag=job.git_tag,
+        command=job.command,
+        askpass_path=askpass_path,
+    )
+
+    # Start the job
+    session_name = get_job_session_name(job.id)
     try:
-        # Launch the job using an asynchronous subprocess call.
-        await asyncio.create_subprocess_exec("screen", "-dmS", session_name, str(script_path), env=env)
-        # Optionally, wait briefly to ensure the process is spawned.
-        await asyncio.sleep(0.1)
+        # Launch the job using screen
+        await _launch_screen_process(_logger, session_name, str(script_path), env)
 
-        # Update the job status (assuming the job is now running in background).
+        # Update the job status
         return dc.replace(job, started_at=dt.datetime.now().timestamp(), gpu_index=gpu_index, status="running")
+    except exc.JobError:
+        # Re-raise job errors
+        raise
     except Exception as e:
-        logger.error(f"Failed to start job {job.id}: {e}")
+        _logger.error(f"Failed to start job {job.id}: {e}")
         return dc.replace(job, status="failed", error_message=str(e), completed_at=dt.datetime.now().timestamp())
 
 
-def is_job_session_running(job_id: str) -> bool:
+@exc.handle_exception(
+    subprocess.CalledProcessError, message="Error checking screen session status", reraise=False, default_return=False
+)
+def is_job_session_running(_logger: logger.NexusServiceLogger, job_id: str) -> bool:
     """Check if a job's screen session is still running"""
     session_name = get_job_session_name(job_id)
-    try:
-        output = subprocess.check_output(["screen", "-ls", session_name], stderr=subprocess.DEVNULL, text=True)
-        return session_name in output
-    except subprocess.CalledProcessError:
-        return False
+    output = subprocess.check_output(["screen", "-ls", session_name], stderr=subprocess.DEVNULL, text=True)
+    return session_name in output
 
 
-def end_job(logger: logger.NexusServiceLogger, _job: models.Job, killed: bool) -> models.Job:
+def end_job(_logger: logger.NexusServiceLogger, _job: models.Job, killed: bool) -> models.Job:
     """Check if a job has completed and update its status. Returns new job instance."""
-    if is_job_session_running(_job.id):
+    if is_job_session_running(_logger, _job.id):
         return _job
 
-    job_log = get_job_logs(_job.dir)
-    exit_code = get_job_exit_code(logger, job_id=_job.id, job_dir=_job.dir)
+    job_log = get_job_logs(_logger, job_dir=_job.dir)
+    exit_code = get_job_exit_code(_logger, job_id=_job.id, job_dir=_job.dir)
 
     if killed:
         new_job = dc.replace(
@@ -162,25 +272,46 @@ def end_job(logger: logger.NexusServiceLogger, _job: models.Job, killed: bool) -
     return new_job
 
 
-def get_job_exit_code(logger: logger.NexusServiceLogger, job_id: str, job_dir: pl.Path | None) -> int | None:
+@exc.handle_exception(ValueError, message="Invalid exit code format", reraise=False, default_return=None)
+def _parse_exit_code(_logger: logger.NexusServiceLogger, last_line: str) -> int:
+    """Parse the exit code from the last line of job output."""
+    if "COMMAND_EXIT_CODE=" not in last_line:
+        raise exc.JobError(message="Could not find exit code in log")
+
+    exit_code_str = last_line.split('COMMAND_EXIT_CODE="')[1].split('"')[0]
+    return int(exit_code_str)
+
+
+@exc.handle_exception(Exception, message="Error determining exit code", reraise=False, default_return=None)
+def get_job_exit_code(_logger: logger.NexusServiceLogger, job_id: str, job_dir: pl.Path | None) -> int | None:
+    """Get the exit code from a job's log file."""
     if job_dir is None:
+        _logger.warning(f"No directory specified for job {job_id}, cannot determine exit code")
         return None
 
-    try:
-        content = get_job_logs(job_dir, last_n_lines=1)
-        if content is None:
-            raise ValueError("No output log found")
-        last_line = content.strip()
-        if "COMMAND_EXIT_CODE=" in last_line:
-            exit_code_str = last_line.split('COMMAND_EXIT_CODE="')[1].split('"')[0]
-            return int(exit_code_str)
-        raise ValueError("Could not determine exit code")
-    except Exception:
-        logger.exception("Error determining exit code for job %s", job_id)
-        return None
+    content = get_job_logs(_logger, job_dir=job_dir, last_n_lines=1)
+    if content is None:
+        _logger.warning(f"No output log found for job {job_id}")
+        raise exc.JobError(f"No output log found for job {job_id}")
+
+    return _parse_exit_code(_logger, content.strip())
 
 
-def get_job_logs(job_dir: pl.Path | None, last_n_lines: int | None = None) -> str | None:
+@exc.handle_exception(PermissionError, exc.JobError, message="Cannot read job log file")
+@exc.handle_exception(OSError, exc.JobError, message="Cannot read job log file")
+def _read_log_file(_logger: logger.NexusServiceLogger, log_path: pl.Path, last_n_lines: int | None = None) -> str:
+    """Read a log file, optionally returning only the last N lines."""
+    if last_n_lines is None:
+        return log_path.read_text()
+    else:
+        with log_path.open() as f:
+            return "".join(f.readlines()[-last_n_lines:])
+
+
+def get_job_logs(
+    _logger: logger.NexusServiceLogger, job_dir: pl.Path | None, last_n_lines: int | None = None
+) -> str | None:
+    """Get the logs for a job."""
     if job_dir is None:
         return None
 
@@ -188,16 +319,10 @@ def get_job_logs(job_dir: pl.Path | None, last_n_lines: int | None = None) -> st
     if not logs.exists():
         return None
 
-    if last_n_lines is None:
-        return logs.read_text()
-    else:
-        with logs.open() as f:
-            return "".join(f.readlines()[-last_n_lines:])
+    return _read_log_file(_logger, logs, last_n_lines)
 
 
-def kill_job_session(logger: logger.NexusServiceLogger, job_id: str) -> None:
-    """Kill a job session"""
-    try:
-        subprocess.run(f"pkill -f {job_id}", shell=True)
-    except Exception as e:
-        logger.error(f"failed to kill all processes for job {job_id}: {e}")
+@exc.handle_exception(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
+def kill_job_session(_logger: logger.NexusServiceLogger, job_id: str) -> None:
+    """Kill a job session by terminating all processes containing the job ID."""
+    subprocess.run(f"pkill -f {job_id}", shell=True)

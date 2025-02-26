@@ -9,10 +9,12 @@ from nexus.service.core import config, context, db
 from nexus.service.integrations import git, gpu, wandb_finder, webhooks
 from nexus.service.utils import format
 
+__all__ = ["update_running_jobs", "update_wandb_urls", "start_queued_jobs", "scheduler_loop"]
+
 
 async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
     # Query all jobs with status "running" from the database.
-    running_jobs = db.list_jobs(ctx.db, status="running")
+    running_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
 
     for _job in running_jobs:
         updated_job = _job
@@ -41,7 +43,7 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
                 ctx.logger.error(format.format_job_action(updated_job, action=action))
 
             # If no other running job shares the same git tag, clean up the git tag.
-            other_running = db.list_jobs(ctx.db, status="running")
+            other_running = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
 
             if not any(j.git_tag == updated_job.git_tag for j in other_running):
                 await git.async_cleanup_git_tag(ctx.logger, git_tag=_job.git_tag, git_repo_url=_job.git_repo_url)
@@ -51,11 +53,11 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
                 if action == "completed":
                     await webhooks.notify_job_completed(ctx.logger, job=_job)
                 elif action == "failed":
-                    job_logs = job.get_job_logs(_job.dir, last_n_lines=20)
+                    job_logs = job.get_job_logs(ctx.logger, job_dir=_job.dir, last_n_lines=20)
                     await webhooks.notify_job_failed(ctx.logger, job=_job, job_logs=job_logs)
 
             if action == "failed":
-                last_lines = job.get_job_logs(_job.dir, last_n_lines=20)
+                last_lines = job.get_job_logs(ctx.logger, job_dir=_job.dir, last_n_lines=20)
                 if last_lines:
                     ctx.logger.error(f"Last 20 lines of job log:\n{''.join(last_lines)}")
 
@@ -66,7 +68,7 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
 
 
 async def update_wandb_urls(ctx: context.NexusServiceContext) -> None:
-    running_jobs = db.list_jobs(ctx.db, status="running")
+    running_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
 
     for _job in running_jobs:
         if _job.wandb_url or _job.started_at is None:
@@ -91,7 +93,7 @@ async def update_wandb_urls(ctx: context.NexusServiceContext) -> None:
 
 
 async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
-    queued_jobs = db.list_jobs(ctx.db, status="queued")
+    queued_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="queued")
 
     if not queued_jobs:
         ctx.logger.debug("No jobs in queue")
@@ -102,7 +104,7 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
         g
         for g in gpu.get_gpus(
             ctx.logger,
-            running_jobs=db.list_jobs(ctx.db, status="running"),
+            running_jobs=db.list_jobs(ctx.logger, conn=ctx.db, status="running"),
             blacklisted_gpus=db.list_blacklisted_gpus(ctx.db),
             mock_gpus=ctx.config.mock_gpus,
         )
@@ -110,7 +112,7 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
     ]
 
     if not available_gpus:
-        running_count = len(db.list_jobs(ctx.db, status="running"))
+        running_count = len(db.list_jobs(ctx.logger, conn=ctx.db, status="running"))
         ctx.logger.debug(f"No available GPUs. {running_count} jobs running")
         return
 
@@ -144,7 +146,7 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
             await webhooks.notify_job_started(ctx.logger, job=started)
 
     ctx.db.commit()
-    remaining = len(db.list_jobs(ctx.db, status="queued"))
+    remaining = len(db.list_jobs(ctx.logger, conn=ctx.db, status="queued"))
     ctx.logger.info(f"Started jobs on available GPUs; remaining queued jobs: {remaining}")
 
 

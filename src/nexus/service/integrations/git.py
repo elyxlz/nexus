@@ -3,7 +3,10 @@ import re
 import shutil
 import subprocess
 
+from nexus.service.core import exceptions as exc
 from nexus.service.core import logger
+
+__all__ = ["validate_git_url", "normalize_git_url", "async_cleanup_repo", "async_cleanup_git_tag"]
 
 # Patterns for different Git URL formats
 GIT_URL_PATTERN = re.compile(r"^(?:https?://|git@)(?:[\w.@:/\-~]+)(?:\.git)?/?$")
@@ -18,27 +21,43 @@ HOST_MAPPINGS = {
 }
 
 
-async def async_cleanup_repo(logger: logger.NexusServiceLogger, job_dir: pl.Path | None) -> None:
+async def async_cleanup_repo(_logger: logger.NexusServiceLogger, job_dir: pl.Path | None) -> None:
     if job_dir is None:
         return None
 
     job_repo_dir = job_dir / "repo"
     if job_repo_dir.exists():
         shutil.rmtree(job_repo_dir, ignore_errors=True)
-        logger.info(f"Successfully cleaned up {job_repo_dir}")
+        _logger.info(f"Successfully cleaned up {job_repo_dir}")
 
 
-async def async_cleanup_git_tag(logger: logger.NexusServiceLogger, git_tag: str, git_repo_url: str) -> None:
-    subprocess.run(["git", "push", git_repo_url, "--delete", git_tag], check=True, capture_output=True, text=True)
-    logger.info(f"Cleaned up git tag {git_tag} from {git_repo_url} for job {id}")
+@exc.handle_exception(subprocess.CalledProcessError, exc.GitError, message="Failed to clean up git tag")
+async def _delete_git_tag(
+    _logger: logger.NexusServiceLogger, git_tag: str, git_repo_url: str
+) -> subprocess.CompletedProcess:
+    """Remove a git tag from the remote repository."""
+    return subprocess.run(
+        ["git", "push", git_repo_url, "--delete", git_tag], check=True, capture_output=True, text=True
+    )
+
+
+async def async_cleanup_git_tag(_logger: logger.NexusServiceLogger, git_tag: str, git_repo_url: str) -> None:
+    """Clean up a git tag by deleting it from the remote repository."""
+    await _delete_git_tag(_logger, git_tag, git_repo_url)
+    _logger.info(f"Cleaned up git tag {git_tag} from {git_repo_url}")
 
 
 def validate_git_url(url: str) -> bool:
     """Validate git repository URL format"""
-    return bool(GIT_URL_PATTERN.match(url))
+    if not url or not isinstance(url, str):
+        return False
+    return bool(GIT_URL_PATTERN.match(url.strip()))
 
 
 def normalize_git_url(url: str) -> str:
+    if not url:
+        raise exc.GitError(message="Git URL cannot be empty")
+
     url = url.strip()
 
     # Already HTTPS format
@@ -51,7 +70,7 @@ def normalize_git_url(url: str) -> str:
         path = match.group("path")
         if mapped_host := HOST_MAPPINGS.get(host):
             return f"https://{mapped_host}/{path}"
-        raise ValueError(f"Unknown Git host: {host}")
+        raise exc.GitError(message=f"Unknown Git host: {host}")
 
     # Git protocol
     if match := GIT_PROTOCOL_PATTERN.match(url):
@@ -59,6 +78,6 @@ def normalize_git_url(url: str) -> str:
         path = match.group("path")
         if mapped_host := HOST_MAPPINGS.get(host):
             return f"https://{mapped_host}/{path}"
-        raise ValueError(f"Unknown Git host: {host}")
+        raise exc.GitError(message=f"Unknown Git host: {host}")
 
-    raise ValueError("Invalid Git URL format. Must be HTTPS, SSH, or Git protocol URL.")
+    raise exc.GitError(message="Invalid Git URL format. Must be HTTPS, SSH, or Git protocol URL.")
