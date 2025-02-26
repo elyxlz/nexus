@@ -60,7 +60,7 @@ class WebhookError(NexusServiceError):
 
 
 T = tp.TypeVar("T")
-E = tp.TypeVar("E", bound=Exception)
+P = tp.ParamSpec("P")  # This captures the parameter specification of the wrapped function
 
 
 def handle_exception(
@@ -69,10 +69,10 @@ def handle_exception(
     message: str = "An error occurred",
     reraise: bool = True,
     default_return: tp.Any = None,
-) -> abc.Callable[[abc.Callable[..., T]], abc.Callable[..., T | tp.Any]]:
-    def decorator(func: abc.Callable[..., T]) -> abc.Callable[..., T | tp.Any]:
+) -> abc.Callable[[abc.Callable[P, T]], abc.Callable[P, T]]:  # Note the P here
+    def decorator(func: abc.Callable[P, T]) -> abc.Callable[P, T]:  # And here
         @functools.wraps(func)
-        def wrapper(*args: tp.Any, **kwargs: tp.Any) -> T | tp.Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:  # And here
             _logger = None
 
             for arg in args:
@@ -101,7 +101,7 @@ def handle_exception(
                         raise target_exception(message=new_err_msg) from e
 
                     if not reraise:
-                        return default_return
+                        return tp.cast(T, default_return)
 
                     raise
 
