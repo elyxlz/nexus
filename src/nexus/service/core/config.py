@@ -5,6 +5,17 @@ import pydantic as pyd
 import pydantic_settings as pyds
 import toml
 
+__all__ = [
+    "NexusServiceConfig",
+    "get_env_path",
+    "get_config_path",
+    "get_db_path",
+    "get_log_dir",
+    "get_jobs_dir",
+    "save_config",
+    "load_config",
+]
+
 
 class NexusServiceConfig(pyds.BaseSettings):
     model_config = pyds.SettingsConfigDict(env_prefix="ns_", frozen=True)

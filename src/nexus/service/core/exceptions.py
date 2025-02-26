@@ -1,7 +1,6 @@
 import functools
-import inspect
-from collections.abc import Callable
-from typing import Any, TypeVar
+import typing
+from collections import abc
 
 __all__ = [
     "NexusServiceError",
@@ -16,8 +15,6 @@ __all__ = [
 
 
 class NexusServiceError(Exception):
-    """Base exception for all Nexus errors."""
-
     ERROR_CODE = "NEXUS_ERROR"
 
     def __init__(self, message: str | None = None):
@@ -50,8 +47,13 @@ class JobError(NexusServiceError):
     ERROR_CODE = "JOB_ERROR"
 
 
-T = TypeVar("T")
-E = TypeVar("E", bound=Exception)
+class NexusServiceLogger:
+    def error(self, message: str) -> None:
+        pass
+
+
+T = typing.TypeVar("T")
+E = typing.TypeVar("E", bound=Exception)
 
 
 def handle_exception(
@@ -59,40 +61,26 @@ def handle_exception(
     target_exception: type[NexusServiceError] | None = None,
     message: str = "An error occurred",
     reraise: bool = True,
-    default_return: Any = None,
-) -> Callable[[Callable[..., T]], Callable[..., T | Any]]:
-    """
-    Decorator for handling exceptions on functions that accept a _logger keyword parameter.
-
-    This decorator requires that the wrapped function accepts a '_logger' parameter.
-
-    Args:
-        source_exception: The exception type to catch
-        target_exception: Optional NexusServiceError subclass to convert to
-        message: Error message to log
-        reraise: Whether to reraise the exception (always True if target_exception is provided)
-        default_return: Value to return if not reraising
-
-    Returns:
-        Decorated function
-
-    Raises:
-        ValueError: If the function being decorated doesn't accept a '_logger' parameter
-    """
-
-    def decorator(func: Callable[..., T]) -> Callable[..., T | Any]:
-        # Validate that the function accepts a _logger parameter
-        sig = inspect.signature(func)
-        if "_logger" not in sig.parameters:
-            raise ValueError(f"Function '{func.__name__}' must accept a '_logger' parameter to use @handle_exception")
-
+    default_return: typing.Any = None,
+) -> abc.Callable[[abc.Callable[..., T]], abc.Callable[..., T | typing.Any]]:
+    def decorator(func: abc.Callable[..., T]) -> abc.Callable[..., T | typing.Any]:
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> T | Any:
-            # Check if _logger was passed as a keyword argument
-            if "_logger" not in kwargs:
-                raise ValueError(f"Missing required '_logger' keyword argument when calling {func.__name__}")
+        def wrapper(*args: typing.Any, **kwargs: typing.Any) -> T | typing.Any:
+            logger = None
 
-            logger = kwargs["_logger"]
+            for arg in args:
+                if isinstance(arg, NexusServiceLogger):
+                    logger = arg
+                    break
+
+            if logger is None:
+                for arg_name, arg_value in kwargs.items():
+                    if isinstance(arg_value, NexusServiceLogger) or (arg_name == "_logger" and arg_value is not None):
+                        logger = arg_value
+                        break
+
+            if logger is None:
+                raise ValueError(f"Function '{func.__name__}' requires a NexusServiceLogger parameter")
 
             try:
                 return func(*args, **kwargs)
@@ -101,20 +89,15 @@ def handle_exception(
                     error_msg = f"{message}: {str(e)}"
                     logger.error(error_msg)
 
-                    # Convert exception if target_exception is provided
                     if target_exception is not None:
                         new_err_msg = f"{error_msg} (converted from {type(e).__name__})"
-                        # All target exceptions are NexusServiceError subclasses that take a message parameter
                         raise target_exception(message=new_err_msg) from e
 
-                    # Handle reraise option if no target_exception
                     if not reraise:
                         return default_return
 
-                    # Reraise the original exception
                     raise
 
-                # If not the specified exception type, just let it propagate
                 raise
 
         return wrapper

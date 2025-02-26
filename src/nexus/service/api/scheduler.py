@@ -20,13 +20,13 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
         updated_job = _job
 
         # If the job is marked for kill and its session is still running, kill it.
-        if _job.marked_for_kill and job.is_job_session_running(_job.id):
+        if _job.marked_for_kill and job.is_job_session_running(ctx.logger, job_id=_job.id):
             job.kill_job_session(ctx.logger, job_id=_job.id)
             updated_job = job.end_job(ctx.logger, _job=_job, killed=True)
             await git.async_cleanup_repo(ctx.logger, job_dir=_job.dir)
 
         # If the job is no longer running (its session has ended), update its status.
-        elif not job.is_job_session_running(_job.id):
+        elif not job.is_job_session_running(ctx.logger, job_id=_job.id):
             updated_job = job.end_job(ctx.logger, _job=_job, killed=False)
             await git.async_cleanup_repo(ctx.logger, job_dir=_job.dir)
 
@@ -62,7 +62,7 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
                     ctx.logger.error(f"Last 20 lines of job log:\n{''.join(last_lines)}")
 
         # Update the job record in the database.
-        db.update_job(ctx.db, updated_job)
+        db.update_job(conn=ctx.db, job=updated_job)
 
     ctx.db.commit()
 
@@ -83,7 +83,7 @@ async def update_wandb_urls(ctx: context.NexusServiceContext) -> None:
 
         if wandb_url:
             updated = dc.replace(_job, wandb_url=wandb_url)
-            db.update_job(ctx.db, updated)
+            db.update_job(conn=ctx.db, job=updated)
             ctx.logger.info(f"Associated job {_job.id} with W&B run: {wandb_url}")
 
             if ctx.config.webhooks_enabled:
@@ -139,7 +139,7 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
             job_env=ctx.env.model_dump(),
         )
 
-        db.update_job(ctx.db, started)
+        db.update_job(conn=ctx.db, job=started)
         ctx.logger.info(format.format_job_action(started, action="started"))
 
         if ctx.config.webhooks_enabled:

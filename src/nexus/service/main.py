@@ -62,7 +62,7 @@ def main():
         log_dir = config.get_log_dir(_config.service_dir)
         setup.create_persistent_directory(_config, _env=_env)
 
-    _db = db.create_connection(db_path)
+    _db = db.create_connection(db_path=db_path)
     _logger = logger.create_service_logger(log_dir, name="nexus_service", log_level=_config.log_level)
 
     ctx = context.NexusServiceContext(db=_db, config=_config, env=_env, logger=_logger)

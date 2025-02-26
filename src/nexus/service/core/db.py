@@ -16,7 +16,7 @@ __all__ = [
     "add_blacklisted_gpu",
     "remove_blacklisted_gpu",
     "list_blacklisted_gpus",
-    "with_safe_transaction",
+    "safe_transaction",
 ]
 
 
@@ -185,13 +185,11 @@ def _query_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
 
 
 def get_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> models.Job | None:
-    """Get a job from the database by ID."""
     _validate_job_id(job_id)
     return _query_job(_logger=_logger, conn=conn, job_id=job_id)
 
 
 def _validate_job_status(status: str | None) -> None:
-    """Validate job status if provided."""
     if status is not None:
         valid_statuses = {"queued", "running", "completed", "failed"}
         if status not in valid_statuses:
@@ -200,7 +198,6 @@ def _validate_job_status(status: str | None) -> None:
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list jobs")
 def _query_jobs(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, status: str | None) -> list[models.Job]:
-    """Query jobs from the database, optionally filtered by status."""
     cur = conn.cursor()
     if status is not None:
         cur.execute("SELECT * FROM jobs WHERE status = ?", (status,))
@@ -213,14 +210,12 @@ def _query_jobs(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, st
 def list_jobs(
     _logger: logger.NexusServiceLogger, conn: sqlite3.Connection, status: str | None = None
 ) -> list[models.Job]:
-    """List jobs from the database, optionally filtered by status."""
     _validate_job_status(status)
     return _query_jobs(_logger=_logger, conn=conn, status=status)
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job status")
 def _check_job_status(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> str:
-    """Check if a job exists and get its status."""
     cur = conn.cursor()
     cur.execute("SELECT status FROM jobs WHERE id = ?", (job_id,))
     row = cur.fetchone()
@@ -230,7 +225,6 @@ def _check_job_status(_logger: logger.NexusServiceLogger, conn: sqlite3.Connecti
 
 
 def _verify_job_is_queued(job_id: str, status: str) -> None:
-    """Verify that a job has 'queued' status."""
     if status != "queued":
         raise exc.JobError(
             message=f"Cannot delete job {job_id} with status '{status}'. Only queued jobs can be deleted.",
@@ -239,14 +233,12 @@ def _verify_job_is_queued(job_id: str, status: str) -> None:
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to delete job")
 def _delete_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> bool:
-    """Delete a job from the database."""
     cur = conn.cursor()
     cur.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
     return True
 
 
 def delete_queued_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> bool:
-    """Delete a queued job from the database."""
     _validate_job_id(job_id)
     status = _check_job_status(_logger=_logger, conn=conn, job_id=job_id)
     _verify_job_is_queued(job_id, status)
@@ -254,14 +246,12 @@ def delete_queued_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connecti
 
 
 def _validate_gpu_index(gpu_index: int) -> None:
-    """Validate that a GPU index is non-negative."""
     if gpu_index < 0:
         raise exc.GPUError(message=f"Invalid GPU index: {gpu_index}. Must be a non-negative integer.")
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to blacklist GPU")
 def _add_gpu_to_blacklist(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
-    """Add a GPU to the blacklist."""
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_index = ?", (gpu_index,))
     if cur.fetchone():
@@ -271,14 +261,12 @@ def _add_gpu_to_blacklist(_logger: logger.NexusServiceLogger, conn: sqlite3.Conn
 
 
 def add_blacklisted_gpu(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
-    """Add a GPU to the blacklist."""
     _validate_gpu_index(gpu_index)
     return _add_gpu_to_blacklist(_logger=_logger, conn=conn, gpu_index=gpu_index)
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to remove GPU from blacklist")
 def _remove_gpu_from_blacklist(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
-    """Remove a GPU from the blacklist."""
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_index = ?", (gpu_index,))
     if not cur.fetchone():
@@ -288,36 +276,21 @@ def _remove_gpu_from_blacklist(_logger: logger.NexusServiceLogger, conn: sqlite3
 
 
 def remove_blacklisted_gpu(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
-    """Remove a GPU from the blacklist."""
     _validate_gpu_index(gpu_index)
     return _remove_gpu_from_blacklist(_logger=_logger, conn=conn, gpu_index=gpu_index)
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list blacklisted GPUs")
 def list_blacklisted_gpus(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) -> list[int]:
-    """List all blacklisted GPUs."""
     cur = conn.cursor()
     cur.execute("SELECT gpu_index FROM blacklisted_gpus")
     rows = cur.fetchall()
     return [row["gpu_index"] for row in rows]
 
 
-def with_safe_transaction(func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
-    """
-    Decorator to handle database transactions safely in API endpoints.
-    Automatically commits on success and rolls back on exceptions.
-
-    Usage:
-        @router.post("/endpoint")
-        @with_safe_transaction
-        async def my_endpoint(ctx: context.NexusServiceContext = ...):
-            # Any exception here will trigger rollback
-            # Successful completion will automatically commit
-    """
-
+def safe_transaction(func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
     @functools.wraps(func)
     async def wrapper(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
-        # Find the context parameter
         ctx = None
         for arg in args:
             if isinstance(arg, context.NexusServiceContext):
@@ -325,7 +298,7 @@ def with_safe_transaction(func: typing.Callable[..., typing.Any]) -> typing.Call
                 break
 
         if ctx is None:
-            for arg_name, arg_value in kwargs.items():
+            for arg_value in kwargs.values():
                 if isinstance(arg_value, context.NexusServiceContext):
                     ctx = arg_value
                     break
@@ -334,16 +307,12 @@ def with_safe_transaction(func: typing.Callable[..., typing.Any]) -> typing.Call
             raise exc.ServiceError(message="Transaction decorator requires a NexusServiceContext parameter")
 
         try:
-            # Execute the endpoint function
             result = await func(*args, **kwargs)
-            # Commit the transaction if successful
             ctx.db.commit()
             return result
         except Exception as e:
-            # Rollback on any exception
             ctx.logger.error(f"Transaction failed, rolling back: {str(e)}")
             ctx.db.rollback()
-            # Re-raise the original exception
             raise
 
     return wrapper

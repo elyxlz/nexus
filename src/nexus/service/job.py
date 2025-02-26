@@ -191,7 +191,7 @@ async def async_start_job(
         raise exc.JobError(message=f"Job directory not set for job {job.id}")
 
     # Create directories
-    log_file, job_repo_dir = create_directories(_logger, job_dir=job.dir)
+    log_file, job_repo_dir = create_directories(_logger, dir_path=job.dir)
 
     # Set up environment
     env = _build_environment(_logger, gpu_index=gpu_index, job_env=job_env)

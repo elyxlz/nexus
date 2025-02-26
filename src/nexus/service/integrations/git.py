@@ -8,7 +8,6 @@ from nexus.service.core import logger
 
 __all__ = ["validate_git_url", "normalize_git_url", "async_cleanup_repo", "async_cleanup_git_tag"]
 
-# Patterns for different Git URL formats
 GIT_URL_PATTERN = re.compile(r"^(?:https?://|git@)(?:[\w.@:/\-~]+)(?:\.git)?/?$")
 SSH_PATTERN = re.compile(r"^git@(?P<host>[\w\.]+):(?P<path>[\w\-\.~]+/[\w\-\.~]+?)(?:\.git)?/?$")
 GIT_PROTOCOL_PATTERN = re.compile(r"^git://(?P<host>[\w\.]+)/(?P<path>[\w\-\.~]+/[\w\-\.~]+?)(?:\.git)?/?$")
@@ -32,23 +31,13 @@ async def async_cleanup_repo(_logger: logger.NexusServiceLogger, job_dir: pl.Pat
 
 
 @exc.handle_exception(subprocess.CalledProcessError, exc.GitError, message="Failed to clean up git tag")
-async def _delete_git_tag(
-    _logger: logger.NexusServiceLogger, git_tag: str, git_repo_url: str
-) -> subprocess.CompletedProcess:
-    """Remove a git tag from the remote repository."""
-    return subprocess.run(
-        ["git", "push", git_repo_url, "--delete", git_tag], check=True, capture_output=True, text=True
-    )
-
-
 async def async_cleanup_git_tag(_logger: logger.NexusServiceLogger, git_tag: str, git_repo_url: str) -> None:
-    """Clean up a git tag by deleting it from the remote repository."""
-    await _delete_git_tag(_logger, git_tag, git_repo_url)
+    subprocess.run(["git", "push", git_repo_url, "--delete", git_tag], check=True, capture_output=True, text=True)
     _logger.info(f"Cleaned up git tag {git_tag} from {git_repo_url}")
+    return None
 
 
 def validate_git_url(url: str) -> bool:
-    """Validate git repository URL format"""
     if not url or not isinstance(url, str):
         return False
     return bool(GIT_URL_PATTERN.match(url.strip()))

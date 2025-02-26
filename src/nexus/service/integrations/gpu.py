@@ -18,10 +18,6 @@ def is_gpu_available(gpu_info: models.GpuInfo) -> bool:
 @exc.handle_exception(subprocess.CalledProcessError, exc.GPUError, message="Command failed with error")
 @exc.handle_exception(Exception, exc.GPUError, message="Error executing command")
 def run_command(_logger: logger.NexusServiceLogger, command: list[str], timeout: int = 5) -> str:
-    """
-    Execute an external command with a timeout and return its output.
-    Raises GPUError on failure.
-    """
     result = subprocess.run(
         command,
         capture_output=True,

@@ -1,6 +1,7 @@
 import logging
+import logging.handlers
 import pathlib as pl
-from logging.handlers import RotatingFileHandler
+import typing
 
 import colorlog as cl
 
@@ -11,16 +12,19 @@ class NexusServiceLogger(logging.Logger):
     pass
 
 
+# Set this class as the default logger class
+logging.setLoggerClass(NexusServiceLogger)
+
+
 def create_service_logger(
     log_dir: pl.Path | None,
     name: str = "service",
     log_file: str = "service.log",
-    log_level: str = "info",  # Changed to string literal
+    log_level: str = "info",
     max_bytes: int = 10 * 1024 * 1024,
     backup_count: int = 5,
     console_output: bool = True,
 ) -> NexusServiceLogger:
-    # Convert string log level to logging level
     log_level_map = {
         "debug": logging.DEBUG,
         "info": logging.INFO,
@@ -30,7 +34,7 @@ def create_service_logger(
     }
     numeric_log_level = log_level_map.get(log_level.lower(), logging.INFO)
 
-    logger = NexusServiceLogger(name)
+    logger = logging.getLogger(name)
     logger.setLevel(numeric_log_level)
     logger.handlers = []
 
@@ -41,7 +45,7 @@ def create_service_logger(
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file_path = log_dir / log_file
         log_file_path.touch()  # Ensures the file exists
-        file_handler = RotatingFileHandler(
+        file_handler = logging.handlers.RotatingFileHandler(
             filename=str(log_file_path),
             maxBytes=max_bytes,
             backupCount=backup_count,
@@ -70,4 +74,4 @@ def create_service_logger(
         console_handler.setLevel(numeric_log_level)
         logger.addHandler(console_handler)
 
-    return logger
+    return typing.cast(NexusServiceLogger, logger)
