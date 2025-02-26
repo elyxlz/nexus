@@ -130,12 +130,13 @@ def test_get_job_logs(app: TestClient, created_job: dict) -> None:
 
 def test_get_nonexistent_job(app: TestClient) -> None:
     import pytest
+
     from nexus.service.core import exceptions as exc
-    
+
     # Using pytest.raises to catch the expected exception
     with pytest.raises(exc.JobError) as excinfo:
         app.get("/v1/jobs/nonexistent")
-    
+
     # Verify the error message
     assert "Job not found: nonexistent" in str(excinfo.value)
 

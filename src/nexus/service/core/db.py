@@ -3,9 +3,8 @@ import pathlib as pl
 import sqlite3
 import typing
 
-from nexus.service.core import context
+from nexus.service.core import context, logger, models
 from nexus.service.core import exceptions as exc
-from nexus.service.core import logger, models
 
 __all__ = [
     "create_connection",
@@ -307,7 +306,7 @@ def with_safe_transaction(func: typing.Callable[..., typing.Any]) -> typing.Call
     """
     Decorator to handle database transactions safely in API endpoints.
     Automatically commits on success and rolls back on exceptions.
-    
+
     Usage:
         @router.post("/endpoint")
         @with_safe_transaction
@@ -315,6 +314,7 @@ def with_safe_transaction(func: typing.Callable[..., typing.Any]) -> typing.Call
             # Any exception here will trigger rollback
             # Successful completion will automatically commit
     """
+
     @functools.wraps(func)
     async def wrapper(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
         # Find the context parameter
@@ -323,18 +323,16 @@ def with_safe_transaction(func: typing.Callable[..., typing.Any]) -> typing.Call
             if isinstance(arg, context.NexusServiceContext):
                 ctx = arg
                 break
-                
+
         if ctx is None:
             for arg_name, arg_value in kwargs.items():
                 if isinstance(arg_value, context.NexusServiceContext):
                     ctx = arg_value
                     break
-                    
+
         if ctx is None:
-            raise exc.ServiceError(
-                message="Transaction decorator requires a NexusServiceContext parameter"
-            )
-            
+            raise exc.ServiceError(message="Transaction decorator requires a NexusServiceContext parameter")
+
         try:
             # Execute the endpoint function
             result = await func(*args, **kwargs)
@@ -347,5 +345,5 @@ def with_safe_transaction(func: typing.Callable[..., typing.Any]) -> typing.Call
             ctx.db.rollback()
             # Re-raise the original exception
             raise
-            
+
     return wrapper
