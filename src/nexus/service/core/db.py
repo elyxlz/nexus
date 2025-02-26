@@ -1,7 +1,7 @@
 import functools
 import pathlib as pl
 import sqlite3
-import typing
+import typing as tp
 
 from nexus.service.core import context, logger, models
 from nexus.service.core import exceptions as exc
@@ -280,9 +280,9 @@ def list_blacklisted_gpus(_logger: logger.NexusServiceLogger, conn: sqlite3.Conn
     return [row["gpu_index"] for row in rows]
 
 
-def safe_transaction(func: typing.Callable[..., typing.Any]) -> typing.Callable[..., typing.Any]:
+def safe_transaction(func: tp.Callable[..., tp.Any]) -> tp.Callable[..., tp.Any]:
     @functools.wraps(func)
-    async def wrapper(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+    async def wrapper(*args: tp.Any, **kwargs: tp.Any) -> tp.Any:
         ctx = None
         for arg in args:
             if isinstance(arg, context.NexusServiceContext):

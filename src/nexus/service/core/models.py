@@ -1,10 +1,10 @@
 import dataclasses as dc
 import pathlib as pl
-import typing
+import typing as tp
 
-__all__ = ["JobStatus", "Job", "GpuInfo"]
+__all__ = ["JobStatus", "Job"]
 
-JobStatus = typing.Literal["queued", "running", "completed", "failed"]
+JobStatus = tp.Literal["queued", "running", "completed", "failed"]
 
 
 @dc.dataclass(frozen=True)
@@ -25,14 +25,3 @@ class Job:
     user: str | None
     discord_id: str | None
     marked_for_kill: bool
-
-
-@dc.dataclass(frozen=True)
-class GpuInfo:
-    index: int
-    name: str
-    memory_total: int
-    memory_used: int
-    process_count: int
-    is_blacklisted: bool
-    running_job_id: str | None

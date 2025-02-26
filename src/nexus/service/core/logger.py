@@ -1,7 +1,7 @@
 import logging
 import logging.handlers
 import pathlib as pl
-import typing
+import typing as tp
 
 import colorlog as cl
 
@@ -12,7 +12,6 @@ class NexusServiceLogger(logging.Logger):
     pass
 
 
-# Set this class as the default logger class
 logging.setLoggerClass(NexusServiceLogger)
 
 
@@ -74,4 +73,4 @@ def create_service_logger(
         console_handler.setLevel(numeric_log_level)
         logger.addHandler(console_handler)
 
-    return typing.cast(NexusServiceLogger, logger)
+    return tp.cast(NexusServiceLogger, logger)

@@ -2,6 +2,7 @@ import asyncio
 import dataclasses as dc
 import getpass
 import importlib.metadata
+import logging.handlers
 import os
 import pathlib as pl
 
@@ -40,17 +41,23 @@ def get_context(request: fa.Request) -> context.NexusServiceContext:
 
 @router.get("/v1/service/status", response_model=schemas.ServiceStatusResponse)
 async def get_status(ctx: context.NexusServiceContext = fa.Depends(get_context)):
-    # Get all jobs from the database and count statuses
-    all_jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db)
-    queued = sum(1 for j in all_jobs if j.status == "queued")
-    running = sum(1 for j in all_jobs if j.status == "running")
-    completed = sum(1 for j in all_jobs if j.status in ("completed", "failed"))
+    # Get jobs from the database with specific status filters
+    queued_jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db, status="queued")
+    running_jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db, status="running")
+    completed_jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db, status="completed")
+    failed_jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db, status="failed")
+
+    # Count jobs by status directly using database queries
+    queued = len(queued_jobs)
+    running = len(running_jobs)
+    completed = len(completed_jobs) + len(failed_jobs)
+
     # For GPU info, pass the list of running jobs and blacklisted GPUs
-    running_jobs = [j for j in all_jobs if j.status == "running"]
     blacklisted = db.list_blacklisted_gpus(_logger=ctx.logger, conn=ctx.db)
     gpus = gpu.get_gpus(
         ctx.logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
     )
+
     response = schemas.ServiceStatusResponse(
         running=True,
         gpu_count=len(gpus),
@@ -66,9 +73,19 @@ async def get_status(ctx: context.NexusServiceContext = fa.Depends(get_context))
 
 @router.get("/v1/service/logs", response_model=schemas.ServiceLogsResponse)
 async def get_service_logs(ctx: context.NexusServiceContext = fa.Depends(get_context)):
-    nexus_dir: pl.Path = pl.Path.home() / ".nexus_service"
-    log_path: pl.Path = nexus_dir / "service.log"
-    logs: str = log_path.read_text() if log_path.exists() else ""
+    logs: str = ""
+
+    # Get log file path from the logger's file handler
+    for handler in ctx.logger.handlers:
+        if isinstance(handler, logging.handlers.RotatingFileHandler):
+            log_path = pl.Path(handler.baseFilename)
+            if log_path.exists():
+                logs = log_path.read_text()
+                break
+
+    if not logs:
+        ctx.logger.warning("Could not retrieve log content from logger handlers")
+
     ctx.logger.info(f"Service logs retrieved, size: {len(logs)} characters")
     return schemas.ServiceLogsResponse(logs=logs)
 
@@ -230,9 +247,6 @@ async def blacklist_gpus(gpu_indexes: list[int], ctx: context.NexusServiceContex
                 failed.append(schemas.GpuActionError(index=_gpu, error="GPU already blacklisted"))
         except exc.GPUError as e:
             failed.append(schemas.GpuActionError(index=_gpu, error=e.message))
-        except Exception as e:
-            ctx.logger.error(f"Unexpected error blacklisting GPU {_gpu}: {e}")
-            failed.append(schemas.GpuActionError(index=_gpu, error=f"Internal error: {str(e)}"))
 
     return schemas.GpuActionResponse(blacklisted=successful, failed=failed, removed=None)
 
@@ -263,7 +277,7 @@ async def remove_gpu_blacklist(gpu_indexes: list[int], ctx: context.NexusService
     return schemas.GpuActionResponse(removed=removed, failed=failed, blacklisted=None)
 
 
-@router.get("/v1/gpus", response_model=list[models.GpuInfo])
+@router.get("/v1/gpus", response_model=list[gpu.GpuInfo])
 async def list_gpus(ctx: context.NexusServiceContext = fa.Depends(get_context)):
     running_jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db, status="running")
     blacklisted = db.list_blacklisted_gpus(_logger=ctx.logger, conn=ctx.db)

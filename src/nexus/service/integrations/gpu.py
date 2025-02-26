@@ -1,15 +1,28 @@
+import dataclasses as dc
 import subprocess
-import typing
+import typing as tp
 
 from nexus.service.core import exceptions as exc
 from nexus.service.core import logger, models
 
-__all__ = ["get_gpus", "is_gpu_available"]
+__all__ = ["GpuInfo", "get_gpus", "is_gpu_available"]
+
+
+@dc.dataclass(frozen=True)
+class GpuInfo:
+    index: int
+    name: str
+    memory_total: int
+    memory_used: int
+    process_count: int
+    is_blacklisted: bool
+    running_job_id: str | None
+
 
 GpuProcesses = dict[int, int]
 
 
-def is_gpu_available(gpu_info: models.GpuInfo) -> bool:
+def is_gpu_available(gpu_info: GpuInfo) -> bool:
     return not gpu_info.is_blacklisted and gpu_info.running_job_id is None and gpu_info.process_count == 0
 
 
@@ -53,8 +66,8 @@ def create_gpu_info(
     process_count: int,
     blacklisted_gpus: set[int],
     running_jobs: dict[int, str],
-) -> models.GpuInfo:
-    gpu = models.GpuInfo(
+) -> GpuInfo:
+    gpu = GpuInfo(
         index=index,
         name=name,
         memory_total=total_memory,
@@ -69,7 +82,7 @@ def create_gpu_info(
 @exc.handle_exception(ValueError, exc.GPUError, message="Error parsing GPU info line")
 def parse_gpu_line(
     _logger: logger.NexusServiceLogger, line: str, gpu_processes: dict, blacklisted_gpus: set, running_jobs_idxs: dict
-) -> models.GpuInfo:
+) -> GpuInfo:
     index, name, total, used = (x.strip() for x in line.split(","))
     return create_gpu_info(
         int(index),
@@ -105,7 +118,7 @@ def _process_gpu_line(
     blacklisted_set: set[int],
     running_jobs_idxs: dict[int, str],
     _logger: logger.NexusServiceLogger,
-) -> models.GpuInfo:
+) -> GpuInfo:
     return parse_gpu_line(
         _logger=_logger,
         line=line,
@@ -117,16 +130,16 @@ def _process_gpu_line(
 
 def get_gpus(
     _logger: logger.NexusServiceLogger, running_jobs: list[models.Job], blacklisted_gpus: list[int], mock_gpus: bool
-) -> list[models.GpuInfo]:
+) -> list[GpuInfo]:
     if mock_gpus:
         _logger.debug("MOCK_GPUS parameter is True. Returning mock GPU information.")
         return get_mock_gpus(_logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted_gpus)
 
     output = _get_nvidia_smi_output(_logger)
     gpu_processes = fetch_gpu_processes(_logger)
-    running_jobs_idxs = {typing.cast(int, j.gpu_index): j.id for j in running_jobs}
+    running_jobs_idxs = {tp.cast(int, j.gpu_index): j.id for j in running_jobs}
     blacklisted_set = set(blacklisted_gpus)
-    gpus: list[models.GpuInfo] = []
+    gpus: list[GpuInfo] = []
 
     for line in output.strip().split("\n"):
         gpu = _process_gpu_line(line, gpu_processes, blacklisted_set, running_jobs_idxs, _logger)
@@ -142,9 +155,9 @@ def get_gpus(
 
 def get_mock_gpus(
     _logger: logger.NexusServiceLogger, running_jobs: list[models.Job], blacklisted_gpus: list[int]
-) -> list[models.GpuInfo]:
+) -> list[GpuInfo]:
     _logger.debug("Generating mock GPUs")
-    running_jobs_idxs = {typing.cast(int, j.gpu_index): j.id for j in running_jobs}
+    running_jobs_idxs = {tp.cast(int, j.gpu_index): j.id for j in running_jobs}
     blacklisted_gpus_set = set(blacklisted_gpus)
 
     mock_gpu_configs = [

@@ -7,7 +7,7 @@ import re
 import subprocess
 import sys
 import time
-import typing
+import typing as tp
 
 import base58
 import requests
@@ -16,8 +16,8 @@ from termcolor import colored
 from nexus.cli.config import load_config
 
 # Types
-Color = typing.Literal["grey", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
-Attribute = typing.Literal["bold", "dark", "underline", "blink", "reverse", "concealed"]
+Color = tp.Literal["grey", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
+Attribute = tp.Literal["bold", "dark", "underline", "blink", "reverse", "concealed"]
 
 try:
     VERSION = importlib.metadata.version("nexusai")

@@ -9,9 +9,10 @@ from nexus.service.core import config, context, db
 from nexus.service.integrations import git, gpu, wandb_finder, webhooks
 from nexus.service.utils import format
 
-__all__ = ["update_running_jobs", "update_wandb_urls", "start_queued_jobs", "scheduler_loop"]
+__all__ = ["scheduler_loop"]
 
 
+@db.safe_transaction
 async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
     running_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
 
@@ -56,9 +57,8 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
                     ctx.logger.error(f"Last 20 lines of job log:\n{''.join(last_lines)}")
         db.update_job(conn=ctx.db, job=updated_job)
 
-    ctx.db.commit()
 
-
+@db.safe_transaction
 async def update_wandb_urls(ctx: context.NexusServiceContext) -> None:
     running_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
 
@@ -81,9 +81,8 @@ async def update_wandb_urls(ctx: context.NexusServiceContext) -> None:
             if ctx.config.webhooks_enabled:
                 await webhooks.update_job_wandb(ctx.logger, job=updated)
 
-    ctx.db.commit()
 
-
+@db.safe_transaction
 async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
     queued_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="queued")
 

@@ -1,5 +1,5 @@
 import datetime as dt
-import typing
+import typing as tp
 
 from nexus.service.core import models
 
@@ -31,7 +31,7 @@ def calculate_runtime(job: models.Job) -> float:
     return 0.0
 
 
-def format_job_action(job: models.Job, action: typing.Literal["added", "started", "completed", "failed"]) -> str:
+def format_job_action(job: models.Job, action: tp.Literal["added", "started", "completed", "failed"]) -> str:
     """Format a job action log message with consistent structure."""
     runtime = calculate_runtime(job)
     gpu_info = f" on GPU {job.gpu_index}" if job.gpu_index is not None else ""

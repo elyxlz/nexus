@@ -1,5 +1,5 @@
 import functools
-import typing
+import typing as tp
 from collections import abc
 
 __all__ = [
@@ -10,6 +10,8 @@ __all__ = [
     "GitError",
     "DatabaseError",
     "JobError",
+    "WandBError",
+    "WebhookError",
     "handle_exception",
 ]
 
@@ -47,13 +49,21 @@ class JobError(NexusServiceError):
     ERROR_CODE = "JOB_ERROR"
 
 
+class WandBError(NexusServiceError):
+    ERROR_CODE = "WANDB_ERROR"
+
+
+class WebhookError(NexusServiceError):
+    ERROR_CODE = "WEBHOOK_ERROR"
+
+
 class NexusServiceLogger:
     def error(self, message: str) -> None:
         pass
 
 
-T = typing.TypeVar("T")
-E = typing.TypeVar("E", bound=Exception)
+T = tp.TypeVar("T")
+E = tp.TypeVar("E", bound=Exception)
 
 
 def handle_exception(
@@ -61,11 +71,11 @@ def handle_exception(
     target_exception: type[NexusServiceError] | None = None,
     message: str = "An error occurred",
     reraise: bool = True,
-    default_return: typing.Any = None,
-) -> abc.Callable[[abc.Callable[..., T]], abc.Callable[..., T | typing.Any]]:
-    def decorator(func: abc.Callable[..., T]) -> abc.Callable[..., T | typing.Any]:
+    default_return: tp.Any = None,
+) -> abc.Callable[[abc.Callable[..., T]], abc.Callable[..., T | tp.Any]]:
+    def decorator(func: abc.Callable[..., T]) -> abc.Callable[..., T | tp.Any]:
         @functools.wraps(func)
-        def wrapper(*args: typing.Any, **kwargs: typing.Any) -> T | typing.Any:
+        def wrapper(*args: tp.Any, **kwargs: tp.Any) -> T | tp.Any:
             logger = None
 
             for arg in args:
