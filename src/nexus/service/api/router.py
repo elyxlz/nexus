@@ -8,10 +8,8 @@ import pathlib as pl
 
 import fastapi as fa
 
-from nexus.service import job
 from nexus.service.api import models
-from nexus.service.core import context, db, schemas
-from nexus.service.core import exceptions as exc
+from nexus.service.core import exceptions as exc, context, db, schemas, job
 from nexus.service.integrations import git, gpu
 from nexus.service.utils import format
 

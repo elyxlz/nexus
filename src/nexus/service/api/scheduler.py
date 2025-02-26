@@ -4,8 +4,7 @@ import datetime as dt
 import pathlib as pl
 import tempfile
 
-from nexus.service import job
-from nexus.service.core import config, context, db
+from nexus.service.core import config, context, db, job
 from nexus.service.integrations import git, gpu, wandb_finder, webhooks
 from nexus.service.utils import format
 
@@ -49,7 +48,9 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
                     await webhooks.notify_job_completed(ctx.logger, webhook_url=ctx.config.webhook_url, job=_job)
                 elif action == "failed":
                     job_logs = job.get_job_logs(ctx.logger, job_dir=_job.dir, last_n_lines=20)
-                    await webhooks.notify_job_failed(ctx.logger, webhook_url=ctx.config.webhook_url, job=_job, job_logs=job_logs)
+                    await webhooks.notify_job_failed(
+                        ctx.logger, webhook_url=ctx.config.webhook_url, job=_job, job_logs=job_logs
+                    )
 
             if action == "failed":
                 last_lines = job.get_job_logs(ctx.logger, job_dir=_job.dir, last_n_lines=20)
@@ -79,7 +80,12 @@ async def update_wandb_urls(ctx: context.NexusServiceContext) -> None:
             ctx.logger.info(f"Associated job {_job.id} with W&B run: {wandb_url}")
 
             if ctx.config.webhooks_enabled:
-                await webhooks.update_job_wandb(ctx.logger, webhook_url=ctx.config.webhook_url, job=updated, state_path=ctx.config.webhook_state_path)
+                await webhooks.update_job_wandb(
+                    ctx.logger,
+                    webhook_url=ctx.config.webhook_url,
+                    job=updated,
+                    state_path=ctx.config.webhook_state_path,
+                )
 
 
 @db.safe_transaction
@@ -128,7 +134,9 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
         ctx.logger.info(format.format_job_action(started, action="started"))
 
         if ctx.config.webhooks_enabled:
-            await webhooks.notify_job_started(ctx.logger, webhook_url=ctx.config.webhook_url, job=started, state_path=ctx.config.webhook_state_path)
+            await webhooks.notify_job_started(
+                ctx.logger, webhook_url=ctx.config.webhook_url, job=started, state_path=ctx.config.webhook_state_path
+            )
 
     remaining = len(db.list_jobs(ctx.logger, conn=ctx.db, status="queued"))
     ctx.logger.info(f"Started jobs on available GPUs; remaining queued jobs: {remaining}")
