@@ -48,10 +48,7 @@ def main():
 
     setup.verify_external_dependencies()
 
-    service_dir = pl.Path.home() / ".nexus_service"  # TODO: for now
-
-    # TODO: add a check if these were already persisted and skip
-    # TODO: interactively go through these
+    service_dir = pl.Path.home() / ".nexus_service"
     _config = config.NexusServiceConfig(service_dir=service_dir)
     _env = env.NexusServiceEnv()
 
@@ -69,29 +66,3 @@ def main():
 
     app = create_app(ctx)
     uvicorn.run(app, host=_config.host, port=_config.port, log_level=_config.log_level)
-
-    # # If the user ran "nexus-service uninstall", then run uninstall and exit.
-    # if len(sys.argv) > 1 and sys.argv[1] == "uninstall":
-    #     setup.uninstall()
-    #     sys.exit(0)
-    #
-    # # If the installed version does not match the current version, uninstall first.
-    # if not setup.is_installed_current_version(current_version):
-    #     if setup.already_installed():
-    #         print("New version detected. Reinstalling...")
-    #         setup.uninstall()
-    #     setup.install()
-    #
-    # _env = config.NexusServiceEnv()
-    #
-    # # If persistence is enabled, create required files and directories.
-    # if _config.persist_to_disk:
-    #     config.create_required_files_and_dirs(_config, env=_env)
-    #
-    # # Load state from disk if persistence is enabled and a state file exists;
-    # # otherwise, create a default in-memory state.
-    # if _config.persist_to_disk and config.get_state_path(_config.service_dir).exists():
-    #     state.load_state(config.get_state_path(_config.service_dir))
-    # else:
-    #     state.create_default_state()
-    #

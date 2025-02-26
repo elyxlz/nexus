@@ -153,17 +153,19 @@ async def kill_running_jobs(job_ids: list[str], ctx: context.NexusServiceContext
         raise exc.JobError(message="No job IDs provided")
 
     killed: list[str] = []
-    failed: list[dict] = []
+    failed: list[schemas.JobActionError] = []
 
     for job_id in job_ids:
         try:
             _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
             if not _job:
-                failed.append({"id": job_id, "error": "Job not found"})
+                failed.append(schemas.JobActionError(id=job_id, error="Job not found"))
                 continue
 
             if _job.status != "running":
-                failed.append({"id": _job.id, "error": f"Job is not running (current status: {_job.status})"})
+                failed.append(
+                    schemas.JobActionError(id=_job.id, error=f"Job is not running (current status: {_job.status})")
+                )
                 continue
 
             updated = dc.replace(_job, marked_for_kill=True)
@@ -173,12 +175,12 @@ async def kill_running_jobs(job_ids: list[str], ctx: context.NexusServiceContext
 
         except exc.JobError as e:
             if "not found" in str(e).lower():
-                failed.append({"id": job_id, "error": "Job not found"})
+                failed.append(schemas.JobActionError(id=job_id, error="Job not found"))
             else:
-                failed.append({"id": job_id, "error": e.message})
+                failed.append(schemas.JobActionError(id=job_id, error=e.message))
         except Exception as e:
             ctx.logger.error(f"Unexpected error killing job {job_id}: {e}")
-            failed.append({"id": job_id, "error": f"Internal error: {str(e)}"})
+            failed.append(schemas.JobActionError(id=job_id, error=f"Internal error: {str(e)}"))
 
     return schemas.JobActionResponse(killed=killed, failed=failed)
 
@@ -190,7 +192,7 @@ async def remove_queued_jobs(job_ids: list[str], ctx: context.NexusServiceContex
         raise exc.JobError(message="No job IDs provided")
 
     removed: list[str] = []
-    failed: list[dict] = []
+    failed: list[schemas.JobQueueActionError] = []
 
     for job_id in job_ids:
         try:
@@ -199,12 +201,12 @@ async def remove_queued_jobs(job_ids: list[str], ctx: context.NexusServiceContex
             ctx.logger.info(f"Removed queued job {job_id}")
         except exc.JobError as e:
             if "not found" in str(e).lower():
-                failed.append({"id": job_id, "error": "Job not found"})
+                failed.append(schemas.JobQueueActionError(id=job_id, error="Job not found"))
             else:
-                failed.append({"id": job_id, "error": e.message})
+                failed.append(schemas.JobQueueActionError(id=job_id, error=e.message))
         except Exception as e:
             ctx.logger.error(f"Unexpected error removing job {job_id}: {e}")
-            failed.append({"id": job_id, "error": f"Internal error: {str(e)}"})
+            failed.append(schemas.JobQueueActionError(id=job_id, error=f"Internal error: {str(e)}"))
 
     return schemas.JobQueueActionResponse(removed=removed, failed=failed)
 
@@ -215,8 +217,8 @@ async def blacklist_gpus(gpu_indexes: list[int], ctx: context.NexusServiceContex
     if not gpu_indexes:
         raise exc.GPUError(message="No GPU indexes provided")
 
-    successful = []
-    failed = []
+    successful: list[int] = []
+    failed: list[schemas.GpuActionError] = []
 
     for _gpu in gpu_indexes:
         try:
@@ -225,12 +227,12 @@ async def blacklist_gpus(gpu_indexes: list[int], ctx: context.NexusServiceContex
                 successful.append(_gpu)
                 ctx.logger.info(f"Blacklisted GPU {_gpu}")
             else:
-                failed.append({"index": _gpu, "error": "GPU already blacklisted"})
+                failed.append(schemas.GpuActionError(index=_gpu, error="GPU already blacklisted"))
         except exc.GPUError as e:
-            failed.append({"index": _gpu, "error": e.message})
+            failed.append(schemas.GpuActionError(index=_gpu, error=e.message))
         except Exception as e:
             ctx.logger.error(f"Unexpected error blacklisting GPU {_gpu}: {e}")
-            failed.append({"index": _gpu, "error": f"Internal error: {str(e)}"})
+            failed.append(schemas.GpuActionError(index=_gpu, error=f"Internal error: {str(e)}"))
 
     return schemas.GpuActionResponse(blacklisted=successful, failed=failed, removed=None)
 
@@ -241,8 +243,8 @@ async def remove_gpu_blacklist(gpu_indexes: list[int], ctx: context.NexusService
     if not gpu_indexes:
         raise exc.GPUError(message="No GPU indexes provided")
 
-    removed = []
-    failed = []
+    removed: list[int] = []
+    failed: list[schemas.GpuActionError] = []
 
     for _gpu in gpu_indexes:
         try:
@@ -251,12 +253,12 @@ async def remove_gpu_blacklist(gpu_indexes: list[int], ctx: context.NexusService
                 removed.append(_gpu)
                 ctx.logger.info(f"Removed GPU {_gpu} from blacklist")
             else:
-                failed.append({"index": _gpu, "error": "GPU not in blacklist"})
+                failed.append(schemas.GpuActionError(index=_gpu, error="GPU not in blacklist"))
         except exc.GPUError as e:
-            failed.append({"index": _gpu, "error": e.message})
+            failed.append(schemas.GpuActionError(index=_gpu, error=e.message))
         except Exception as e:
             ctx.logger.error(f"Unexpected error removing GPU {_gpu} from blacklist: {e}")
-            failed.append({"index": _gpu, "error": f"Internal error: {str(e)}"})
+            failed.append(schemas.GpuActionError(index=_gpu, error=f"Internal error: {str(e)}"))
 
     return schemas.GpuActionResponse(removed=removed, failed=failed, blacklisted=None)
 

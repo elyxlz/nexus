@@ -13,19 +13,16 @@ __all__ = ["update_running_jobs", "update_wandb_urls", "start_queued_jobs", "sch
 
 
 async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
-    # Query all jobs with status "running" from the database.
     running_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
 
     for _job in running_jobs:
         updated_job = _job
 
-        # If the job is marked for kill and its session is still running, kill it.
         if _job.marked_for_kill and job.is_job_session_running(ctx.logger, job_id=_job.id):
             job.kill_job_session(ctx.logger, job_id=_job.id)
             updated_job = job.end_job(ctx.logger, _job=_job, killed=True)
             await git.async_cleanup_repo(ctx.logger, job_dir=_job.dir)
 
-        # If the job is no longer running (its session has ended), update its status.
         elif not job.is_job_session_running(ctx.logger, job_id=_job.id):
             updated_job = job.end_job(ctx.logger, _job=_job, killed=False)
             await git.async_cleanup_repo(ctx.logger, job_dir=_job.dir)
@@ -33,7 +30,6 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
         else:
             continue
 
-        # Log the action taken.
         if updated_job.status != "running":
             action = "completed" if updated_job.status == "completed" else "failed"
 
@@ -42,13 +38,11 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
             else:
                 ctx.logger.error(format.format_job_action(updated_job, action=action))
 
-            # If no other running job shares the same git tag, clean up the git tag.
             other_running = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
 
             if not any(j.git_tag == updated_job.git_tag for j in other_running):
                 await git.async_cleanup_git_tag(ctx.logger, git_tag=_job.git_tag, git_repo_url=_job.git_repo_url)
 
-            # Send webhook notifications if enabled.
             if ctx.config.webhooks_enabled:
                 if action == "completed":
                     await webhooks.notify_job_completed(ctx.logger, job=_job)
@@ -60,8 +54,6 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
                 last_lines = job.get_job_logs(ctx.logger, job_dir=_job.dir, last_n_lines=20)
                 if last_lines:
                     ctx.logger.error(f"Last 20 lines of job log:\n{''.join(last_lines)}")
-
-        # Update the job record in the database.
         db.update_job(conn=ctx.db, job=updated_job)
 
     ctx.db.commit()
@@ -99,7 +91,6 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
         ctx.logger.debug("No jobs in queue")
         return
 
-    # Retrieve available GPUs. Here we get the list of running jobs and blacklisted GPUs from the DB.
     available_gpus = [
         g
         for g in gpu.get_gpus(
@@ -116,7 +107,6 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
         ctx.logger.debug(f"No available GPUs. {running_count} jobs running")
         return
 
-    # For each available GPU, start the next queued job.
     for gpu_instance in available_gpus:
         if not queued_jobs:
             break
@@ -127,10 +117,7 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
         if ctx.config.service_dir is not None:
             jobs_dir = config.get_jobs_dir(ctx.config.service_dir)
 
-        # Update the job's directory.
         _job = dc.replace(_job, dir=jobs_dir / _job.id)
-
-        # Start the job asynchronously.
         started = await job.async_start_job(
             ctx.logger,
             job=_job,

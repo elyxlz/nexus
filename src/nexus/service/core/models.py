@@ -7,7 +7,6 @@ __all__ = ["JobStatus", "Job", "GpuInfo"]
 JobStatus = typing.Literal["queued", "running", "completed", "failed"]
 
 
-# we use these instead of frozen basemodels because the type checker recognizes immutability
 @dc.dataclass(frozen=True)
 class Job:
     id: str

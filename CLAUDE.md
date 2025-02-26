@@ -52,3 +52,12 @@
 - **Parameter Order**: Context/logger parameters first, optional params last
 - **Early Returns**: Use early returns for validation and guard clauses
 - **Default Values**: Use sensible defaults for optional parameters
+
+## Code Documentation
+- **Self-Documenting Code**: Prefer clear, descriptive variable and function names over comments
+- **No Redundant Comments**: Avoid comments that repeat what the code already expresses
+- **No Implementation Comments**: Don't comment on how code works; make code readable instead
+- **Rare Comments**: Only use comments for non-obvious design decisions or complex domain logic
+- **Type-Based Documentation**: Rely on type signatures to document interfaces, not comments
+- **Clean Interfaces**: Function names and signatures should be clear enough without comments
+- **Docstrings Optional**: Only add docstrings when function purpose isn't obvious from name/types

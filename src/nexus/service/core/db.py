@@ -22,7 +22,6 @@ __all__ = [
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database connection")
 def create_connection(_logger: logger.NexusServiceLogger, db_path: str) -> sqlite3.Connection:
-    """Create a connection to the SQLite database."""
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     create_tables(_logger=_logger, conn=conn)
@@ -31,9 +30,7 @@ def create_connection(_logger: logger.NexusServiceLogger, db_path: str) -> sqlit
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database tables")
 def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) -> None:
-    """Create necessary database tables if they don't exist."""
     cur = conn.cursor()
-    # Create the jobs table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
             id TEXT PRIMARY KEY,
@@ -54,7 +51,6 @@ def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) 
             dir TEXT
         )
     """)
-    # Create the blacklisted_gpus table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS blacklisted_gpus (
             gpu_index INTEGER PRIMARY KEY
@@ -87,7 +83,6 @@ def row_to_job(row: sqlite3.Row) -> models.Job:
 @exc.handle_exception(sqlite3.IntegrityError, exc.JobError, message="Job already exists")
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add job to database")
 def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: models.Job) -> None:
-    """Add a new job to the database."""
     cur = conn.cursor()
     cur.execute(
         """
@@ -121,7 +116,6 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: m
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to update job")
 def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: models.Job) -> None:
-    """Update an existing job in the database."""
     cur = conn.cursor()
     cur.execute(
         """
@@ -168,14 +162,12 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
 
 
 def _validate_job_id(job_id: str) -> None:
-    """Validate that a job ID is not empty."""
     if not job_id:
         raise exc.JobError(message="Job ID cannot be empty")
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job")
 def _query_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> models.Job | None:
-    """Query a job from the database by ID."""
     cur = conn.cursor()
     cur.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
     row = cur.fetchone()

@@ -5,7 +5,9 @@ __all__ = [
     "ServiceLogsResponse",
     "ServiceActionResponse",
     "JobLogsResponse",
+    "JobActionError",
     "JobActionResponse",
+    "JobQueueActionError",
     "JobQueueActionResponse",
     "GpuActionError",
     "GpuActionResponse",
@@ -21,8 +23,8 @@ class JobsRequest(FrozenBaseModel):
     commands: list[str]
     git_repo_url: str
     git_tag: str
-    user: str | None
-    discord_id: str | None
+    user: str | None = None
+    discord_id: str | None = None
 
 
 class ServiceLogsResponse(FrozenBaseModel):
@@ -37,14 +39,24 @@ class JobLogsResponse(FrozenBaseModel):
     logs: str
 
 
+class JobActionError(FrozenBaseModel):
+    id: str
+    error: str
+
+
 class JobActionResponse(FrozenBaseModel):
     killed: list[str]
-    failed: list[dict]
+    failed: list[JobActionError]
+
+
+class JobQueueActionError(FrozenBaseModel):
+    id: str
+    error: str
 
 
 class JobQueueActionResponse(FrozenBaseModel):
     removed: list[str]
-    failed: list[dict]
+    failed: list[JobQueueActionError]
 
 
 class GpuActionError(FrozenBaseModel):
@@ -53,8 +65,8 @@ class GpuActionError(FrozenBaseModel):
 
 
 class GpuActionResponse(FrozenBaseModel):
-    blacklisted: list[int] | None
-    removed: list[int] | None
+    blacklisted: list[int] | None = None
+    removed: list[int] | None = None
     failed: list[GpuActionError]
 
 
