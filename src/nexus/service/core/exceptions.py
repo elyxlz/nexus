@@ -94,7 +94,7 @@ def handle_exception(
             except Exception as e:
                 if isinstance(e, source_exception):
                     error_msg = f"{message}: {str(e)}"
-                    _logger.error(error_msg)
+                    _logger.exception(error_msg)
 
                     if target_exception is not None:
                         new_err_msg = f"{error_msg} (converted from {type(e).__name__})"

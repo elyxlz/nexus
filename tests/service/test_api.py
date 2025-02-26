@@ -1,6 +1,5 @@
 """Integration tests for the Nexus API and job lifecycle."""
 
-import sqlite3
 import time
 from collections.abc import Iterator
 
@@ -8,31 +7,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nexus.service.core import exceptions as exc
-from nexus.service.core import logger
 from nexus.service.core.config import NexusServiceConfig
 from nexus.service.core.context import NexusServiceContext
-from nexus.service.core.db import create_tables
+from nexus.service.core.db import create_connection
 from nexus.service.core.env import NexusServiceEnv
 from nexus.service.core.logger import create_service_logger
 from nexus.service.main import create_app
 
 
 @pytest.fixture
-def test_db() -> Iterator[sqlite3.Connection]:
-    """Create an in-memory SQLite database for testing."""
-    logger = create_service_logger(log_dir=None, name="nexus_test")
-
-    # In-memory SQLite database
-    connection = sqlite3.connect(":memory:", check_same_thread=False)
-    connection.row_factory = sqlite3.Row
-    create_tables(logger, conn=connection)
-
-    yield connection
-    connection.close()
-
-
-@pytest.fixture
-def app_client(test_db: sqlite3.Connection) -> Iterator[TestClient]:
+def app_client() -> Iterator[TestClient]:
     """Create a FastAPI test client with test context."""
     config = NexusServiceConfig(
         service_dir=None,
@@ -47,18 +31,11 @@ def app_client(test_db: sqlite3.Connection) -> Iterator[TestClient]:
 
     env = NexusServiceEnv()
     _logger = create_service_logger(log_dir=None, name="nexus_test")
-    print(type(_logger))
-    print(isinstance(_logger, logger.NexusServiceLogger))
-    print("##" * 100)
-
-    context = NexusServiceContext(db=test_db, config=config, env=env, logger=_logger)
-
+    _db = create_connection(_logger, ":memory:")
+    context = NexusServiceContext(db=_db, config=config, env=env, logger=_logger)
     app = create_app(ctx=context)
 
-    # Use TestClient as a context manager to properly trigger lifespan events
-    # This ensures the scheduler starts before tests run
     with TestClient(app) as client:
-        # Give the scheduler a moment to initialize
         time.sleep(0.1)
         _logger.info("Test client created with lifespan context")
         yield client

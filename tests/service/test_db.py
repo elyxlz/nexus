@@ -15,8 +15,8 @@ from nexus.service.core.db import (
     remove_blacklisted_gpu,
     update_job,
 )
+from nexus.service.core.job import create_job
 from nexus.service.core.logger import NexusServiceLogger, create_service_logger
-from nexus.service.job import create_job
 
 
 @pytest.fixture
