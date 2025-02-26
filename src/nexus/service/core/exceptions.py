@@ -2,6 +2,8 @@ import functools
 import typing as tp
 from collections import abc
 
+from nexus.service.core import logger
+
 __all__ = [
     "NexusServiceError",
     "ConfigurationError",
@@ -57,11 +59,6 @@ class WebhookError(NexusServiceError):
     ERROR_CODE = "WEBHOOK_ERROR"
 
 
-class NexusServiceLogger:
-    def error(self, message: str) -> None:
-        pass
-
-
 T = tp.TypeVar("T")
 E = tp.TypeVar("E", bound=Exception)
 
@@ -76,20 +73,20 @@ def handle_exception(
     def decorator(func: abc.Callable[..., T]) -> abc.Callable[..., T | tp.Any]:
         @functools.wraps(func)
         def wrapper(*args: tp.Any, **kwargs: tp.Any) -> T | tp.Any:
-            logger = None
+            _logger = None
 
             for arg in args:
-                if isinstance(arg, NexusServiceLogger):
-                    logger = arg
+                if isinstance(arg, logger.NexusServiceLogger):
+                    _logger = arg
                     break
 
-            if logger is None:
+            if _logger is None:
                 for arg_name, arg_value in kwargs.items():
-                    if isinstance(arg_value, NexusServiceLogger) or (arg_name == "_logger" and arg_value is not None):
-                        logger = arg_value
+                    if isinstance(arg_value, logger.NexusServiceLogger):
+                        _logger = arg_value
                         break
 
-            if logger is None:
+            if _logger is None:
                 raise ValueError(f"Function '{func.__name__}' requires a NexusServiceLogger parameter")
 
             try:
@@ -97,7 +94,7 @@ def handle_exception(
             except Exception as e:
                 if isinstance(e, source_exception):
                     error_msg = f"{message}: {str(e)}"
-                    logger.error(error_msg)
+                    _logger.error(error_msg)
 
                     if target_exception is not None:
                         new_err_msg = f"{error_msg} (converted from {type(e).__name__})"

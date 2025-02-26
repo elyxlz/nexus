@@ -21,6 +21,7 @@ def create_app(ctx: context.NexusServiceContext) -> fa.FastAPI:
 
     @contextlib.asynccontextmanager
     async def lifespan(app: fa.FastAPI):
+        ctx.logger.info("scheduler starting")
         scheduler_task = asyncio.create_task(scheduler.scheduler_loop(ctx=app.state.ctx))
         try:
             yield
@@ -59,8 +60,8 @@ def main():
         log_dir = config.get_log_dir(_config.service_dir)
         setup.create_persistent_directory(_config, _env=_env)
 
-    _db = db.create_connection(db_path=db_path)
     _logger = logger.create_service_logger(log_dir, name="nexus_service", log_level=_config.log_level)
+    _db = db.create_connection(_logger, db_path=db_path)
 
     ctx = context.NexusServiceContext(db=_db, config=_config, env=_env, logger=_logger)
 

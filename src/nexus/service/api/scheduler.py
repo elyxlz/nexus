@@ -55,7 +55,7 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
                 last_lines = job.get_job_logs(ctx.logger, job_dir=_job.dir, last_n_lines=20)
                 if last_lines:
                     ctx.logger.error(f"Last 20 lines of job log:\n{''.join(last_lines)}")
-        db.update_job(conn=ctx.db, job=updated_job)
+        db.update_job(ctx.logger, conn=ctx.db, job=updated_job)
 
 
 @db.safe_transaction
@@ -75,7 +75,7 @@ async def update_wandb_urls(ctx: context.NexusServiceContext) -> None:
 
         if wandb_url:
             updated = dc.replace(_job, wandb_url=wandb_url)
-            db.update_job(conn=ctx.db, job=updated)
+            db.update_job(ctx.logger, conn=ctx.db, job=updated)
             ctx.logger.info(f"Associated job {_job.id} with W&B run: {wandb_url}")
 
             if ctx.config.webhooks_enabled:
@@ -95,7 +95,7 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
         for g in gpu.get_gpus(
             ctx.logger,
             running_jobs=db.list_jobs(ctx.logger, conn=ctx.db, status="running"),
-            blacklisted_gpus=db.list_blacklisted_gpus(ctx.db),
+            blacklisted_gpus=db.list_blacklisted_gpus(ctx.logger, conn=ctx.db),
             mock_gpus=ctx.config.mock_gpus,
         )
         if gpu.is_gpu_available(g)
@@ -104,7 +104,6 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
     if not available_gpus:
         running_count = len(db.list_jobs(ctx.logger, conn=ctx.db, status="running"))
         ctx.logger.debug(f"No available GPUs. {running_count} jobs running")
-        return
 
     for gpu_instance in available_gpus:
         if not queued_jobs:
@@ -125,7 +124,7 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
             job_env=ctx.env.model_dump(),
         )
 
-        db.update_job(conn=ctx.db, job=started)
+        db.update_job(ctx.logger, conn=ctx.db, job=started)
         ctx.logger.info(format.format_job_action(started, action="started"))
 
         if ctx.config.webhooks_enabled:

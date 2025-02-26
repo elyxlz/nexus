@@ -7,21 +7,18 @@ __all__ = ["format_runtime", "format_timestamp", "calculate_runtime", "format_jo
 
 
 def format_runtime(seconds: float) -> str:
-    """Format runtime in seconds to h m s."""
     m, s = divmod(int(seconds), 60)
     h, m = divmod(m, 60)
     return f"{h}h {m}m {s}s"
 
 
 def format_timestamp(timestamp: float | None) -> str:
-    """Format timestamp to human-readable string."""
     if not timestamp:
         return "Unknown"
     return dt.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def calculate_runtime(job: schemas.Job) -> float:
-    """Calculate runtime from job timestamps."""
     if not job.started_at:
         return 0.0
     if job.status == "completed" and job.completed_at:
@@ -32,7 +29,6 @@ def calculate_runtime(job: schemas.Job) -> float:
 
 
 def format_job_action(job: schemas.Job, action: tp.Literal["added", "started", "completed", "failed"]) -> str:
-    """Format a job action log message with consistent structure."""
     runtime = calculate_runtime(job)
     gpu_info = f" on GPU {job.gpu_index}" if job.gpu_index is not None else ""
     time_info = ""

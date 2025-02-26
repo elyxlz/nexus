@@ -24,7 +24,7 @@ __all__ = [
 def create_connection(_logger: logger.NexusServiceLogger, db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    create_tables(_logger=_logger, conn=conn)
+    create_tables(_logger, conn=conn)
     return conn
 
 
@@ -178,7 +178,7 @@ def _query_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
 
 def get_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job | None:
     _validate_job_id(job_id)
-    return _query_job(_logger=_logger, conn=conn, job_id=job_id)
+    return _query_job(_logger, conn=conn, job_id=job_id)
 
 
 def _validate_job_status(status: str | None) -> None:
@@ -203,7 +203,7 @@ def list_jobs(
     _logger: logger.NexusServiceLogger, conn: sqlite3.Connection, status: str | None = None
 ) -> list[schemas.Job]:
     _validate_job_status(status)
-    return _query_jobs(_logger=_logger, conn=conn, status=status)
+    return _query_jobs(_logger, conn=conn, status=status)
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job status")
@@ -232,9 +232,9 @@ def _delete_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, jo
 
 def delete_queued_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> bool:
     _validate_job_id(job_id)
-    status = _check_job_status(_logger=_logger, conn=conn, job_id=job_id)
+    status = _check_job_status(_logger, conn=conn, job_id=job_id)
     _verify_job_is_queued(job_id, status)
-    return _delete_job(_logger=_logger, conn=conn, job_id=job_id)
+    return _delete_job(_logger, conn=conn, job_id=job_id)
 
 
 def _validate_gpu_index(gpu_index: int) -> None:
@@ -254,7 +254,7 @@ def _add_gpu_to_blacklist(_logger: logger.NexusServiceLogger, conn: sqlite3.Conn
 
 def add_blacklisted_gpu(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
     _validate_gpu_index(gpu_index)
-    return _add_gpu_to_blacklist(_logger=_logger, conn=conn, gpu_index=gpu_index)
+    return _add_gpu_to_blacklist(_logger, conn=conn, gpu_index=gpu_index)
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to remove GPU from blacklist")
@@ -269,7 +269,7 @@ def _remove_gpu_from_blacklist(_logger: logger.NexusServiceLogger, conn: sqlite3
 
 def remove_blacklisted_gpu(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
     _validate_gpu_index(gpu_index)
-    return _remove_gpu_from_blacklist(_logger=_logger, conn=conn, gpu_index=gpu_index)
+    return _remove_gpu_from_blacklist(_logger, conn=conn, gpu_index=gpu_index)
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list blacklisted GPUs")

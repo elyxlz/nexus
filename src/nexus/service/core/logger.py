@@ -24,6 +24,7 @@ def create_service_logger(
     backup_count: int = 5,
     console_output: bool = True,
 ) -> NexusServiceLogger:
+    logging.setLoggerClass(NexusServiceLogger)
     log_level_map = {
         "debug": logging.DEBUG,
         "info": logging.INFO,

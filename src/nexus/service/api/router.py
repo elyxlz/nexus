@@ -42,10 +42,10 @@ def get_context(request: fa.Request) -> context.NexusServiceContext:
 @router.get("/v1/service/status", response_model=models.ServiceStatusResponse)
 async def get_status(ctx: context.NexusServiceContext = fa.Depends(get_context)):
     # Get jobs from the database with specific status filters
-    queued_jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db, status="queued")
-    running_jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db, status="running")
-    completed_jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db, status="completed")
-    failed_jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db, status="failed")
+    queued_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="queued")
+    running_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
+    completed_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="completed")
+    failed_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="failed")
 
     # Count jobs by status directly using database queries
     queued = len(queued_jobs)
@@ -53,7 +53,7 @@ async def get_status(ctx: context.NexusServiceContext = fa.Depends(get_context))
     completed = len(completed_jobs) + len(failed_jobs)
 
     # For GPU info, pass the list of running jobs and blacklisted GPUs
-    blacklisted = db.list_blacklisted_gpus(_logger=ctx.logger, conn=ctx.db)
+    blacklisted = db.list_blacklisted_gpus(ctx.logger, conn=ctx.db)
     gpus = gpu.get_gpus(
         ctx.logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
     )
@@ -96,7 +96,7 @@ async def list_jobs(
     gpu_index: int | None = None,
     ctx: context.NexusServiceContext = fa.Depends(get_context),
 ):
-    jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db, status=status)
+    jobs = db.list_jobs(ctx.logger, conn=ctx.db, status=status)
     if gpu_index is not None:
         jobs = [j for j in jobs if j.gpu_index == gpu_index]
     ctx.logger.info(f"Found {len(jobs)} jobs matching criteria")
@@ -132,7 +132,7 @@ async def add_jobs(job_request: models.JobsRequest, ctx: context.NexusServiceCon
         )
 
         # Add to database
-        db.add_job(_logger=ctx.logger, conn=ctx.db, job=j)
+        db.add_job(ctx.logger, conn=ctx.db, job=j)
         ctx.logger.info(format.format_job_action(j, action="added"))
         new_jobs.append(j)
 
@@ -186,7 +186,7 @@ async def kill_running_jobs(job_ids: list[str], ctx: context.NexusServiceContext
                 continue
 
             updated = dc.replace(_job, marked_for_kill=True)
-            db.update_job(_logger=ctx.logger, conn=ctx.db, job=updated)
+            db.update_job(ctx.logger, conn=ctx.db, job=updated)
             killed.append(_job.id)
             ctx.logger.info(f"Marked job {_job.id} for termination")
 
@@ -279,8 +279,8 @@ async def remove_gpu_blacklist(gpu_indexes: list[int], ctx: context.NexusService
 
 @router.get("/v1/gpus", response_model=list[gpu.GpuInfo])
 async def list_gpus(ctx: context.NexusServiceContext = fa.Depends(get_context)):
-    running_jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db, status="running")
-    blacklisted = db.list_blacklisted_gpus(_logger=ctx.logger, conn=ctx.db)
+    running_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
+    blacklisted = db.list_blacklisted_gpus(ctx.logger, conn=ctx.db)
 
     gpus = gpu.get_gpus(
         ctx.logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus

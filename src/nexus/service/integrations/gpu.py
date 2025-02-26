@@ -120,7 +120,7 @@ def _process_gpu_line(
     _logger: logger.NexusServiceLogger,
 ) -> GpuInfo:
     return parse_gpu_line(
-        _logger=_logger,
+        _logger,
         line=line,
         gpu_processes=gpu_processes,
         blacklisted_gpus=blacklisted_set,

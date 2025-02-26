@@ -157,6 +157,7 @@ async def _launch_screen_process(
     _logger: logger.NexusServiceLogger, session_name: str, script_path: str, env: dict[str, str]
 ) -> None:
     process = await asyncio.create_subprocess_exec("screen", "-dmS", session_name, script_path, env=env)
+    await process.wait()  # Wait for process to complete
 
     if process.returncode is not None and process.returncode != 0:
         raise exc.JobError(message=f"Screen process exited with code {process.returncode}")
