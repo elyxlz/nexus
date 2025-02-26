@@ -25,6 +25,8 @@ class NexusServiceConfig(pyds.BaseSettings):
     host: str = pyd.Field(default="localhost")
     port: int = pyd.Field(default=54323)
     webhooks_enabled: bool = pyd.Field(default=False)
+    webhook_url: str = pyd.Field(default="")
+    webhook_state_path: pl.Path = pyd.Field(default=pl.Path("/tmp/webhook_state.json"))
     node_name: str | None = pyd.Field(default=None)
     log_level: str = pyd.Field(default="info")
     mock_gpus: bool = pyd.Field(default=False)

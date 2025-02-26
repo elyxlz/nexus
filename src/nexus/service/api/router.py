@@ -106,20 +106,16 @@ async def list_jobs(
 @db.safe_transaction
 @router.post("/v1/jobs", response_model=list[schemas.Job])
 async def add_jobs(job_request: models.JobsRequest, ctx: context.NexusServiceContext = fa.Depends(get_context)):
-    # Validate git URL
     if not git.validate_git_url(job_request.git_repo_url):
         ctx.logger.error(f"Invalid git URL format: {job_request.git_repo_url}")
         raise exc.GitError(message="Invalid git repository URL format")
 
-    # Check for commands
     if not job_request.commands:
         ctx.logger.error("No commands provided in job request")
         raise exc.JobError(message="No commands provided to create jobs")
 
-    # Normalize the URL
     norm_url = git.normalize_git_url(job_request.git_repo_url)
 
-    # Create and add jobs to database
     new_jobs = []
     for command in job_request.commands:
         # Create job instance
@@ -131,7 +127,6 @@ async def add_jobs(job_request: models.JobsRequest, ctx: context.NexusServiceCon
             discord_id=job_request.discord_id,
         )
 
-        # Add to database
         db.add_job(ctx.logger, conn=ctx.db, job=j)
         ctx.logger.info(format.format_job_action(j, action="added"))
         new_jobs.append(j)

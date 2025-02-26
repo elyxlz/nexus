@@ -46,10 +46,10 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
 
             if ctx.config.webhooks_enabled:
                 if action == "completed":
-                    await webhooks.notify_job_completed(ctx.logger, job=_job)
+                    await webhooks.notify_job_completed(ctx.logger, webhook_url=ctx.config.webhook_url, job=_job)
                 elif action == "failed":
                     job_logs = job.get_job_logs(ctx.logger, job_dir=_job.dir, last_n_lines=20)
-                    await webhooks.notify_job_failed(ctx.logger, job=_job, job_logs=job_logs)
+                    await webhooks.notify_job_failed(ctx.logger, webhook_url=ctx.config.webhook_url, job=_job, job_logs=job_logs)
 
             if action == "failed":
                 last_lines = job.get_job_logs(ctx.logger, job_dir=_job.dir, last_n_lines=20)
@@ -79,7 +79,7 @@ async def update_wandb_urls(ctx: context.NexusServiceContext) -> None:
             ctx.logger.info(f"Associated job {_job.id} with W&B run: {wandb_url}")
 
             if ctx.config.webhooks_enabled:
-                await webhooks.update_job_wandb(ctx.logger, job=updated)
+                await webhooks.update_job_wandb(ctx.logger, webhook_url=ctx.config.webhook_url, job=updated, state_path=ctx.config.webhook_state_path)
 
 
 @db.safe_transaction
@@ -128,9 +128,8 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
         ctx.logger.info(format.format_job_action(started, action="started"))
 
         if ctx.config.webhooks_enabled:
-            await webhooks.notify_job_started(ctx.logger, job=started)
+            await webhooks.notify_job_started(ctx.logger, webhook_url=ctx.config.webhook_url, job=started, state_path=ctx.config.webhook_state_path)
 
-    ctx.db.commit()
     remaining = len(db.list_jobs(ctx.logger, conn=ctx.db, status="queued"))
     ctx.logger.info(f"Started jobs on available GPUs; remaining queued jobs: {remaining}")
 
