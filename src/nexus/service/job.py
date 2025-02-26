@@ -10,7 +10,7 @@ import time
 import base58
 
 from nexus.service.core import exceptions as exc
-from nexus.service.core import logger, models
+from nexus.service.core import logger, schemas
 
 __all__ = [
     "generate_job_id",
@@ -38,10 +38,10 @@ def get_job_session_name(job_id: str) -> str:
     return f"nexus_job_{job_id}"
 
 
-def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None, discord_id: str | None) -> models.Job:
+def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None, discord_id: str | None) -> schemas.Job:
     job_id = generate_job_id()
 
-    return models.Job(
+    return schemas.Job(
         id=job_id,
         command=command.strip(),
         status="queued",
@@ -166,11 +166,11 @@ async def _launch_screen_process(
 
 async def async_start_job(
     _logger: logger.NexusServiceLogger,
-    job: models.Job,
+    job: schemas.Job,
     gpu_index: int,
     github_token: str | None,
     job_env: dict[str, str],
-) -> models.Job:
+) -> schemas.Job:
     # Validate job directory
     if job.dir is None:
         raise exc.JobError(message=f"Job directory not set for job {job.id}")
@@ -221,7 +221,7 @@ def is_job_session_running(_logger: logger.NexusServiceLogger, job_id: str) -> b
     return session_name in output
 
 
-def end_job(_logger: logger.NexusServiceLogger, _job: models.Job, killed: bool) -> models.Job:
+def end_job(_logger: logger.NexusServiceLogger, _job: schemas.Job, killed: bool) -> schemas.Job:
     if is_job_session_running(_logger, _job.id):
         return _job
 

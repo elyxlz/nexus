@@ -7,7 +7,7 @@ import aiohttp
 import pydantic as pyd
 
 from nexus.service.core import exceptions as exc
-from nexus.service.core import logger, models
+from nexus.service.core import logger, schemas
 
 __all__ = ["notify_job_started", "update_job_wandb", "notify_job_completed", "notify_job_failed"]
 
@@ -39,7 +39,7 @@ def save_webhook_state(_logger: logger.NexusServiceLogger, state: WebhookState, 
     state_path.write_text(json.dumps({"message_ids": state.message_ids}))
 
 
-def format_job_message_for_webhook(job: models.Job, event_type: tp.Literal["started", "completed", "failed"]) -> dict:
+def format_job_message_for_webhook(job: schemas.Job, event_type: tp.Literal["started", "completed", "failed"]) -> dict:
     if job.discord_id:
         user_mention = f"<@{job.discord_id}>"
     elif job.user:
@@ -130,7 +130,7 @@ async def edit_webhook_message(
 
 @exc.handle_exception(exc.WebhookError, message="Error notifying job start")
 async def notify_job_started(
-    _logger: logger.NexusServiceLogger, webhook_url: str, job: models.Job, state_path: pl.Path
+    _logger: logger.NexusServiceLogger, webhook_url: str, job: schemas.Job, state_path: pl.Path
 ) -> None:
     message_data = format_job_message_for_webhook(job, "started")
 
@@ -146,7 +146,7 @@ async def notify_job_started(
 
 @exc.handle_exception(exc.WebhookError, message="Error updating job W&B info")
 async def update_job_wandb(
-    _logger: logger.NexusServiceLogger, webhook_url: str, job: models.Job, state_path: pl.Path
+    _logger: logger.NexusServiceLogger, webhook_url: str, job: schemas.Job, state_path: pl.Path
 ) -> None:
     if not job.wandb_url:
         _logger.debug(f"No W&B URL found for job {job.id}. Skipping update.")
@@ -162,14 +162,14 @@ async def update_job_wandb(
 
 
 @exc.handle_exception(exc.WebhookError, message="Error notifying job completion")
-async def notify_job_completed(_logger: logger.NexusServiceLogger, webhook_url: str, job: models.Job) -> None:
+async def notify_job_completed(_logger: logger.NexusServiceLogger, webhook_url: str, job: schemas.Job) -> None:
     message_data = format_job_message_for_webhook(job, "completed")
     await send_webhook(_logger, webhook_url, message_data)
 
 
 @exc.handle_exception(exc.WebhookError, message="Error notifying job failure")
 async def notify_job_failed(
-    _logger: logger.NexusServiceLogger, webhook_url: str, job: models.Job, job_logs: str | None
+    _logger: logger.NexusServiceLogger, webhook_url: str, job: schemas.Job, job_logs: str | None
 ) -> None:
     message_data = format_job_message_for_webhook(job, "failed")
 

@@ -1,7 +1,7 @@
 import datetime as dt
 import typing as tp
 
-from nexus.service.core import models
+from nexus.service.core import schemas
 
 __all__ = ["format_runtime", "format_timestamp", "calculate_runtime", "format_job_action"]
 
@@ -20,7 +20,7 @@ def format_timestamp(timestamp: float | None) -> str:
     return dt.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def calculate_runtime(job: models.Job) -> float:
+def calculate_runtime(job: schemas.Job) -> float:
     """Calculate runtime from job timestamps."""
     if not job.started_at:
         return 0.0
@@ -31,7 +31,7 @@ def calculate_runtime(job: models.Job) -> float:
     return 0.0
 
 
-def format_job_action(job: models.Job, action: tp.Literal["added", "started", "completed", "failed"]) -> str:
+def format_job_action(job: schemas.Job, action: tp.Literal["added", "started", "completed", "failed"]) -> str:
     """Format a job action log message with consistent structure."""
     runtime = calculate_runtime(job)
     gpu_info = f" on GPU {job.gpu_index}" if job.gpu_index is not None else ""

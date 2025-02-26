@@ -9,8 +9,8 @@ import pathlib as pl
 import fastapi as fa
 
 from nexus.service import job
-from nexus.service.api import schemas
-from nexus.service.core import context, db, models
+from nexus.service.api import models
+from nexus.service.core import context, db, schemas
 from nexus.service.core import exceptions as exc
 from nexus.service.integrations import git, gpu
 from nexus.service.utils import format
@@ -39,7 +39,7 @@ def get_context(request: fa.Request) -> context.NexusServiceContext:
     return request.app.state.ctx
 
 
-@router.get("/v1/service/status", response_model=schemas.ServiceStatusResponse)
+@router.get("/v1/service/status", response_model=models.ServiceStatusResponse)
 async def get_status(ctx: context.NexusServiceContext = fa.Depends(get_context)):
     # Get jobs from the database with specific status filters
     queued_jobs = db.list_jobs(_logger=ctx.logger, conn=ctx.db, status="queued")
@@ -58,7 +58,7 @@ async def get_status(ctx: context.NexusServiceContext = fa.Depends(get_context))
         ctx.logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
     )
 
-    response = schemas.ServiceStatusResponse(
+    response = models.ServiceStatusResponse(
         running=True,
         gpu_count=len(gpus),
         queued_jobs=queued,
@@ -71,7 +71,7 @@ async def get_status(ctx: context.NexusServiceContext = fa.Depends(get_context))
     return response
 
 
-@router.get("/v1/service/logs", response_model=schemas.ServiceLogsResponse)
+@router.get("/v1/service/logs", response_model=models.ServiceLogsResponse)
 async def get_service_logs(ctx: context.NexusServiceContext = fa.Depends(get_context)):
     logs: str = ""
 
@@ -87,10 +87,10 @@ async def get_service_logs(ctx: context.NexusServiceContext = fa.Depends(get_con
         ctx.logger.warning("Could not retrieve log content from logger handlers")
 
     ctx.logger.info(f"Service logs retrieved, size: {len(logs)} characters")
-    return schemas.ServiceLogsResponse(logs=logs)
+    return models.ServiceLogsResponse(logs=logs)
 
 
-@router.get("/v1/jobs", response_model=list[models.Job])
+@router.get("/v1/jobs", response_model=list[schemas.Job])
 async def list_jobs(
     status: str | None = None,
     gpu_index: int | None = None,
@@ -104,8 +104,8 @@ async def list_jobs(
 
 
 @db.safe_transaction
-@router.post("/v1/jobs", response_model=list[models.Job])
-async def add_jobs(job_request: schemas.JobsRequest, ctx: context.NexusServiceContext = fa.Depends(get_context)):
+@router.post("/v1/jobs", response_model=list[schemas.Job])
+async def add_jobs(job_request: models.JobsRequest, ctx: context.NexusServiceContext = fa.Depends(get_context)):
     # Validate git URL
     if not git.validate_git_url(job_request.git_repo_url):
         ctx.logger.error(f"Invalid git URL format: {job_request.git_repo_url}")
@@ -140,7 +140,7 @@ async def add_jobs(job_request: schemas.JobsRequest, ctx: context.NexusServiceCo
     return new_jobs
 
 
-@router.get("/v1/jobs/{job_id}", response_model=models.Job)
+@router.get("/v1/jobs/{job_id}", response_model=schemas.Job)
 async def get_job(job_id: str, ctx: context.NexusServiceContext = fa.Depends(get_context)):
     job_instance = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
     if not job_instance:
@@ -150,7 +150,7 @@ async def get_job(job_id: str, ctx: context.NexusServiceContext = fa.Depends(get
     return job_instance
 
 
-@router.get("/v1/jobs/{job_id}/logs", response_model=schemas.JobLogsResponse)
+@router.get("/v1/jobs/{job_id}/logs", response_model=models.JobLogsResponse)
 async def get_job_logs_endpoint(job_id: str, ctx: context.NexusServiceContext = fa.Depends(get_context)):
     _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
     if not _job:
@@ -160,28 +160,28 @@ async def get_job_logs_endpoint(job_id: str, ctx: context.NexusServiceContext = 
     logs = job.get_job_logs(ctx.logger, job_dir=_job.dir)
     logs = logs or ""
     ctx.logger.info(f"Retrieved logs for job {job_id}, size: {len(logs)} characters")
-    return schemas.JobLogsResponse(logs=logs)
+    return models.JobLogsResponse(logs=logs)
 
 
 @db.safe_transaction
-@router.delete("/v1/jobs/running", response_model=schemas.JobActionResponse)
+@router.delete("/v1/jobs/running", response_model=models.JobActionResponse)
 async def kill_running_jobs(job_ids: list[str], ctx: context.NexusServiceContext = fa.Depends(get_context)):
     if not job_ids:
         raise exc.JobError(message="No job IDs provided")
 
     killed: list[str] = []
-    failed: list[schemas.JobActionError] = []
+    failed: list[models.JobActionError] = []
 
     for job_id in job_ids:
         try:
             _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
             if not _job:
-                failed.append(schemas.JobActionError(id=job_id, error="Job not found"))
+                failed.append(models.JobActionError(id=job_id, error="Job not found"))
                 continue
 
             if _job.status != "running":
                 failed.append(
-                    schemas.JobActionError(id=_job.id, error=f"Job is not running (current status: {_job.status})")
+                    models.JobActionError(id=_job.id, error=f"Job is not running (current status: {_job.status})")
                 )
                 continue
 
@@ -192,24 +192,24 @@ async def kill_running_jobs(job_ids: list[str], ctx: context.NexusServiceContext
 
         except exc.JobError as e:
             if "not found" in str(e).lower():
-                failed.append(schemas.JobActionError(id=job_id, error="Job not found"))
+                failed.append(models.JobActionError(id=job_id, error="Job not found"))
             else:
-                failed.append(schemas.JobActionError(id=job_id, error=e.message))
+                failed.append(models.JobActionError(id=job_id, error=e.message))
         except Exception as e:
             ctx.logger.error(f"Unexpected error killing job {job_id}: {e}")
-            failed.append(schemas.JobActionError(id=job_id, error=f"Internal error: {str(e)}"))
+            failed.append(models.JobActionError(id=job_id, error=f"Internal error: {str(e)}"))
 
-    return schemas.JobActionResponse(killed=killed, failed=failed)
+    return models.JobActionResponse(killed=killed, failed=failed)
 
 
 @db.safe_transaction
-@router.delete("/v1/jobs/queued", response_model=schemas.JobQueueActionResponse)
+@router.delete("/v1/jobs/queued", response_model=models.JobQueueActionResponse)
 async def remove_queued_jobs(job_ids: list[str], ctx: context.NexusServiceContext = fa.Depends(get_context)):
     if not job_ids:
         raise exc.JobError(message="No job IDs provided")
 
     removed: list[str] = []
-    failed: list[schemas.JobQueueActionError] = []
+    failed: list[models.JobQueueActionError] = []
 
     for job_id in job_ids:
         try:
@@ -218,24 +218,24 @@ async def remove_queued_jobs(job_ids: list[str], ctx: context.NexusServiceContex
             ctx.logger.info(f"Removed queued job {job_id}")
         except exc.JobError as e:
             if "not found" in str(e).lower():
-                failed.append(schemas.JobQueueActionError(id=job_id, error="Job not found"))
+                failed.append(models.JobQueueActionError(id=job_id, error="Job not found"))
             else:
-                failed.append(schemas.JobQueueActionError(id=job_id, error=e.message))
+                failed.append(models.JobQueueActionError(id=job_id, error=e.message))
         except Exception as e:
             ctx.logger.error(f"Unexpected error removing job {job_id}: {e}")
-            failed.append(schemas.JobQueueActionError(id=job_id, error=f"Internal error: {str(e)}"))
+            failed.append(models.JobQueueActionError(id=job_id, error=f"Internal error: {str(e)}"))
 
-    return schemas.JobQueueActionResponse(removed=removed, failed=failed)
+    return models.JobQueueActionResponse(removed=removed, failed=failed)
 
 
 @db.safe_transaction
-@router.post("/v1/gpus/blacklist", response_model=schemas.GpuActionResponse)
+@router.post("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
 async def blacklist_gpus(gpu_indexes: list[int], ctx: context.NexusServiceContext = fa.Depends(get_context)):
     if not gpu_indexes:
         raise exc.GPUError(message="No GPU indexes provided")
 
     successful: list[int] = []
-    failed: list[schemas.GpuActionError] = []
+    failed: list[models.GpuActionError] = []
 
     for _gpu in gpu_indexes:
         try:
@@ -244,21 +244,21 @@ async def blacklist_gpus(gpu_indexes: list[int], ctx: context.NexusServiceContex
                 successful.append(_gpu)
                 ctx.logger.info(f"Blacklisted GPU {_gpu}")
             else:
-                failed.append(schemas.GpuActionError(index=_gpu, error="GPU already blacklisted"))
+                failed.append(models.GpuActionError(index=_gpu, error="GPU already blacklisted"))
         except exc.GPUError as e:
-            failed.append(schemas.GpuActionError(index=_gpu, error=e.message))
+            failed.append(models.GpuActionError(index=_gpu, error=e.message))
 
-    return schemas.GpuActionResponse(blacklisted=successful, failed=failed, removed=None)
+    return models.GpuActionResponse(blacklisted=successful, failed=failed, removed=None)
 
 
 @db.safe_transaction
-@router.delete("/v1/gpus/blacklist", response_model=schemas.GpuActionResponse)
+@router.delete("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
 async def remove_gpu_blacklist(gpu_indexes: list[int], ctx: context.NexusServiceContext = fa.Depends(get_context)):
     if not gpu_indexes:
         raise exc.GPUError(message="No GPU indexes provided")
 
     removed: list[int] = []
-    failed: list[schemas.GpuActionError] = []
+    failed: list[models.GpuActionError] = []
 
     for _gpu in gpu_indexes:
         try:
@@ -267,14 +267,14 @@ async def remove_gpu_blacklist(gpu_indexes: list[int], ctx: context.NexusService
                 removed.append(_gpu)
                 ctx.logger.info(f"Removed GPU {_gpu} from blacklist")
             else:
-                failed.append(schemas.GpuActionError(index=_gpu, error="GPU not in blacklist"))
+                failed.append(models.GpuActionError(index=_gpu, error="GPU not in blacklist"))
         except exc.GPUError as e:
-            failed.append(schemas.GpuActionError(index=_gpu, error=e.message))
+            failed.append(models.GpuActionError(index=_gpu, error=e.message))
         except Exception as e:
             ctx.logger.error(f"Unexpected error removing GPU {_gpu} from blacklist: {e}")
-            failed.append(schemas.GpuActionError(index=_gpu, error=f"Internal error: {str(e)}"))
+            failed.append(models.GpuActionError(index=_gpu, error=f"Internal error: {str(e)}"))
 
-    return schemas.GpuActionResponse(removed=removed, failed=failed, blacklisted=None)
+    return models.GpuActionResponse(removed=removed, failed=failed, blacklisted=None)
 
 
 @router.get("/v1/gpus", response_model=list[gpu.GpuInfo])
@@ -290,7 +290,7 @@ async def list_gpus(ctx: context.NexusServiceContext = fa.Depends(get_context)):
     return gpus
 
 
-@router.post("/v1/service/stop", response_model=schemas.ServiceActionResponse)
+@router.post("/v1/service/stop", response_model=models.ServiceActionResponse)
 async def stop_service(ctx: context.NexusServiceContext = fa.Depends(get_context)):
     async def shutdown_service():
         await asyncio.sleep(1)
@@ -298,4 +298,4 @@ async def stop_service(ctx: context.NexusServiceContext = fa.Depends(get_context
 
     ctx.logger.info("Service shutdown initiated by API request")
     asyncio.create_task(shutdown_service())
-    return schemas.ServiceActionResponse(status="stopping")
+    return models.ServiceActionResponse(status="stopping")

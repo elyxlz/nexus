@@ -3,7 +3,7 @@ import subprocess
 import typing as tp
 
 from nexus.service.core import exceptions as exc
-from nexus.service.core import logger, models
+from nexus.service.core import logger, schemas
 
 __all__ = ["GpuInfo", "get_gpus", "is_gpu_available"]
 
@@ -129,7 +129,7 @@ def _process_gpu_line(
 
 
 def get_gpus(
-    _logger: logger.NexusServiceLogger, running_jobs: list[models.Job], blacklisted_gpus: list[int], mock_gpus: bool
+    _logger: logger.NexusServiceLogger, running_jobs: list[schemas.Job], blacklisted_gpus: list[int], mock_gpus: bool
 ) -> list[GpuInfo]:
     if mock_gpus:
         _logger.debug("MOCK_GPUS parameter is True. Returning mock GPU information.")
@@ -154,7 +154,7 @@ def get_gpus(
 
 
 def get_mock_gpus(
-    _logger: logger.NexusServiceLogger, running_jobs: list[models.Job], blacklisted_gpus: list[int]
+    _logger: logger.NexusServiceLogger, running_jobs: list[schemas.Job], blacklisted_gpus: list[int]
 ) -> list[GpuInfo]:
     _logger.debug("Generating mock GPUs")
     running_jobs_idxs = {tp.cast(int, j.gpu_index): j.id for j in running_jobs}

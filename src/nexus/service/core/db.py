@@ -3,7 +3,7 @@ import pathlib as pl
 import sqlite3
 import typing as tp
 
-from nexus.service.core import context, logger, models
+from nexus.service.core import context, logger, schemas
 from nexus.service.core import exceptions as exc
 
 __all__ = [
@@ -59,8 +59,8 @@ def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) 
     conn.commit()
 
 
-def row_to_job(row: sqlite3.Row) -> models.Job:
-    return models.Job(
+def row_to_job(row: sqlite3.Row) -> schemas.Job:
+    return schemas.Job(
         id=row["id"],
         command=row["command"],
         git_repo_url=row["git_repo_url"],
@@ -82,7 +82,7 @@ def row_to_job(row: sqlite3.Row) -> models.Job:
 
 @exc.handle_exception(sqlite3.IntegrityError, exc.JobError, message="Job already exists")
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add job to database")
-def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: models.Job) -> None:
+def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
     cur.execute(
         """
@@ -115,7 +115,7 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: m
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to update job")
-def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: models.Job) -> None:
+def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
     cur.execute(
         """
@@ -167,7 +167,7 @@ def _validate_job_id(job_id: str) -> None:
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job")
-def _query_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> models.Job | None:
+def _query_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job | None:
     cur = conn.cursor()
     cur.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
     row = cur.fetchone()
@@ -176,7 +176,7 @@ def _query_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
     return None
 
 
-def get_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> models.Job | None:
+def get_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job | None:
     _validate_job_id(job_id)
     return _query_job(_logger=_logger, conn=conn, job_id=job_id)
 
@@ -189,7 +189,7 @@ def _validate_job_status(status: str | None) -> None:
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list jobs")
-def _query_jobs(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, status: str | None) -> list[models.Job]:
+def _query_jobs(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, status: str | None) -> list[schemas.Job]:
     cur = conn.cursor()
     if status is not None:
         cur.execute("SELECT * FROM jobs WHERE status = ?", (status,))
@@ -201,7 +201,7 @@ def _query_jobs(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, st
 
 def list_jobs(
     _logger: logger.NexusServiceLogger, conn: sqlite3.Connection, status: str | None = None
-) -> list[models.Job]:
+) -> list[schemas.Job]:
     _validate_job_status(status)
     return _query_jobs(_logger=_logger, conn=conn, status=status)
 
