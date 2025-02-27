@@ -127,8 +127,6 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
             ctx.logger,
             job=_job,
             gpu_index=gpu_instance.index,
-            github_token=ctx.env.github_token,
-            job_env=ctx.env.model_dump(),
         )
 
         db.update_job(ctx.logger, conn=ctx.db, job=started)

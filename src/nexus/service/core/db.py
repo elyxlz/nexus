@@ -1,4 +1,5 @@
 import functools
+import json
 import pathlib as pl
 import re
 import sqlite3
@@ -51,7 +52,9 @@ def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) 
             marked_for_kill INTEGER,
             dir TEXT,
             webhook_message_id TEXT,
-            pid INTEGER
+            pid INTEGER,
+            pre_job_script TEXT,
+            environment_json TEXT
         )
     """)
     cur.execute("""
@@ -62,7 +65,14 @@ def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) 
     conn.commit()
 
 
-def row_to_job(row: sqlite3.Row) -> schemas.Job:
+@exc.handle_exception(json.JSONDecodeError, exc.DatabaseError, message="Invalid environment data in database")
+def _parse_environment(_logger: logger.NexusServiceLogger, env_json: str | None) -> dict[str, str]:
+    if not env_json:
+        return {}
+    return json.loads(env_json)
+
+
+def row_to_job(_logger: logger.NexusServiceLogger, row: sqlite3.Row) -> schemas.Job:
     return schemas.Job(
         id=row["id"],
         command=row["command"],
@@ -82,6 +92,8 @@ def row_to_job(row: sqlite3.Row) -> schemas.Job:
         dir=pl.Path(row["dir"]) if row["dir"] else None,
         webhook_message_id=row["webhook_message_id"],
         pid=row["pid"],
+        environment=_parse_environment(_logger, env_json=row["environment_json"]),
+        pre_job_script=row["pre_job_script"],
     )
 
 
@@ -89,15 +101,18 @@ def row_to_job(row: sqlite3.Row) -> schemas.Job:
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add job to database")
 def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
+    # Serialize environment to JSON if present
+    environment_json = json.dumps(job.environment) if job.environment else None
+
     cur.execute(
         """
         INSERT INTO jobs (
             id, command, git_repo_url, git_tag, status, created_at, 
             started_at, completed_at, gpu_index, exit_code, error_message, 
             wandb_url, user, discord_id, marked_for_kill, dir, webhook_message_id,
-            pid
+            pid, pre_job_script, environment_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (
             job.id,
@@ -118,6 +133,8 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: s
             str(job.dir) if job.dir else None,
             job.webhook_message_id,
             job.pid,
+            job.pre_job_script,
+            environment_json,
         ),
     )
 
@@ -125,6 +142,11 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: s
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to update job")
 def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
+
+    environment_json = None
+    if job.status == "queued" and job.environment:
+        environment_json = json.dumps(job.environment)
+
     cur.execute(
         """
         UPDATE jobs SET 
@@ -144,7 +166,9 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             marked_for_kill = ?,
             dir = ?,
             webhook_message_id = ?,
-            pid = ?
+            pid = ?,
+            pre_job_script = ?,
+            environment_json = ?
         WHERE id = ?
     """,
         (
@@ -165,6 +189,8 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             str(job.dir) if job.dir else None,
             job.webhook_message_id,
             job.pid,
+            job.pre_job_script,
+            environment_json,
             job.id,
         ),
     )
@@ -184,7 +210,7 @@ def _query_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
     cur.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
     row = cur.fetchone()
     if row:
-        return row_to_job(row)
+        return row_to_job(_logger, row=row)
     return None
 
 
@@ -231,7 +257,7 @@ def _query_jobs(
     # Execute query
     cur.execute(query, params)
     rows = cur.fetchall()
-    return [row_to_job(row) for row in rows]
+    return [row_to_job(_logger, row=row) for row in rows]
 
 
 def list_jobs(

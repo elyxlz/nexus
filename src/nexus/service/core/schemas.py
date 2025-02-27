@@ -27,3 +27,5 @@ class Job:
     discord_id: str | None
     marked_for_kill: bool
     webhook_message_id: str | None
+    environment: dict[str, str]
+    pre_job_script: str | None

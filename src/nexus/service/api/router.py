@@ -20,7 +20,7 @@ __all__ = [
     "get_status",
     "get_service_logs",
     "list_jobs",
-    "add_jobs",
+    "add_job",
     "get_job",
     "get_job_logs_endpoint",
     "kill_running_jobs",
@@ -104,35 +104,30 @@ async def list_jobs(
 
 
 @db.safe_transaction
-@router.post("/v1/jobs", response_model=list[schemas.Job])
-async def add_jobs(job_request: models.JobsRequest, ctx: context.NexusServiceContext = fa.Depends(get_context)):
+@router.post("/v1/jobs", response_model=schemas.Job)
+async def add_job(job_request: models.JobRequest, ctx: context.NexusServiceContext = fa.Depends(get_context)):
     if not git.validate_git_url(job_request.git_repo_url):
         ctx.logger.error(f"Invalid git URL format: {job_request.git_repo_url}")
         raise exc.GitError(message="Invalid git repository URL format")
 
-    if not job_request.commands:
-        ctx.logger.error("No commands provided in job request")
-        raise exc.JobError(message="No commands provided to create jobs")
-
     norm_url = git.normalize_git_url(job_request.git_repo_url)
 
-    new_jobs = []
-    for command in job_request.commands:
-        # Create job instance
-        j = job.create_job(
-            command=command,
-            git_repo_url=norm_url,
-            git_tag=job_request.git_tag,
-            user=job_request.user,
-            discord_id=job_request.discord_id,
-        )
+    # Create job instance
+    j = job.create_job(
+        command=job_request.command,
+        git_repo_url=norm_url,
+        git_tag=job_request.git_tag,
+        user=job_request.user,
+        discord_id=job_request.discord_id,
+        environment=job_request.environment,
+        pre_job_script=job_request.pre_job_script,
+    )
 
-        db.add_job(ctx.logger, conn=ctx.db, job=j)
-        ctx.logger.info(format.format_job_action(j, action="added"))
-        new_jobs.append(j)
+    db.add_job(ctx.logger, conn=ctx.db, job=j)
+    ctx.logger.info(format.format_job_action(j, action="added"))
 
-    ctx.logger.info(f"Added {len(new_jobs)} new jobs")
-    return new_jobs
+    ctx.logger.info(f"Added new job: {j.id}")
+    return j
 
 
 @router.get("/v1/jobs/{job_id}", response_model=schemas.Job)

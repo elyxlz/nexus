@@ -1,7 +1,7 @@
 import pydantic as pyd
 
 __all__ = [
-    "JobsRequest",
+    "JobRequest",
     "ServiceLogsResponse",
     "ServiceActionResponse",
     "JobLogsResponse",
@@ -19,12 +19,14 @@ class FrozenBaseModel(pyd.BaseModel):
     model_config = pyd.ConfigDict(frozen=True)
 
 
-class JobsRequest(FrozenBaseModel):
-    commands: list[str]
+class JobRequest(FrozenBaseModel):
+    command: str
     git_repo_url: str
     git_tag: str
     user: str | None = None
     discord_id: str | None = None
+    environment: dict[str, str] = {}
+    pre_job_script: str | None = None
 
 
 class ServiceLogsResponse(FrozenBaseModel):

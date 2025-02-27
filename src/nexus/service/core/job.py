@@ -39,7 +39,15 @@ def get_job_session_name(job_id: str) -> str:
     return f"nexus_job_{job_id}"
 
 
-def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None, discord_id: str | None) -> schemas.Job:
+def create_job(
+    command: str,
+    git_repo_url: str,
+    git_tag: str,
+    user: str | None,
+    discord_id: str | None,
+    environment: dict[str, str] = {},
+    pre_job_script: str | None = None,
+) -> schemas.Job:
     job_id = generate_job_id()
 
     return schemas.Job(
@@ -61,6 +69,8 @@ def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None, 
         marked_for_kill=False,
         pid=None,
         webhook_message_id=None,
+        environment=environment,
+        pre_job_script=pre_job_script,
     )
 
 
@@ -103,6 +113,7 @@ def _build_script_content(
     git_tag: str,
     command: str,
     askpass_path: pl.Path | None,
+    pre_job_script: str | None = None,
 ) -> str:
     script_lines = [
         "#!/bin/bash",
@@ -113,15 +124,23 @@ def _build_script_content(
     if askpass_path:
         script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
 
-    script_lines.extend(
-        [
-            'script -f -q -c "',
-            f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet '{git_repo_url}' '{job_repo_dir}'",
-            f"cd '{job_repo_dir}'",
-            f"{command}",
-            f'" "{log_file}"',
-        ]
-    )
+    # Build the script command content
+    script_command_lines = [
+        f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet '{git_repo_url}' '{job_repo_dir}'",
+        f"cd '{job_repo_dir}'",
+    ]
+
+    # Insert pre-job script if provided
+    if pre_job_script:
+        script_command_lines.append(pre_job_script)
+
+    # Add the main command
+    script_command_lines.append(command)
+
+    # Wrap with script command
+    script_lines.append('script -f -q -c "')
+    script_lines.extend(script_command_lines)
+    script_lines.append(f'" "{log_file}"')
 
     return "\n".join(script_lines)
 
@@ -144,8 +163,11 @@ def create_job_script(
     git_tag: str,
     command: str,
     askpass_path: pl.Path | None,
+    pre_job_script: str | None = None,
 ) -> pl.Path:
-    script_content = _build_script_content(log_file, job_repo_dir, git_repo_url, git_tag, command, askpass_path)
+    script_content = _build_script_content(
+        log_file, job_repo_dir, git_repo_url, git_tag, command, askpass_path, pre_job_script
+    )
     return _write_job_script(_logger, job_dir, script_content)
 
 
@@ -193,8 +215,6 @@ async def async_start_job(
     _logger: logger.NexusServiceLogger,
     job: schemas.Job,
     gpu_index: int,
-    github_token: str | None,
-    job_env: dict[str, str],
 ) -> schemas.Job:
     # Validate job directory
     if job.dir is None:
@@ -203,10 +223,11 @@ async def async_start_job(
     # Create directories
     log_file, job_repo_dir = create_directories(_logger, dir_path=job.dir)
 
-    # Set up environment
-    env = _build_environment(_logger, gpu_index=gpu_index, job_env=job_env)
+    # Use client-provided environment variables
+    env = _build_environment(_logger, gpu_index=gpu_index, job_env=job.environment)
 
-    # Set up GitHub token if provided
+    # Get GitHub token from environment if available
+    github_token = job.environment.get("GITHUB_TOKEN")
     askpass_path = setup_github_auth(_logger, dir_path=job.dir, github_token=github_token) if github_token else None
 
     # Create the job script
@@ -219,6 +240,7 @@ async def async_start_job(
         git_tag=job.git_tag,
         command=job.command,
         askpass_path=askpass_path,
+        pre_job_script=job.pre_job_script,
     )
 
     # Start the job

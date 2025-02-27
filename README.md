@@ -36,10 +36,12 @@
 - [x] cli: nx should also work
 - [x] use PID to monitor and control jobs
 - [x] regex filtering directly on api
-- [ ] working installation and user setup
+- [x] working installation and user setup
+- [x] pre job script
+- [x] make user pass env
+- [x] let user pass webhook information (e.g. discord)
+- [x] let user pass env for job (or jobrc or something)
 - [ ] add tests for persistence
-- [ ] let user pass webhook information (e.g. discord)
-- [ ] let user pass env for job (or jobrc or something)
 - [ ] whatsapp webhook support
 - [ ] add branch information on job
 - [ ] git branch mode

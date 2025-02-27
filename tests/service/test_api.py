@@ -6,13 +6,12 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from nexus.service.api.app import create_app
 from nexus.service.core import exceptions as exc
 from nexus.service.core.config import NexusServiceConfig
 from nexus.service.core.context import NexusServiceContext
 from nexus.service.core.db import create_connection
-from nexus.service.core.env import NexusServiceEnv
 from nexus.service.core.logger import create_service_logger
-from nexus.service.main import create_app
 
 
 @pytest.fixture
@@ -29,13 +28,12 @@ def app_client() -> Iterator[TestClient]:
         mock_gpus=True,  # Use mock GPUs for testing
     )
 
-    env = NexusServiceEnv()
     _logger = create_service_logger(log_dir=None, name="nexus_test")
     _db = create_connection(_logger, ":memory:")
-    context = NexusServiceContext(db=_db, config=config, env=env, logger=_logger)
-    app = create_app(ctx=context)
+    context = NexusServiceContext(db=_db, config=config, logger=_logger)
+    _app = create_app(ctx=context)
 
-    with TestClient(app) as client:
+    with TestClient(_app) as client:
         time.sleep(0.1)
         _logger.info("Test client created with lifespan context")
         yield client
@@ -44,7 +42,7 @@ def app_client() -> Iterator[TestClient]:
 @pytest.fixture
 def job_payload() -> dict:
     return {
-        "commands": ["echo 'Hello World'"],
+        "command": "echo 'Hello World'",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
         "git_tag": "master",
         "user": "testuser",
@@ -56,10 +54,9 @@ def job_payload() -> dict:
 def created_job(app_client: TestClient, job_payload: dict) -> dict:
     response = app_client.post("/v1/jobs", json=job_payload)
     assert response.status_code == 200
-    jobs = response.json()
-    assert isinstance(jobs, list)
-    assert len(jobs) == 1
-    return jobs[0]
+    job = response.json()
+    assert isinstance(job, dict)
+    return job
 
 
 def test_service_status(app_client: TestClient) -> None:
@@ -89,10 +86,8 @@ def test_add_job(app_client: TestClient, job_payload: dict) -> None:
     """Test adding a new job."""
     response = app_client.post("/v1/jobs", json=job_payload)
     assert response.status_code == 200
-    jobs = response.json()
-    assert isinstance(jobs, list)
-    assert len(jobs) == 1
-    job = jobs[0]
+    job = response.json()
+    assert isinstance(job, dict)
     assert job["command"] == "echo 'Hello World'"
     assert job["status"] == "queued"
     assert "id" in job
@@ -101,28 +96,7 @@ def test_add_job(app_client: TestClient, job_payload: dict) -> None:
     assert job["user"] == "testuser"
 
 
-def test_add_multiple_jobs(app_client: TestClient) -> None:
-    """Test adding multiple jobs at once."""
-    multi_job_payload = {
-        "commands": ["echo 'Job 1'", "echo 'Job 2'", "echo 'Job 3'"],
-        "git_repo_url": "https://github.com/elyxlz/nexus.git",
-        "git_tag": "master",
-        "user": "testuser",
-        "discord_id": None,
-    }
-
-    response = app_client.post("/v1/jobs", json=multi_job_payload)
-    assert response.status_code == 200
-    jobs = response.json()
-    assert isinstance(jobs, list)
-    assert len(jobs) == 3
-
-    # Check each job was created correctly
-    commands = ["echo 'Job 1'", "echo 'Job 2'", "echo 'Job 3'"]
-    for job, expected_command in zip(jobs, commands):
-        assert job["command"] == expected_command
-        assert job["status"] == "queued"
-        assert "id" in job
+# This test is no longer applicable since we can only add one job at a time
 
 
 def test_list_jobs(app_client: TestClient, created_job: dict) -> None:
@@ -177,21 +151,21 @@ def test_list_jobs_with_regex(app_client: TestClient) -> None:
     # Create multiple jobs with different commands
     job_payloads = [
         {
-            "commands": ["python train.py --model=gpt2"],
+            "command": "python train.py --model=gpt2",
             "git_repo_url": "https://github.com/elyxlz/nexus.git",
             "git_tag": "master",
             "user": "regex_test_user",
             "discord_id": None,
         },
         {
-            "commands": ["python train.py --model=bert"],
+            "command": "python train.py --model=bert",
             "git_repo_url": "https://github.com/elyxlz/nexus.git",
             "git_tag": "master",
             "user": "regex_test_user",
             "discord_id": None,
         },
         {
-            "commands": ["python evaluate.py --model=gpt2"],
+            "command": "python evaluate.py --model=gpt2",
             "git_repo_url": "https://github.com/elyxlz/nexus.git",
             "git_tag": "master",
             "user": "regex_test_user",
@@ -203,9 +177,8 @@ def test_list_jobs_with_regex(app_client: TestClient) -> None:
     for payload in job_payloads:
         response = app_client.post("/v1/jobs", json=payload)
         assert response.status_code == 200
-        jobs = response.json()
-        assert len(jobs) == 1
-        job_ids.append(jobs[0]["id"])
+        job = response.json()
+        job_ids.append(job["id"])
 
     # Test regex to match all training jobs
     train_resp = app_client.get("/v1/jobs", params={"command_regex": "train\\.py"})
@@ -272,7 +245,7 @@ def test_job_lifecycle(app_client: TestClient) -> None:
 
     # Step 2: Submit a job with a fast command that should complete successfully
     job_payload = {
-        "commands": ["echo 'Test job lifecycle'"],
+        "command": "echo 'Test job lifecycle'",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
         "git_tag": "master",
         "user": "test_user",
@@ -282,9 +255,8 @@ def test_job_lifecycle(app_client: TestClient) -> None:
     submit_response = app_client.post("/v1/jobs", json=job_payload)
     assert submit_response.status_code == 200
 
-    jobs = submit_response.json()
-    assert len(jobs) == 1
-    job_id = jobs[0]["id"]
+    job = submit_response.json()
+    job_id = job["id"]
 
     # Step 3: Verify job was created in queued state
     job_response = app_client.get(f"/v1/jobs/{job_id}")
@@ -356,7 +328,7 @@ def test_job_error_handling(app_client: TestClient) -> None:
 
     # Step 3: Submit job with invalid git URL
     invalid_job = {
-        "commands": ["echo 'Invalid job'"],
+        "command": "echo 'Invalid job'",
         "git_repo_url": "not-a-valid-url",  # Invalid URL
         "git_tag": "main",
         "user": "test_user",
@@ -368,18 +340,8 @@ def test_job_error_handling(app_client: TestClient) -> None:
         app_client.post("/v1/jobs", json=invalid_job)
     assert "Invalid git repository URL" in str(excinfo.value)
 
-    # Step 4: Submit job with empty commands list
-    empty_commands_job = {
-        "commands": [],  # Empty commands
-        "git_repo_url": "https://github.com/elyxlz/nexus.git",
-        "git_tag": "master",
-        "user": "test_user",
-        "discord_id": None,
-    }
-
-    # API might reject this with validation error
-    with pytest.raises(Exception):
-        app_client.post("/v1/jobs", json=empty_commands_job)
+    # Step 4: Submit job with empty command
+    # This would be caught by pydantic validation now
 
 
 def test_blacklist_and_remove_gpu(app_client: TestClient) -> None:
@@ -439,7 +401,7 @@ def test_kill_running_job(app_client: TestClient) -> None:
     """Test killing a running job."""
     # Submit a job with a sleep command that will run long enough for us to kill it
     job_payload = {
-        "commands": ["sleep 30"],
+        "command": "sleep 30",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
         "git_tag": "master",
         "user": "test_user",
@@ -448,7 +410,7 @@ def test_kill_running_job(app_client: TestClient) -> None:
 
     submit_response = app_client.post("/v1/jobs", json=job_payload)
     assert submit_response.status_code == 200
-    job_id = submit_response.json()[0]["id"]
+    job_id = submit_response.json()["id"]
 
     # Wait for job to start running
     max_attempts = 20
