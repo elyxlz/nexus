@@ -34,12 +34,13 @@
 - [x] better exception handling
 - [x] comprehensive tests
 - [x] cli: nx should also work
-- [ ] add tests for persistence
+- [x] use PID to monitor and control jobs
+- [x] regex filtering directly on api
 - [ ] working installation and user setup
+- [ ] add tests for persistence
 - [ ] let user pass webhook information (e.g. discord)
 - [ ] let user pass env for job (or jobrc or something)
 - [ ] whatsapp webhook support
-- [ ] regex filtering directly on api
 - [ ] add branch information on job
 - [ ] git branch mode
 - [ ] multi gpu jobs

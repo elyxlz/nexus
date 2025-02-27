@@ -4,6 +4,7 @@ import datetime as dt
 import hashlib
 import os
 import pathlib as pl
+import signal
 import subprocess
 import time
 
@@ -18,11 +19,11 @@ __all__ = [
     "create_job",
     "build_job_env",
     "async_start_job",
-    "is_job_session_running",
+    "is_job_running",
     "end_job",
     "get_job_exit_code",
     "get_job_logs",
-    "kill_job_session",
+    "kill_job",
 ]
 
 
@@ -58,6 +59,8 @@ def create_job(command: str, git_repo_url: str, git_tag: str, user: str | None, 
         error_message=None,
         wandb_url=None,
         marked_for_kill=False,
+        pid=None,
+        webhook_message_id=None,
     )
 
 
@@ -155,14 +158,35 @@ def _build_environment(_logger: logger.NexusServiceLogger, gpu_index: int, job_e
 @exc.handle_exception(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
 async def _launch_screen_process(
     _logger: logger.NexusServiceLogger, session_name: str, script_path: str, env: dict[str, str]
-) -> None:
-    process = await asyncio.create_subprocess_exec("screen", "-dmS", session_name, script_path, env=env)
-    await process.wait()  # Wait for process to complete
+) -> int:
+    process = await asyncio.create_subprocess_exec(
+        "screen",
+        "-dmS",
+        session_name,
+        script_path,
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await process.wait()  # Wait for screen process to complete
 
     if process.returncode is not None and process.returncode != 0:
         raise exc.JobError(message=f"Screen process exited with code {process.returncode}")
 
-    await asyncio.sleep(0.1)
+    # Give screen a moment to start
+    await asyncio.sleep(0.2)
+
+    # Get the PID of the actual process inside the screen session
+    proc = await asyncio.create_subprocess_exec(
+        "pgrep", "-f", f"{session_name}.*{script_path}", stdout=asyncio.subprocess.PIPE
+    )
+    stdout, _ = await proc.communicate()
+    pids = stdout.decode().strip().split("\n")
+    if not pids or not pids[0]:
+        _logger.error(f"Could not find PID for job in session {session_name}")
+        raise exc.JobError(message=f"Failed to get PID for job in session {session_name}")
+
+    return int(pids[0])  # Return the first PID found (main process)
 
 
 async def async_start_job(
@@ -200,11 +224,11 @@ async def async_start_job(
     # Start the job
     session_name = get_job_session_name(job.id)
     try:
-        # Launch the job using screen
-        await _launch_screen_process(_logger, session_name, str(script_path), env)
+        # Launch the job using screen and get the PID
+        pid = await _launch_screen_process(_logger, session_name, str(script_path), env)
 
-        # Update the job status
-        return dc.replace(job, started_at=dt.datetime.now().timestamp(), gpu_index=gpu_index, status="running")
+        # Update the job status with PID
+        return dc.replace(job, started_at=dt.datetime.now().timestamp(), gpu_index=gpu_index, status="running", pid=pid)
     except exc.JobError:
         # Re-raise job errors
         raise
@@ -214,16 +238,30 @@ async def async_start_job(
 
 
 @exc.handle_exception(
-    subprocess.CalledProcessError, message="Error checking screen session status", reraise=False, default_return=False
+    subprocess.CalledProcessError, message="Error checking process status", reraise=False, default_return=False
 )
-def is_job_session_running(_logger: logger.NexusServiceLogger, job_id: str) -> bool:
-    session_name = get_job_session_name(job_id)
-    output = subprocess.check_output(["screen", "-ls", session_name], stderr=subprocess.DEVNULL, text=True)
-    return session_name in output
+def is_job_running(_logger: logger.NexusServiceLogger, job: schemas.Job) -> bool:
+    # If there's no PID, fall back to screen session check
+    if job.pid is None:
+        session_name = get_job_session_name(job.id)
+        output = subprocess.check_output(["screen", "-ls"], stderr=subprocess.DEVNULL, text=True)
+        return session_name in output
+
+    # Check if process with PID exists
+    try:
+        # Send signal 0 to check if process exists without affecting it
+        os.kill(job.pid, 0)
+        return True
+    except ProcessLookupError:
+        # Process not found
+        return False
+    except PermissionError:
+        # Process exists but we don't have permission (still means it's running)
+        return True
 
 
 def end_job(_logger: logger.NexusServiceLogger, _job: schemas.Job, killed: bool) -> schemas.Job:
-    if is_job_session_running(_logger, _job.id):
+    if is_job_running(_logger, _job):
         return _job
 
     job_log = get_job_logs(_logger, job_dir=_job.dir)
@@ -303,5 +341,23 @@ def get_job_logs(
 
 
 @exc.handle_exception(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
-def kill_job_session(_logger: logger.NexusServiceLogger, job_id: str) -> None:
-    subprocess.run(f"pkill -f {job_id}", shell=True)
+async def kill_job(_logger: logger.NexusServiceLogger, job: schemas.Job) -> None:
+    if job.pid is not None:
+        try:
+            os.kill(job.pid, signal.SIGTERM)
+
+            for _ in range(10):
+                try:
+                    os.kill(job.pid, 0)
+                    await asyncio.sleep(0.1)
+                except ProcessLookupError:
+                    return
+
+            os.kill(job.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    session_name = get_job_session_name(job.id)
+    await asyncio.create_subprocess_exec("screen", "-S", session_name, "-X", "quit")
+
+    await asyncio.create_subprocess_shell(f"pkill -f {job.id}")

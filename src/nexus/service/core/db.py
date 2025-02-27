@@ -1,5 +1,6 @@
 import functools
 import pathlib as pl
+import re
 import sqlite3
 import typing as tp
 
@@ -49,7 +50,8 @@ def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) 
             discord_id TEXT,
             marked_for_kill INTEGER,
             dir TEXT,
-            webhook_message_id TEXT
+            webhook_message_id TEXT,
+            pid INTEGER
         )
     """)
     cur.execute("""
@@ -79,6 +81,7 @@ def row_to_job(row: sqlite3.Row) -> schemas.Job:
         marked_for_kill=bool(row["marked_for_kill"]) if row["marked_for_kill"] is not None else False,
         dir=pl.Path(row["dir"]) if row["dir"] else None,
         webhook_message_id=row["webhook_message_id"],
+        pid=row["pid"],
     )
 
 
@@ -91,9 +94,10 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: s
         INSERT INTO jobs (
             id, command, git_repo_url, git_tag, status, created_at, 
             started_at, completed_at, gpu_index, exit_code, error_message, 
-            wandb_url, user, discord_id, marked_for_kill, dir, webhook_message_id
+            wandb_url, user, discord_id, marked_for_kill, dir, webhook_message_id,
+            pid
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (
             job.id,
@@ -113,6 +117,7 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: s
             int(job.marked_for_kill),
             str(job.dir) if job.dir else None,
             job.webhook_message_id,
+            job.pid,
         ),
     )
 
@@ -138,7 +143,8 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             discord_id = ?,
             marked_for_kill = ?,
             dir = ?,
-            webhook_message_id = ?
+            webhook_message_id = ?,
+            pid = ?
         WHERE id = ?
     """,
         (
@@ -158,6 +164,7 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             int(job.marked_for_kill),
             str(job.dir) if job.dir else None,
             job.webhook_message_id,
+            job.pid,
             job.id,
         ),
     )
@@ -194,21 +201,47 @@ def _validate_job_status(status: str | None) -> None:
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list jobs")
-def _query_jobs(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, status: str | None) -> list[schemas.Job]:
+def _query_jobs(
+    _logger: logger.NexusServiceLogger, conn: sqlite3.Connection, status: str | None, command_regex: str | None = None
+) -> list[schemas.Job]:
     cur = conn.cursor()
+
+    # Start with base query
+    query = "SELECT * FROM jobs"
+    params = []
+    conditions = []
+
+    # Add specific filters
     if status is not None:
-        cur.execute("SELECT * FROM jobs WHERE status = ?", (status,))
-    else:
-        cur.execute("SELECT * FROM jobs")
+        conditions.append("status = ?")
+        params.append(status)
+
+    # Add regex filter for command if provided
+    if command_regex is not None:
+        conditions.append("command REGEXP ?")
+        params.append(command_regex)
+
+    # Combine all conditions
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+
+    # Enable regex function for SQLite
+    conn.create_function("REGEXP", 2, lambda pattern, text: bool(re.search(pattern, text or "")) if text else False)
+
+    # Execute query
+    cur.execute(query, params)
     rows = cur.fetchall()
     return [row_to_job(row) for row in rows]
 
 
 def list_jobs(
-    _logger: logger.NexusServiceLogger, conn: sqlite3.Connection, status: str | None = None
+    _logger: logger.NexusServiceLogger,
+    conn: sqlite3.Connection,
+    status: str | None = None,
+    command_regex: str | None = None,
 ) -> list[schemas.Job]:
     _validate_job_status(status)
-    return _query_jobs(_logger, conn=conn, status=status)
+    return _query_jobs(_logger, conn=conn, status=status, command_regex=command_regex)
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job status")

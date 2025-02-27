@@ -172,6 +172,66 @@ def test_list_jobs_by_gpu(app_client: TestClient) -> None:
     assert isinstance(by_gpu_resp.json(), list)
 
 
+def test_list_jobs_with_regex(app_client: TestClient) -> None:
+    """Test listing jobs filtered by regex on the command field."""
+    # Create multiple jobs with different commands
+    job_payloads = [
+        {
+            "commands": ["python train.py --model=gpt2"],
+            "git_repo_url": "https://github.com/elyxlz/nexus.git",
+            "git_tag": "master",
+            "user": "regex_test_user",
+            "discord_id": None,
+        },
+        {
+            "commands": ["python train.py --model=bert"],
+            "git_repo_url": "https://github.com/elyxlz/nexus.git",
+            "git_tag": "master",
+            "user": "regex_test_user",
+            "discord_id": None,
+        },
+        {
+            "commands": ["python evaluate.py --model=gpt2"],
+            "git_repo_url": "https://github.com/elyxlz/nexus.git",
+            "git_tag": "master",
+            "user": "regex_test_user",
+            "discord_id": None,
+        },
+    ]
+
+    job_ids = []
+    for payload in job_payloads:
+        response = app_client.post("/v1/jobs", json=payload)
+        assert response.status_code == 200
+        jobs = response.json()
+        assert len(jobs) == 1
+        job_ids.append(jobs[0]["id"])
+
+    # Test regex to match all training jobs
+    train_resp = app_client.get("/v1/jobs", params={"command_regex": "train\\.py"})
+    assert train_resp.status_code == 200
+    train_jobs = train_resp.json()
+    assert len(train_jobs) >= 2
+    train_commands = [job["command"] for job in train_jobs]
+    assert all("train.py" in cmd for cmd in train_commands)
+
+    # Test regex to match specific model
+    gpt2_resp = app_client.get("/v1/jobs", params={"command_regex": "gpt2"})
+    assert gpt2_resp.status_code == 200
+    gpt2_jobs = gpt2_resp.json()
+    assert len(gpt2_jobs) >= 2
+    gpt2_commands = [job["command"] for job in gpt2_jobs]
+    assert all("gpt2" in cmd for cmd in gpt2_commands)
+
+    # Test combination of status and regex
+    queued_gpt2_resp = app_client.get("/v1/jobs", params={"status": "queued", "command_regex": "gpt2"})
+    assert queued_gpt2_resp.status_code == 200
+    queued_gpt2_jobs = queued_gpt2_resp.json()
+    queued_gpt2_commands = [job["command"] for job in queued_gpt2_jobs]
+    assert all("gpt2" in cmd for cmd in queued_gpt2_commands)
+    assert all(job["status"] == "queued" for job in queued_gpt2_jobs)
+
+
 def test_get_job_details(app_client: TestClient, created_job: dict) -> None:
     """Test getting a specific job's details."""
     job_id = created_job["id"]

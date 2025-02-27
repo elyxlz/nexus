@@ -15,6 +15,7 @@ class Job:
     git_tag: str
     status: JobStatus
     created_at: float
+    pid: int | None
     dir: pl.Path | None
     started_at: float | None
     completed_at: float | None
@@ -25,4 +26,4 @@ class Job:
     user: str | None
     discord_id: str | None
     marked_for_kill: bool
-    webhook_message_id: str | None = None
+    webhook_message_id: str | None

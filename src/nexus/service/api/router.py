@@ -93,9 +93,10 @@ async def get_service_logs(ctx: context.NexusServiceContext = fa.Depends(get_con
 async def list_jobs(
     status: str | None = None,
     gpu_index: int | None = None,
+    command_regex: str | None = None,
     ctx: context.NexusServiceContext = fa.Depends(get_context),
 ):
-    jobs = db.list_jobs(ctx.logger, conn=ctx.db, status=status)
+    jobs = db.list_jobs(ctx.logger, conn=ctx.db, status=status, command_regex=command_regex)
     if gpu_index is not None:
         jobs = [j for j in jobs if j.gpu_index == gpu_index]
     ctx.logger.info(f"Found {len(jobs)} jobs matching criteria")
