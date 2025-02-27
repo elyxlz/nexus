@@ -1,4 +1,3 @@
-import argparse
 import pathlib as pl
 
 import uvicorn
