@@ -28,23 +28,27 @@
 - [x] enlarge failed job logs
 - [x] Automatically check for updates
 - [x] Look for wandb in longer intervals in the scheduler, then if not found after a while update original message
+- [x] sqlite
+- [x] systemd
+- [x] general refactor
+- [x] better exception handling
+- [x] comprehensive tests
+- [x] cli: nx should also work
+- [ ] add tests for persistence
+- [ ] working installation and user setup
+- [ ] let user pass webhook information (e.g. discord)
+- [ ] let user pass env for job (or jobrc or something)
+- [ ] whatsapp webhook support
+- [ ] regex filtering directly on api
 - [ ] add branch information on job
 - [ ] git branch mode
 - [ ] multi gpu jobs
-- [ ] cli: nx should also work
 - [ ] easy way to show logs for running jobs on discord
-- [ ] cli: follow logs with -f
 - [ ] figure out why git tag removal fails some times
-- [ ] installation walkthrough with the service + optionally interactive config
-- [ ] figure out why job failed webhook failes sometimes
-- [ ] cli: More job details when printing job stuff, especially when removing or killing
 - [ ] dependent jobs (a after b is done)
 - [ ] refactor, move more things away from cli and to the api
-
-## Longterm TODO
-
-- [ ] multi node
-- [ ] priority jobs
-- [ ] vram / flop minimum
-- [ ] rust rewrite for static binaries that don't require python (or venvs to be activated)
-- [ ] pretty TUI front end
+- [ ] multi node and auth
+- [ ] documentation
+- [ ] cli: command templates
+- [ ] cli: follow logs with -f
+- [ ] cli: More job details when printing job stuff, especially when removing or killing
