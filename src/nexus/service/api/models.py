@@ -1,4 +1,7 @@
+import typing as tp
+
 import pydantic as pyd
+import typing_extensions as tpe
 
 __all__ = [
     "JobRequest",
@@ -14,6 +17,10 @@ __all__ = [
     "ServiceStatusResponse",
 ]
 
+NotificationType = tp.Literal["discord"]  # TODO: whatsapp, phone call
+
+REQUIRED_ENV_VARS = {"wandb": ["WANDB_API_KEY", "WANDB_ENTITY"], "discord": ["DISCORD_USER_ID", "DISCORD_WEBHOOK_URL"]}
+
 
 class FrozenBaseModel(pyd.BaseModel):
     model_config = pyd.ConfigDict(frozen=True)
@@ -23,10 +30,28 @@ class JobRequest(FrozenBaseModel):
     command: str
     git_repo_url: str
     git_tag: str
-    user: str | None = None
-    discord_id: str | None = None
+    git_branch: str
+    user: str
+    search_wandb: bool = False
+    notifications: list[NotificationType] = []
     environment: dict[str, str] = {}
-    pre_job_script: str | None = None
+    jobrc: str | None = None
+
+    @pyd.model_validator(mode="after")
+    def check_requirements(self) -> tpe.Self:
+        if self.search_wandb:
+            for key in REQUIRED_ENV_VARS["wandb"]:
+                if key not in self.environment:
+                    raise ValueError(f"Missing required environment variable {key} for wandb integration")
+
+        for notification_type in self.notifications:
+            for key in REQUIRED_ENV_VARS[notification_type]:
+                if key not in self.environment:
+                    raise ValueError(
+                        f"Missing required environment variable {key} for {notification_type} notifications"
+                    )
+
+        return self
 
 
 class ServiceLogsResponse(FrozenBaseModel):
@@ -73,7 +98,6 @@ class GpuActionResponse(FrozenBaseModel):
 
 
 class ServiceStatusResponse(FrozenBaseModel):
-    running: bool
     gpu_count: int
     queued_jobs: int
     running_jobs: int

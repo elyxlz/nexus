@@ -51,7 +51,7 @@ def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) 
             discord_id TEXT,
             marked_for_kill INTEGER,
             dir TEXT,
-            webhook_message_id TEXT,
+            notification_message_id TEXT,
             pid INTEGER,
             pre_job_script TEXT,
             environment_json TEXT
@@ -90,7 +90,7 @@ def row_to_job(_logger: logger.NexusServiceLogger, row: sqlite3.Row) -> schemas.
         discord_id=row["discord_id"],
         marked_for_kill=bool(row["marked_for_kill"]) if row["marked_for_kill"] is not None else False,
         dir=pl.Path(row["dir"]) if row["dir"] else None,
-        webhook_message_id=row["webhook_message_id"],
+        notification_message_id=row["notification_message_id"],
         pid=row["pid"],
         environment=_parse_environment(_logger, env_json=row["environment_json"]),
         pre_job_script=row["pre_job_script"],
@@ -102,14 +102,14 @@ def row_to_job(_logger: logger.NexusServiceLogger, row: sqlite3.Row) -> schemas.
 def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
     # Serialize environment to JSON if present
-    environment_json = json.dumps(job.environment) if job.environment else None
+    environment_json = json.dumps(job.env) if job.env else None
 
     cur.execute(
         """
         INSERT INTO jobs (
             id, command, git_repo_url, git_tag, status, created_at, 
             started_at, completed_at, gpu_index, exit_code, error_message, 
-            wandb_url, user, discord_id, marked_for_kill, dir, webhook_message_id,
+            wandb_url, user, discord_id, marked_for_kill, dir, notification_message_id,
             pid, pre_job_script, environment_json
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -131,7 +131,7 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: s
             job.discord_id,
             int(job.marked_for_kill),
             str(job.dir) if job.dir else None,
-            job.webhook_message_id,
+            job.notification_message_id,
             job.pid,
             job.pre_job_script,
             environment_json,
@@ -144,8 +144,8 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
     cur = conn.cursor()
 
     environment_json = None
-    if job.status == "queued" and job.environment:
-        environment_json = json.dumps(job.environment)
+    if job.status == "queued" and job.env:
+        environment_json = json.dumps(job.env)
 
     cur.execute(
         """
@@ -165,7 +165,7 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             discord_id = ?,
             marked_for_kill = ?,
             dir = ?,
-            webhook_message_id = ?,
+            notification_message_id = ?,
             pid = ?,
             pre_job_script = ?,
             environment_json = ?
@@ -187,7 +187,7 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             job.discord_id,
             int(job.marked_for_kill),
             str(job.dir) if job.dir else None,
-            job.webhook_message_id,
+            job.notification_message_id,
             job.pid,
             job.pre_job_script,
             environment_json,

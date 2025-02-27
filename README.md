@@ -41,15 +41,17 @@
 - [x] make user pass env
 - [x] let user pass webhook information (e.g. discord)
 - [x] let user pass env for job (or jobrc or something)
+- [x] figure out why git tag removal fails some times
+- [x] refactor, move more things away from cli and to the api
+- [ ] improve notification system
+- [ ] remove discord id from job
 - [ ] add tests for persistence
-- [ ] whatsapp webhook support
+- [ ] whatsapp notification support
 - [ ] add branch information on job
 - [ ] git branch mode
 - [ ] multi gpu jobs
 - [ ] easy way to show logs for running jobs on discord
-- [ ] figure out why git tag removal fails some times
 - [ ] dependent jobs (a after b is done)
-- [ ] refactor, move more things away from cli and to the api
 - [ ] multi node and auth
 - [ ] documentation
 - [ ] cli: command templates

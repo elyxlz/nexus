@@ -44,9 +44,10 @@ def create_job(
     git_repo_url: str,
     git_tag: str,
     user: str | None,
-    discord_id: str | None,
     environment: dict[str, str] = {},
-    pre_job_script: str | None = None,
+    jobrc: str | None = None,
+    search_wandb: bool = False,
+    notifications: list[str] = [],
 ) -> schemas.Job:
     job_id = generate_job_id()
 
@@ -56,7 +57,6 @@ def create_job(
         status="queued",
         created_at=dt.datetime.now().timestamp(),
         user=user,
-        discord_id=discord_id,
         git_repo_url=git_repo_url,
         git_tag=git_tag,
         dir=None,
@@ -68,9 +68,11 @@ def create_job(
         wandb_url=None,
         marked_for_kill=False,
         pid=None,
-        webhook_message_id=None,
+        notification_message_id=None,
         environment=environment,
-        pre_job_script=pre_job_script,
+        jobrc=jobrc,
+        search_wandb=search_wandb,
+        notifications=notifications,
     )
 
 
@@ -113,7 +115,7 @@ def _build_script_content(
     git_tag: str,
     command: str,
     askpass_path: pl.Path | None,
-    pre_job_script: str | None = None,
+    jobrc: str | None = None,
 ) -> str:
     script_lines = [
         "#!/bin/bash",
@@ -131,8 +133,8 @@ def _build_script_content(
     ]
 
     # Insert pre-job script if provided
-    if pre_job_script:
-        script_command_lines.append(pre_job_script)
+    if jobrc:
+        script_command_lines.append(jobrc)
 
     # Add the main command
     script_command_lines.append(command)
@@ -163,15 +165,13 @@ def create_job_script(
     git_tag: str,
     command: str,
     askpass_path: pl.Path | None,
-    pre_job_script: str | None = None,
+    jobrc: str | None = None,
 ) -> pl.Path:
-    script_content = _build_script_content(
-        log_file, job_repo_dir, git_repo_url, git_tag, command, askpass_path, pre_job_script
-    )
+    script_content = _build_script_content(log_file, job_repo_dir, git_repo_url, git_tag, command, askpass_path, jobrc)
     return _write_job_script(_logger, job_dir, script_content)
 
 
-@exc.handle_exception(Exception, exc.JobError, message="Failed to build job environment")
+@exc.handle_exception(Exception, exc.JobError, message="Failed to build job.env")
 def _build_environment(_logger: logger.NexusServiceLogger, gpu_index: int, job_env: dict[str, str]) -> dict[str, str]:
     return build_job_env(gpu_index, _env=job_env)
 
@@ -224,10 +224,10 @@ async def async_start_job(
     log_file, job_repo_dir = create_directories(_logger, dir_path=job.dir)
 
     # Use client-provided environment variables
-    env = _build_environment(_logger, gpu_index=gpu_index, job_env=job.environment)
+    env = _build_environment(_logger, gpu_index=gpu_index, job_env=job.env)
 
     # Get GitHub token from environment if available
-    github_token = job.environment.get("GITHUB_TOKEN")
+    github_token = job.env.get("GITHUB_TOKEN")
     askpass_path = setup_github_auth(_logger, dir_path=job.dir, github_token=github_token) if github_token else None
 
     # Create the job script
@@ -240,7 +240,7 @@ async def async_start_job(
         git_tag=job.git_tag,
         command=job.command,
         askpass_path=askpass_path,
-        pre_job_script=job.pre_job_script,
+        jobrc=job.jobrc,
     )
 
     # Start the job

@@ -22,7 +22,7 @@ def app_client() -> Iterator[TestClient]:
         refresh_rate=1,  # Fast refresh for testing
         host="localhost",
         port=54324,
-        webhooks_enabled=False,
+        notifications_enabled=False,
         node_name="test_node",
         log_level="debug",
         mock_gpus=True,  # Use mock GPUs for testing

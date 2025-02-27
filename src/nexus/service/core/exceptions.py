@@ -13,7 +13,7 @@ __all__ = [
     "DatabaseError",
     "JobError",
     "WandBError",
-    "WebhookError",
+    "NotificationError",
     "handle_exception",
 ]
 
@@ -55,7 +55,7 @@ class WandBError(NexusServiceError):
     ERROR_CODE = "WANDB_ERROR"
 
 
-class WebhookError(NexusServiceError):
+class NotificationError(NexusServiceError):
     ERROR_CODE = "WEBHOOK_ERROR"
 
 

@@ -118,9 +118,10 @@ async def add_job(job_request: models.JobRequest, ctx: context.NexusServiceConte
         git_repo_url=norm_url,
         git_tag=job_request.git_tag,
         user=job_request.user,
-        discord_id=job_request.discord_id,
         environment=job_request.environment,
-        pre_job_script=job_request.pre_job_script,
+        jobrc=job_request.jobrc,
+        search_wandb=job_request.search_wandb,
+        notifications=job_request.notifications,
     )
 
     db.add_job(ctx.logger, conn=ctx.db, job=j)

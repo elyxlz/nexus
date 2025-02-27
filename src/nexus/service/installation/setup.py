@@ -246,20 +246,6 @@ def create_interactive_config(default_config: config.NexusServiceConfig) -> conf
 
     node_name = input(f"Node name [default: {default_config.node_name}]: ").strip() or default_config.node_name
 
-    webhooks_enabled_str = (
-        input(f"Enable webhooks (y/n) [default: {'y' if default_config.webhooks_enabled else 'n'}]: ").strip().lower()
-    )
-    webhooks_enabled = (
-        webhooks_enabled_str == "y" if webhooks_enabled_str in ("y", "n") else default_config.webhooks_enabled
-    )
-
-    webhook_url = ""
-    if webhooks_enabled:
-        webhook_url = (
-            input(f"Webhook URL [default: {default_config.webhook_url or 'none'}]: ").strip()
-            or default_config.webhook_url
-        )
-
     log_level = (
         input(f"Log level (debug/info/warning/error) [default: {default_config.log_level}]: ").strip()
         or default_config.log_level
@@ -270,8 +256,6 @@ def create_interactive_config(default_config: config.NexusServiceConfig) -> conf
         host=host,
         port=port,
         node_name=node_name,
-        webhooks_enabled=webhooks_enabled,
-        webhook_url=webhook_url,
         log_level=log_level,
     )
 
