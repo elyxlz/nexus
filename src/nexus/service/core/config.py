@@ -30,6 +30,17 @@ class NexusServiceConfig(pyds.BaseSettings):
     log_level: str = pyd.Field(default="info")
     mock_gpus: bool = pyd.Field(default=False)
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[pyds.BaseSettings],
+        init_settings: pyds.PydanticBaseSettingsSource,
+        env_settings: pyds.PydanticBaseSettingsSource,
+        dotenv_settings: pyds.PydanticBaseSettingsSource,
+        file_secret_settings: pyds.PydanticBaseSettingsSource,
+    ) -> tuple[pyds.PydanticBaseSettingsSource, ...]:
+        return env_settings, init_settings
+
 
 def get_env_path(service_dir: pl.Path) -> pl.Path:
     return service_dir / ".env"

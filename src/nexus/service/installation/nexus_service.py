@@ -23,6 +23,7 @@ WantedBy=multi-user.target
 
 SERVICE_FILE_CONTENT = UNIT_SECTION + SERVICE_SECTION + INSTALL_SECTION
 
+
 def get_service_file_content() -> str:
     """Return the content of the service file."""
     return SERVICE_FILE_CONTENT
