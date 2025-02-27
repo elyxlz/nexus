@@ -14,7 +14,6 @@ dependencies = [
   "pydantic-settings[toml]>=2.6.0",
   "requests>=2.32.3",
   "colorlog>=6.8.2",
-  "python-dotenv>=1.0.1",
   "wandb>=0.18.5",
   "aiohttp>=3.10.10",
 ]

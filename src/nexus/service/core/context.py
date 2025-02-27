@@ -1,7 +1,7 @@
 import dataclasses as dc
 import sqlite3
 
-from nexus.service.core import config, env, logger
+from nexus.service.core import config, logger
 
 __all__ = ["NexusServiceContext"]
 
@@ -10,5 +10,4 @@ __all__ = ["NexusServiceContext"]
 class NexusServiceContext:
     db: sqlite3.Connection
     config: config.NexusServiceConfig
-    env: env.NexusServiceEnv
     logger: logger.NexusServiceLogger

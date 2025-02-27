@@ -124,6 +124,24 @@ def get_installation_info() -> InstallationInfo:
     )
 
 
+def get_service_directory() -> tuple[pl.Path | None, bool]:
+    """Determine service directory and whether this is first run."""
+    info = get_installation_info()
+
+    if info.install_mode == "system":
+        return SYSTEM_CONFIG_DIR, False
+    elif info.install_mode == "user":
+        return USER_CONFIG_DIR, False
+
+    # Check for user config without marker
+    user_config_dir = pl.Path.home() / ".nexus_service"
+    if (user_config_dir / "config.toml").exists():
+        return user_config_dir, False
+
+    # No installation found
+    return None, True
+
+
 def require_root() -> None:
     """Exit if not running as root."""
     if os.geteuid() != 0:
@@ -136,6 +154,7 @@ def require_root() -> None:
 
 
 def fetch_latest_version() -> tuple[bool, str, str | None]:
+    """Fetch the latest version from PyPI."""
     try:
         import requests
 
@@ -148,6 +167,7 @@ def fetch_latest_version() -> tuple[bool, str, str | None]:
 
 
 def handle_version_check() -> None:
+    """Check for newer versions and notify if available."""
     try:
         current_version = importlib.metadata.version("nexusai")
         success, remote_version, _ = fetch_latest_version()
@@ -158,6 +178,7 @@ def handle_version_check() -> None:
 
 
 def verify_external_dependencies() -> None:
+    """Verify that all required external dependencies are installed."""
     missing = []
     for cmd in ["git", "screen"]:
         if shutil.which(cmd) is None:
@@ -205,11 +226,16 @@ def write_installation_marker(mode: tp.Literal["system", "user"], service_enable
 # =========================================================================
 
 
+def ensure_directory_exists(directory: pl.Path) -> None:
+    """Ensure a directory exists."""
+    directory.mkdir(parents=True, exist_ok=True)
+
+
 def create_directories(config_dir: pl.Path) -> None:
     """Create necessary directories for nexus service."""
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "logs").mkdir(parents=True, exist_ok=True)
-    (config_dir / "jobs").mkdir(parents=True, exist_ok=True)
+    ensure_directory_exists(config_dir)
+    ensure_directory_exists(config_dir / "logs")
+    ensure_directory_exists(config_dir / "jobs")
 
 
 def create_service_user() -> bool:
@@ -245,10 +271,10 @@ def set_system_permissions() -> None:
 
 def setup_systemd_service() -> tuple[bool, str | None]:
     """Install systemd service file."""
-    from nexus.service.installation import nexus_service
+    from nexus.service.installation import systemd
 
     # Get service content from the module
-    service_content = nexus_service.get_service_file_content()
+    service_content = systemd.get_service_file_content()
 
     # Write service file
     dest_service = SYSTEMD_DIR / SERVICE_FILENAME
@@ -275,36 +301,56 @@ def manage_systemd_service(action: str) -> bool:
         return False
 
 
+def install_system_service() -> None:
+    """Install the systemd service file."""
+    service_ok, service_error = setup_systemd_service()
+    if not service_ok:
+        sys.exit(service_error)
+    print(f"Installed service file to: {SYSTEMD_DIR / SERVICE_FILENAME}")
+
+
+def start_system_service() -> bool:
+    """Start and enable the systemd service."""
+    service_started = manage_systemd_service("start")
+    if service_started:
+        print("Nexus service enabled and started.")
+    else:
+        print("Failed to start Nexus service.")
+    return service_started
+
+
+def stop_system_service() -> bool:
+    """Stop and disable the systemd service."""
+    service_stopped = manage_systemd_service("stop")
+    if service_stopped:
+        print("Nexus service disabled and stopped.")
+    else:
+        print("Failed to stop Nexus service.")
+    return service_stopped
+
+
 # =========================================================================
 # Configuration Management
 # =========================================================================
 
 
-def setup_config(
-    config_dir: pl.Path, interactive: bool = True, config_file: pl.Path | None = None
-) -> config.NexusServiceConfig:
-    """Set up configuration interactively or from a file."""
-    # Create a default configuration
-    default_config = config.NexusServiceConfig(service_dir=config_dir)
+def load_config_from_file(config_file: pl.Path, config_dir: pl.Path) -> config.NexusServiceConfig | None:
+    """Load configuration from a file."""
+    import toml
 
-    # If a config file is provided, use it
-    if config_file and config_file.exists():
-        import toml
+    try:
+        config_data = toml.load(config_file)
+        # Override service_dir to match installation dir
+        config_data["service_dir"] = str(config_dir)
+        return config.NexusServiceConfig(**config_data)
+    except Exception as e:
+        print(f"Error loading config file: {e}")
+        print("Falling back to default configuration.")
+        return None
 
-        try:
-            config_data = toml.load(config_file)
-            # Override service_dir to match installation dir
-            config_data["service_dir"] = str(config_dir)
-            return config.NexusServiceConfig(**config_data)
-        except Exception as e:
-            print(f"Error loading config file: {e}")
-            print("Falling back to default configuration.")
 
-    # If not interactive, just use defaults
-    if not interactive:
-        return default_config
-
-    # Interactive configuration
+def create_interactive_config(default_config: config.NexusServiceConfig) -> config.NexusServiceConfig:
+    """Create configuration through interactive prompts."""
     print("\nNexus Service Configuration")
     print("=========================")
 
@@ -336,7 +382,7 @@ def setup_config(
 
     # Create config with user values
     return config.NexusServiceConfig(
-        service_dir=config_dir,
+        service_dir=default_config.service_dir,
         host=host,
         port=port,
         node_name=node_name,
@@ -344,6 +390,41 @@ def setup_config(
         webhook_url=webhook_url,
         log_level=log_level,
     )
+
+
+def setup_config(
+    config_dir: pl.Path, interactive: bool = True, config_file: pl.Path | None = None
+) -> config.NexusServiceConfig:
+    """Set up configuration interactively or from a file."""
+    # Create a default configuration
+    default_config = config.NexusServiceConfig(service_dir=config_dir)
+
+    # If a config file is provided, try to use it
+    if config_file and config_file.exists():
+        file_config = load_config_from_file(config_file, config_dir)
+        if file_config:
+            return file_config
+
+    # If not interactive, just use defaults
+    if not interactive:
+        return default_config
+
+    # Interactive configuration
+    return create_interactive_config(default_config)
+
+
+def create_initial_config_files(_config: config.NexusServiceConfig, _env: env.NexusServiceEnv) -> None:
+    """Create initial configuration files."""
+    if _config.service_dir is None:
+        raise ValueError("Service directory cannot be None")
+
+    # Create the environment file if it doesn't exist
+    env_path = config.get_env_path(_config.service_dir)
+    if not env_path.exists():
+        env.save_env(_env, env_path=env_path)
+
+    # Create the configuration file
+    config.save_config(_config)
 
 
 def create_persistent_directory(_config: config.NexusServiceConfig, _env: env.NexusServiceEnv) -> None:
@@ -354,18 +435,27 @@ def create_persistent_directory(_config: config.NexusServiceConfig, _env: env.Ne
     # Ensure service directory exists
     _config.service_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create the environment file if it doesn't exist
-    if not config.get_env_path(_config.service_dir).exists():
-        env.save_env(_env, env_path=config.get_env_path(_config.service_dir))
-
-    # Ensure the jobs directory exists
+    # Ensure required subdirectories exist
     config.get_jobs_dir(_config.service_dir).mkdir(parents=True, exist_ok=True)
-
-    # Ensure the logs directory exists
     config.get_log_dir(_config.service_dir).mkdir(parents=True, exist_ok=True)
 
-    # Create the configuration file
-    config.save_config(_config)
+    create_initial_config_files(_config, _env)
+
+
+def get_valid_config(service_dir: pl.Path | None) -> config.NexusServiceConfig:
+    """Get configuration from file or defaults."""
+    if service_dir and (service_dir / "config.toml").exists():
+        return config.load_config(service_dir)
+
+    return config.NexusServiceConfig(service_dir=service_dir)
+
+
+def display_config(_config: config.NexusServiceConfig) -> None:
+    """Display the current configuration."""
+    print("======================")
+    for key, value in _config.model_dump().items():
+        print(f"{key}: {value}")
+    print("\n")
 
 
 # =========================================================================
@@ -373,15 +463,19 @@ def create_persistent_directory(_config: config.NexusServiceConfig, _env: env.Ne
 # =========================================================================
 
 
-def cleanup_files(mode: tp.Literal["system", "user"], keep_config: bool = False) -> None:
-    """Clean up installation files."""
+def remove_installation_files(mode: tp.Literal["system", "user"], keep_config: bool) -> None:
+    """Remove installation files based on mode."""
     config_dir = SYSTEM_CONFIG_DIR if mode == "system" else USER_CONFIG_DIR
-    marker = MARKER_SYSTEM if mode == "system" else MARKER_USER
-
     if not keep_config and config_dir.exists():
         shutil.rmtree(config_dir, ignore_errors=True)
-    elif marker.exists():
-        marker.unlink()
+        print(f"Removed directory: {config_dir}")
+    else:
+        # Just remove the marker file
+        marker = MARKER_SYSTEM if mode == "system" else MARKER_USER
+        if marker.exists():
+            marker.unlink()
+        if keep_config:
+            print(f"Kept configuration directory: {config_dir}")
 
 
 def remove_service_user() -> bool:
@@ -401,18 +495,24 @@ def remove_service_files() -> None:
         service_file.unlink()
 
 
+def remove_system_components() -> None:
+    """Remove system-specific components during uninstallation."""
+    # Stop service
+    stop_system_service()
+
+    # Remove service files
+    remove_service_files()
+    print(f"Removed service file: {SYSTEMD_DIR / SERVICE_FILENAME}")
+
+
 # =========================================================================
 # Main Installation Functions
 # =========================================================================
 
 
-def install_system(
-    interactive: bool = True, config_file: pl.Path | None = None, start_service: bool = True, force: bool = False
-) -> None:
-    """Install Nexus service in system mode."""
-    require_root()
-
-    # Verify the nexus package is available
+def check_installation_prerequisites(mode: tp.Literal["system", "user"], force: bool = False) -> None:
+    """Check if prerequisites are met for installation."""
+    # Check for nexus package
     if importlib.util.find_spec("nexus") is None:
         sys.exit(
             "ERROR: The 'nexus' package is not available in the system Python environment.\n"
@@ -422,21 +522,18 @@ def install_system(
     # Check for existing installation
     info = get_installation_info()
     if info.install_mode != "none" and not force:
-        if info.install_mode == "system":
-            print(f"Nexus service is already installed in system mode (version {info.version}).")
-            return
+        if info.install_mode == mode:
+            sys.exit(f"Nexus service is already installed in {mode} mode (version {info.version}).")
         else:
-            print(f"Nexus service is already installed in user mode (version {info.version}).")
-            print("Please uninstall the user installation first or use --force.")
-            return
+            other_mode = "user" if mode == "system" else "system"
+            sys.exit(
+                f"Nexus service is already installed in {other_mode} mode (version {info.version}).\n"
+                f"Please uninstall the {other_mode} installation first or use --force."
+            )
 
-    # Check dependencies
-    deps_ok, deps_error = verify_external_dependencies()
-    if not deps_ok:
-        sys.exit(f"Missing dependencies: {deps_error}")
 
-    print("Installing Nexus service in system mode...")
-
+def prepare_system_environment() -> None:
+    """Prepare system environment for installation."""
     # Create system directories
     create_directories(SYSTEM_CONFIG_DIR)
     print(f"Created system directory: {SYSTEM_CONFIG_DIR}")
@@ -451,6 +548,35 @@ def install_system(
     if configure_multiuser_screen():
         print(f"Configured multiuser Screen for {SERVICE_USER} user.")
 
+
+def print_installation_complete_message(mode: tp.Literal["system", "user"]) -> None:
+    """Print installation completion message based on mode."""
+    print(f"\n{mode.capitalize()} installation complete.")
+    if mode == "system":
+        print("To uninstall: nexus-service uninstall")
+        print("To start/stop: sudo systemctl start/stop nexus_service")
+        print("To check status: systemctl status nexus_service")
+    else:
+        print("To uninstall: nexus-service uninstall")
+        print("To start the service: nexus-service")
+        print("To check status: nexus-service status")
+
+
+def install_system(
+    interactive: bool = True, config_file: pl.Path | None = None, start_service: bool = True, force: bool = False
+) -> None:
+    """Install Nexus service in system mode."""
+    require_root()
+
+    # Check dependencies and prerequisites
+    verify_external_dependencies()
+    check_installation_prerequisites("system", force)
+
+    print("Installing Nexus service in system mode...")
+
+    # Prepare system environment
+    prepare_system_environment()
+
     # Set up configuration
     _config = setup_config(SYSTEM_CONFIG_DIR, interactive, config_file)
     _env = env.NexusServiceEnv()
@@ -461,48 +587,24 @@ def install_system(
     set_system_permissions()
     print("Set proper directory permissions.")
 
-    # Setup systemd service
-    service_ok, service_error = setup_systemd_service()
-    if not service_ok:
-        sys.exit(service_error)
-    print(f"Installed service file to: {SYSTEMD_DIR / SERVICE_FILENAME}")
-
-    # Start service if requested
+    # Install and start service
+    install_system_service()
     service_started = False
     if start_service:
-        service_started = manage_systemd_service("start")
-        if service_started:
-            print("Nexus service enabled and started.")
-        else:
-            print("Failed to start Nexus service.")
+        service_started = start_system_service()
 
     # Write version marker
     current_version = write_installation_marker("system", service_started)
     print(f"Installed version {current_version}")
 
-    print("\nSystem installation complete.")
-    print("To uninstall: nexus-service uninstall")
-    print("To start/stop: sudo systemctl start/stop nexus_service")
-    print("To check status: systemctl status nexus_service")
+    print_installation_complete_message("system")
 
 
 def install_user(interactive: bool = True, config_file: pl.Path | None = None, force: bool = False) -> None:
     """Install Nexus service in user mode."""
-    # Check for existing installation
-    info = get_installation_info()
-    if info.install_mode != "none" and not force:
-        if info.install_mode == "user":
-            print(f"Nexus service is already installed in user mode (version {info.version}).")
-            return
-        else:
-            print(f"Nexus service is already installed in system mode (version {info.version}).")
-            print("Please uninstall the system installation first or use --force.")
-            return
-
-    # Check dependencies
-    deps_ok, deps_error = verify_external_dependencies()
-    if not deps_ok:
-        sys.exit(f"Missing dependencies: {deps_error}")
+    # Check dependencies and prerequisites
+    verify_external_dependencies()
+    check_installation_prerequisites("user", force)
 
     print("Installing Nexus service in user mode...")
 
@@ -520,10 +622,7 @@ def install_user(interactive: bool = True, config_file: pl.Path | None = None, f
     current_version = write_installation_marker("user")
     print(f"Installed version {current_version}")
 
-    print("\nUser installation complete.")
-    print("To uninstall: nexus-service uninstall")
-    print("To start the service: nexus-service")
-    print("To check status: nexus-service status")
+    print_installation_complete_message("user")
 
 
 def uninstall(keep_config: bool = False, force: bool = False) -> None:
@@ -538,21 +637,8 @@ def uninstall(keep_config: bool = False, force: bool = False) -> None:
     if info.install_mode == "system":
         require_root()
         print("Uninstalling system installation...")
-
-        # Stop service
-        if manage_systemd_service("stop"):
-            print("Nexus service stopped and disabled.")
-
-        # Remove service files
-        remove_service_files()
-        print(f"Removed service file: {SYSTEMD_DIR / SERVICE_FILENAME}")
-
-        # Clean up files
-        cleanup_files("system", keep_config)
-        if keep_config:
-            print(f"Kept configuration directory: {SYSTEM_CONFIG_DIR}")
-        else:
-            print(f"Removed directory: {SYSTEM_CONFIG_DIR}")
+        remove_system_components()
+        remove_installation_files("system", keep_config)
 
         # Remove user
         if remove_service_user():
@@ -560,72 +646,14 @@ def uninstall(keep_config: bool = False, force: bool = False) -> None:
 
     elif info.install_mode == "user":
         print("Uninstalling user installation...")
-        cleanup_files("user", keep_config)
-        if keep_config:
-            print(f"Kept configuration directory: {USER_CONFIG_DIR}")
-        else:
-            print(f"Removed directory: {USER_CONFIG_DIR}")
+        remove_installation_files("user", keep_config)
 
     print("\nNexus service has been uninstalled.")
 
 
-#### IDK WHERE THESE SOHULD GO
-
-
-def get_service_directory() -> tuple[pl.Path | None, bool]:
-    """Determine service directory and whether this is first run."""
-    info = get_installation_info()
-
-    if info.install_mode == "system":
-        return SYSTEM_CONFIG_DIR, False
-    elif info.install_mode == "user":
-        return USER_CONFIG_DIR, False
-
-    # Check for user config without marker
-    user_config_dir = pl.Path.home() / ".nexus_service"
-    if (user_config_dir / "config.toml").exists():
-        return user_config_dir, False
-
-    # No installation found
-    return None, True
-
-
-def get_valid_config(service_dir: pl.Path | None) -> config.NexusServiceConfig:
-    """Get configuration from file or defaults."""
-    if service_dir and (service_dir / "config.toml").exists():
-        try:
-            return config.load_config(service_dir)
-        except Exception as e:
-            print(f"Error loading config: {e}")
-            print("Using default configuration")
-
-    return config.NexusServiceConfig(service_dir=service_dir)
-
-
-def prompt_installation_mode() -> None:
-    """Prompt user for installation mode and perform setup."""
-    print("First run detected. Nexus service is not installed.")
-    print("You can run in the following modes:")
-    print("  1. Install as system service (requires sudo)")
-    print("  2. Install for current user only")
-    print("  3. Run without installing (stateless)")
-
-    try:
-        choice = input("Select mode [1-3, default=1]: ").strip()
-
-        if choice == "2":
-            install_user(interactive=True)
-            sys.exit(0)
-        elif choice == "3":
-            print("Running in stateless mode...")
-            return
-
-    except KeyboardInterrupt:
-        print("\nSetup cancelled")
-        sys.exit(0)
-
-    print("\nSetup cancelled")
-    sys.exit(0)
+# =========================================================================
+# Command Handling Functions
+# =========================================================================
 
 
 def command_status() -> None:
@@ -663,13 +691,6 @@ def command_status() -> None:
             print(f"Error checking service status: {e}")
 
 
-def display_config(_config: config.NexusServiceConfig) -> None:
-    print("======================")
-    for key, value in _config.model_dump().items():
-        print(f"{key}: {value}")
-    print("\n")
-
-
 def command_config() -> None:
     """Show current configuration."""
     info = get_installation_info()
@@ -685,6 +706,67 @@ def command_config() -> None:
         config_obj = config.load_config(info.install_path)
 
     display_config(config_obj)
+
+
+def handle_install_command(args: argparse.Namespace) -> None:
+    """Handle the install command."""
+    interactive = not getattr(args, "no_interactive", False)
+    force = getattr(args, "force", False)
+    config_file_path = getattr(args, "config", None)
+    config_file = pl.Path(config_file_path) if config_file_path else None
+
+    if getattr(args, "user", False):
+        install_user(interactive=interactive, config_file=config_file, force=force)
+    else:
+        start_service = not getattr(args, "no_start", False)
+        install_system(interactive=interactive, config_file=config_file, start_service=start_service, force=force)
+
+
+def handle_uninstall_command(args: argparse.Namespace) -> None:
+    """Handle the uninstall command."""
+    uninstall(keep_config=getattr(args, "keep_config", False), force=getattr(args, "force", False))
+
+
+def handle_command(args: argparse.Namespace) -> bool:
+    """Process CLI commands. Returns True if a command was executed."""
+    command_handlers = {
+        "install": handle_install_command,
+        "uninstall": handle_uninstall_command,
+        "config": lambda _: command_config(),
+        "status": lambda _: command_status(),
+    }
+
+    if args.command in command_handlers:
+        command_handlers[args.command](args)
+        return True
+
+    return False
+
+
+def prompt_installation_mode() -> None:
+    """Prompt user for installation mode and perform setup."""
+    print("First run detected. Nexus service is not installed.")
+    print("You can run in the following modes:")
+    print("  1. Install as system service (requires sudo)")
+    print("  2. Install for current user only")
+    print("  3. Run without installing (stateless)")
+
+    try:
+        choice = input("Select mode [1-3, default=1]: ").strip()
+
+        if choice == "2":
+            install_user(interactive=True)
+            sys.exit(0)
+        elif choice == "3":
+            print("Running in stateless mode...")
+            return
+
+    except KeyboardInterrupt:
+        print("\nSetup cancelled")
+        sys.exit(0)
+
+    print("\nSetup cancelled")
+    sys.exit(0)
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
