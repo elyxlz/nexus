@@ -5,7 +5,7 @@ import wandb
 import wandb.errors
 
 from nexus.service.core import exceptions as exc
-from nexus.service.core import logger, schema
+from nexus.service.core import logger, schemas
 
 __all__ = ["find_wandb_run_by_nexus_id"]
 
@@ -47,9 +47,20 @@ async def find_run_id_from_metadata(
 
 @exc.handle_exception(wandb.errors.Error, exc.WandBError, message="W&B API error", reraise=False)
 async def find_wandb_run_by_nexus_id(
-    _logger: logger.NexusServiceLogger, job: schema.Job, api_timeout: int = 2
+    _logger: logger.NexusServiceLogger, job: schemas.Job, api_timeout: int = 2
 ) -> str | None:
+    nexus_job_id = job.id
+    dirs = [str(job.dir)] if job.dir else []
     _logger.debug(f"Starting search for nexus job ID: {nexus_job_id}")
+
+    wandb_api_key = job.env.get("WANDB_API_KEY")
+    wandb_entity = job.env.get("WANDB_ENTITY")
+
+    if not wandb_api_key:
+        raise exc.WandBError("Missing WANDB_API_KEY in job environment")
+
+    if not wandb_entity:
+        raise exc.WandBError("Missing WANDB_ENTITY in job environment")
 
     run_id = await find_run_id_from_metadata(_logger, dirs, nexus_job_id)
     if run_id is None:

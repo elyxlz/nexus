@@ -58,7 +58,6 @@ async def get_status(ctx: context.NexusServiceContext = fa.Depends(get_context))
     )
 
     response = models.ServiceStatusResponse(
-        running=True,
         gpu_count=len(gpus),
         queued_jobs=queued,
         running_jobs=running,
@@ -112,13 +111,14 @@ async def add_job(job_request: models.JobRequest, ctx: context.NexusServiceConte
 
     norm_url = git.normalize_git_url(job_request.git_repo_url)
 
-    # Create job instance
     j = job.create_job(
         command=job_request.command,
         git_repo_url=norm_url,
         git_tag=job_request.git_tag,
+        git_branch=job_request.git_branch,
         user=job_request.user,
-        environment=job_request.environment,
+        node_name=ctx.config.node_name,
+        env=job_request.env,
         jobrc=job_request.jobrc,
         search_wandb=job_request.search_wandb,
         notifications=job_request.notifications,

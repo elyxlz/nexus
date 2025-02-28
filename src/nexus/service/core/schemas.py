@@ -2,9 +2,10 @@ import dataclasses as dc
 import pathlib as pl
 import typing as tp
 
-__all__ = ["JobStatus", "Job"]
+__all__ = ["JobStatus", "NotificationType", "Job"]
 
 JobStatus = tp.Literal["queued", "running", "completed", "failed"]
+NotificationType = tp.Literal["discord"]
 
 
 @dc.dataclass(frozen=True)
@@ -17,11 +18,12 @@ class Job:
     git_branch: str
     status: JobStatus
     created_at: float
+    node_name: str
     env: dict[str, str]
     jobrc: str | None
     search_wandb: bool
-    notifications: list[str]
-    discord_start_notification_message_id: str | None  # need this for editing messages
+    notifications: list[NotificationType]
+    notification_messages: dict[str, str]  # {discord_start:12352}
 
     pid: int | None
     dir: pl.Path | None

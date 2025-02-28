@@ -96,12 +96,12 @@ def handle_exception(
                     error_msg = f"{message}: {str(e)}"
                     _logger.error(error_msg)
 
+                    if not reraise:
+                        return tp.cast(T, default_return)
+
                     if target_exception is not None:
                         new_err_msg = f"{error_msg} (converted from {type(e).__name__})"
                         raise target_exception(message=new_err_msg) from e
-
-                    if not reraise:
-                        return tp.cast(T, default_return)
 
                     raise
 

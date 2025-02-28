@@ -38,11 +38,7 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
             ctx.logger.info(msg) if action == "completed" else ctx.logger.error(msg)
 
             if _job.notifications:
-                if action == "completed":
-                    await notifications.notify_job_completed(ctx.logger, job=_job)
-                elif action == "failed":
-                    job_logs = job.get_job_logs(ctx.logger, job_dir=_job.dir, last_n_lines=20)
-                    await notifications.notify_job_failed(ctx.logger, job=_job, job_logs=job_logs)
+                await notifications.notify_job_action(ctx.logger, job=_job, action=action)
 
         db.update_job(ctx.logger, conn=ctx.db, job=updated_job)
 
@@ -64,7 +60,7 @@ async def update_wandb_urls(ctx: context.NexusServiceContext) -> None:
             updated = dc.replace(_job, wandb_url=wandb_url)
             db.update_job(ctx.logger, conn=ctx.db, job=updated)
             ctx.logger.info(f"Associated job {_job.id} with W&B run: {wandb_url}")
-            await notifications.update_job_wandb(ctx.logger, job=updated)
+            await notifications.update_notification_with_wandb(ctx.logger, job=updated)
 
 
 @db.safe_transaction
@@ -106,8 +102,10 @@ async def start_queued_jobs(ctx: context.NexusServiceContext) -> None:
         db.update_job(ctx.logger, conn=ctx.db, job=started)
         ctx.logger.info(format.format_job_action(started, action="started"))
 
-        job_with_notification = await notifications.notify_job_started(ctx.logger, job=started)
-        db.update_job(ctx.logger, conn=ctx.db, job=job_with_notification)
+        # Only send notifications if the job has notification settings
+        if started.notifications:
+            job_with_notification = await notifications.notify_job_action(ctx.logger, job=started, action="started")
+            db.update_job(ctx.logger, conn=ctx.db, job=job_with_notification)
 
     remaining = len(db.list_jobs(ctx.logger, conn=ctx.db, status="queued"))
     ctx.logger.info(f"Started jobs on available GPUs; remaining queued jobs: {remaining}")

@@ -43,11 +43,11 @@
 - [x] let user pass env for job (or jobrc or something)
 - [x] figure out why git tag removal fails some times
 - [x] refactor, move more things away from cli and to the api
-- [ ] improve notification system
-- [ ] remove discord id from job
+- [x] remove discord id from job
+- [x] add branch information on job
+- [x] improve notification system
 - [ ] add tests for persistence
 - [ ] whatsapp notification support
-- [ ] add branch information on job
 - [ ] git branch mode
 - [ ] multi gpu jobs
 - [ ] easy way to show logs for running jobs on discord

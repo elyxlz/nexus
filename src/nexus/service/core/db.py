@@ -39,22 +39,25 @@ def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) 
             command TEXT,
             git_repo_url TEXT,
             git_tag TEXT,
+            git_branch TEXT,
             status TEXT,
             created_at REAL,
+            env JSON, 
+            node_name TEXT,
+            jobrc TEXT,
+            search_wandb INT,
+            notifications TEXT,
+            notification_messages JSON,
+            pid INTEGER,
+            dir TEXT,
             started_at REAL,
-            completed_at REAL,
             gpu_index INTEGER,
+            wandb_url TEXT,
+            marked_for_kill INTEGER,
+            completed_at REAL,
             exit_code INTEGER,
             error_message TEXT,
-            wandb_url TEXT,
-            user TEXT,
-            discord_id TEXT,
-            marked_for_kill INTEGER,
-            dir TEXT,
-            notification_message_id TEXT,
-            pid INTEGER,
-            pre_job_script TEXT,
-            environment_json TEXT
+            user TEXT
         )
     """)
     cur.execute("""
@@ -66,10 +69,10 @@ def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) 
 
 
 @exc.handle_exception(json.JSONDecodeError, exc.DatabaseError, message="Invalid environment data in database")
-def _parse_environment(_logger: logger.NexusServiceLogger, env_json: str | None) -> dict[str, str]:
-    if not env_json:
+def _parse_json(_logger: logger.NexusServiceLogger, json_obj: str | None) -> dict[str, str]:
+    if not json_obj:
         return {}
-    return json.loads(env_json)
+    return json.loads(json_obj)
 
 
 def row_to_job(_logger: logger.NexusServiceLogger, row: sqlite3.Row) -> schemas.Job:
@@ -78,22 +81,25 @@ def row_to_job(_logger: logger.NexusServiceLogger, row: sqlite3.Row) -> schemas.
         command=row["command"],
         git_repo_url=row["git_repo_url"],
         git_tag=row["git_tag"],
+        git_branch=row["git_branch"],
         status=row["status"],
         created_at=row["created_at"],
         started_at=row["started_at"],
         completed_at=row["completed_at"],
+        node_name=row["node_name"],
         gpu_index=row["gpu_index"],
         exit_code=row["exit_code"],
         error_message=row["error_message"],
         wandb_url=row["wandb_url"],
         user=row["user"],
-        discord_id=row["discord_id"],
         marked_for_kill=bool(row["marked_for_kill"]) if row["marked_for_kill"] is not None else False,
         dir=pl.Path(row["dir"]) if row["dir"] else None,
-        notification_message_id=row["notification_message_id"],
         pid=row["pid"],
-        environment=_parse_environment(_logger, env_json=row["environment_json"]),
-        pre_job_script=row["pre_job_script"],
+        env=_parse_json(_logger, json_obj=row["env"]),
+        jobrc=row["jobrc"],
+        search_wandb=bool(row["search_wandb"]) if row["search_wandb"] is not None else False,
+        notifications=row["notifications"].split(",") if row["notifications"] else [],
+        notification_messages=_parse_json(_logger, json_obj=row["notification_messages"]),
     )
 
 
@@ -101,24 +107,26 @@ def row_to_job(_logger: logger.NexusServiceLogger, row: sqlite3.Row) -> schemas.
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add job to database")
 def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
-    # Serialize environment to JSON if present
-    environment_json = json.dumps(job.env) if job.env else None
+    env_json = json.dumps(job.env)
+    notification_messages_json = json.dumps(job.notification_messages)
+    notifications_str = ",".join(job.notifications)
 
     cur.execute(
         """
         INSERT INTO jobs (
-            id, command, git_repo_url, git_tag, status, created_at, 
+            id, command, git_repo_url, git_tag, git_branch, status, created_at, 
             started_at, completed_at, gpu_index, exit_code, error_message, 
-            wandb_url, user, discord_id, marked_for_kill, dir, notification_message_id,
-            pid, pre_job_script, environment_json
+            wandb_url, user, marked_for_kill, dir, node_name,
+            pid, jobrc, env, search_wandb, notifications, notification_messages
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (
             job.id,
             job.command,
             job.git_repo_url,
             job.git_tag,
+            job.git_branch,
             job.status,
             job.created_at,
             job.started_at,
@@ -128,13 +136,15 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: s
             job.error_message,
             job.wandb_url,
             job.user,
-            job.discord_id,
             int(job.marked_for_kill),
             str(job.dir) if job.dir else None,
-            job.notification_message_id,
+            job.node_name,
             job.pid,
-            job.pre_job_script,
-            environment_json,
+            job.jobrc,
+            env_json,
+            int(job.search_wandb),
+            notifications_str,
+            notification_messages_json,
         ),
     )
 
@@ -143,9 +153,10 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: s
 def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
 
-    environment_json = None
-    if job.status == "queued" and job.env:
-        environment_json = json.dumps(job.env)
+    # Serialize environment and notification messages to JSON if present
+    env_json = json.dumps(job.env) if job.env else None
+    notification_messages_json = json.dumps(job.notification_messages) if job.notification_messages else None
+    notifications_str = ",".join(job.notifications) if job.notifications else None
 
     cur.execute(
         """
@@ -153,6 +164,7 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             command = ?,
             git_repo_url = ?,
             git_tag = ?,
+            git_branch = ?,
             status = ?,
             created_at = ?,
             started_at = ?,
@@ -162,19 +174,21 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             error_message = ?,
             wandb_url = ?,
             user = ?,
-            discord_id = ?,
             marked_for_kill = ?,
             dir = ?,
-            notification_message_id = ?,
             pid = ?,
-            pre_job_script = ?,
-            environment_json = ?
+            jobrc = ?,
+            env = ?,
+            search_wandb = ?,
+            notifications = ?,
+            notification_messages = ?
         WHERE id = ?
     """,
         (
             job.command,
             job.git_repo_url,
             job.git_tag,
+            job.git_branch,
             job.status,
             job.created_at,
             job.started_at,
@@ -184,13 +198,14 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             job.error_message,
             job.wandb_url,
             job.user,
-            job.discord_id,
             int(job.marked_for_kill),
             str(job.dir) if job.dir else None,
-            job.notification_message_id,
             job.pid,
-            job.pre_job_script,
-            environment_json,
+            job.jobrc,
+            env_json,
+            int(job.search_wandb),
+            notifications_str,
+            notification_messages_json,
             job.id,
         ),
     )

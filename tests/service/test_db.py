@@ -32,10 +32,11 @@ def test_add_and_get_job(tmp_path: pl.Path, mock_logger: NexusServiceLogger):
     # Create a new job using the job creation helper.
     job = create_job(
         "echo 'Hello World'",
-        "https://github.com/elyxlz/nexus",
-        "main",
-        "testuser",
-        None,
+        git_repo_url="https://github.com/elyxlz/nexus",
+        git_tag="main",
+        git_branch="blah",
+        user="testuser",
+        node_name="xx",
     )
     # Add the job and commit.
     add_job(mock_logger, conn=conn, job=job)
@@ -55,10 +56,11 @@ def test_update_job(tmp_path: pl.Path, mock_logger: NexusServiceLogger):
 
     job = create_job(
         "echo 'Initial Command'",
-        "https://github.com/elyxlz/nexus",
-        "main",
-        "user1",
-        None,
+        git_repo_url="https://github.com/elyxlz/nexus",
+        git_tag="main",
+        git_branch="blah",
+        user="testuser",
+        node_name="xx",
     )
     add_job(mock_logger, conn=conn, job=job)
     conn.commit()
@@ -79,8 +81,22 @@ def test_list_and_delete_jobs(tmp_path: pl.Path, mock_logger: NexusServiceLogger
     conn = create_connection(mock_logger, db_path=str(db_path))
 
     # Create two jobs.
-    job1 = create_job("echo 'Job1'", "https://github.com/elyxlz/nexus", "main", "user1", None)
-    job2 = create_job("echo 'Job2'", "https://github.com/elyxlz/nexus", "main", "user2", None)
+    job1 = create_job(
+        "echo 'Job1'",
+        git_repo_url="https://github.com/elyxlz/nexus",
+        git_tag="main",
+        git_branch="test",
+        user="user1",
+        node_name="test",
+    )
+    job2 = create_job(
+        "echo 'Job2'",
+        git_repo_url="https://github.com/elyxlz/nexus",
+        git_tag="main",
+        git_branch="test",
+        user="user1",
+        node_name="test",
+    )
     # For testing purposes, update job2 status to "running" (so it is not queued).
     job2 = job2.__class__(**{**job2.__dict__, "status": "running"})
 
@@ -105,9 +121,6 @@ def test_list_and_delete_jobs(tmp_path: pl.Path, mock_logger: NexusServiceLogger
     # Now job1 should not be found.
     retrieved = get_job(mock_logger, conn=conn, job_id=job1.id)
     assert retrieved is None
-
-    # Attempting to delete a non-queued job (job2) should raise an exception
-    import pytest
 
     with pytest.raises(exc.JobError):
         delete_queued_job(mock_logger, conn=conn, job_id=job2.id)

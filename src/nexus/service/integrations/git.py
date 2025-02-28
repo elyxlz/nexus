@@ -30,7 +30,7 @@ async def async_cleanup_repo(_logger: logger.NexusServiceLogger, job_dir: pl.Pat
         _logger.info(f"Successfully cleaned up {job_repo_dir}")
 
 
-@exc.handle_exception(subprocess.CalledProcessError, exc.GitError, message="Failed to clean up git tag")
+@exc.handle_exception(subprocess.CalledProcessError, exc.GitError, message="Failed to clean up git tag", reraise=False)
 async def async_cleanup_git_tag(_logger: logger.NexusServiceLogger, git_tag: str, git_repo_url: str) -> None:
     subprocess.run(["git", "push", git_repo_url, "--delete", git_tag], check=True, capture_output=True, text=True)
     _logger.info(f"Cleaned up git tag {git_tag} from {git_repo_url}")

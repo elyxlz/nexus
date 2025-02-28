@@ -1,7 +1,7 @@
-import typing as tp
-
 import pydantic as pyd
 import typing_extensions as tpe
+
+from nexus.service.core.schemas import NotificationType
 
 __all__ = [
     "JobRequest",
@@ -16,8 +16,6 @@ __all__ = [
     "GpuActionResponse",
     "ServiceStatusResponse",
 ]
-
-NotificationType = tp.Literal["discord"]  # TODO: whatsapp, phone call
 
 REQUIRED_ENV_VARS = {"wandb": ["WANDB_API_KEY", "WANDB_ENTITY"], "discord": ["DISCORD_USER_ID", "DISCORD_WEBHOOK_URL"]}
 
@@ -34,19 +32,19 @@ class JobRequest(FrozenBaseModel):
     user: str
     search_wandb: bool = False
     notifications: list[NotificationType] = []
-    environment: dict[str, str] = {}
+    env: dict[str, str] = {}
     jobrc: str | None = None
 
     @pyd.model_validator(mode="after")
     def check_requirements(self) -> tpe.Self:
         if self.search_wandb:
             for key in REQUIRED_ENV_VARS["wandb"]:
-                if key not in self.environment:
+                if key not in self.env:
                     raise ValueError(f"Missing required environment variable {key} for wandb integration")
 
         for notification_type in self.notifications:
             for key in REQUIRED_ENV_VARS[notification_type]:
-                if key not in self.environment:
+                if key not in self.env:
                     raise ValueError(
                         f"Missing required environment variable {key} for {notification_type} notifications"
                     )
