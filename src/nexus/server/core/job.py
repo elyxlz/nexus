@@ -176,7 +176,6 @@ async def _launch_screen_process(
         stderr=asyncio.subprocess.PIPE,
     )
     await process.wait()
-    breakpoint()
 
     if process.returncode is not None and process.returncode != 0:
         raise exc.JobError(message=f"Screen process exited with code {process.returncode}")
@@ -186,7 +185,6 @@ async def _launch_screen_process(
     proc = await asyncio.create_subprocess_exec(
         "pgrep", "-f", f"{session_name}.*{script_path}", stdout=asyncio.subprocess.PIPE
     )
-    breakpoint()
     stdout, _ = await proc.communicate()
     pids = stdout.decode().strip().split("\n")
     if not pids or not pids[0]:

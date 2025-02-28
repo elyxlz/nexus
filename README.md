@@ -47,8 +47,8 @@
 - [x] add branch information on job
 - [x] improve notification system
 - [x] make get job logs async
+- [x] priority jobs
 - [ ] multi gpu jobs
-- [ ] priority jobs
 - [ ] dependent jobs (a after b is done)
 - [ ] nexus run endpoint
 - [ ] better exceptions for users

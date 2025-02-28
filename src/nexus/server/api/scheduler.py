@@ -83,13 +83,14 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
     ]
 
     if not available_gpus:
-        running_count = len(db.list_jobs(ctx.logger, conn=ctx.db, status="running"))
-        ctx.logger.debug(f"No available GPUs. {running_count} jobs running")
+        ctx.logger.debug("No available GPUs")
 
     for gpu_instance in available_gpus:
         if not queued_jobs:
+            ctx.logger.debug("No queued_jobs")
             break
 
+        queued_jobs = sorted(queued_jobs, key=lambda x: x.priority, reverse=True)
         _job = queued_jobs.pop(0)
 
         jobs_dir = pl.Path(tempfile.mkdtemp())
