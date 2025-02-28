@@ -46,6 +46,11 @@
 - [x] remove discord id from job
 - [x] add branch information on job
 - [x] improve notification system
+- [ ] better exceptions for users
+- [ ] make get job logs async
+- [ ] better secretes management
+- [ ] add time based cache to gpu call
+- [ ] job execution isolation
 - [ ] add tests for persistence
 - [ ] whatsapp notification support
 - [ ] git branch mode

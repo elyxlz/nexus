@@ -20,9 +20,9 @@ __all__ = [
     "build_job_env",
     "async_start_job",
     "is_job_running",
-    "end_job",
+    "async_end_job",
     "get_job_exit_code",
-    "get_job_logs",
+    "async_get_job_logs",
     "kill_job",
 ]
 
@@ -284,12 +284,12 @@ def is_job_running(_logger: logger.NexusServiceLogger, job: schemas.Job) -> bool
         return True
 
 
-def end_job(_logger: logger.NexusServiceLogger, _job: schemas.Job, killed: bool) -> schemas.Job:
+async def async_end_job(_logger: logger.NexusServiceLogger, _job: schemas.Job, killed: bool) -> schemas.Job:
     if is_job_running(_logger, _job):
         return _job
 
-    job_log = get_job_logs(_logger, job_dir=_job.dir)
-    exit_code = get_job_exit_code(_logger, job_id=_job.id, job_dir=_job.dir)
+    job_log = await async_get_job_logs(_logger, job_dir=_job.dir)
+    exit_code = await get_job_exit_code(_logger, job_id=_job.id, job_dir=_job.dir)
 
     if killed:
         new_job = dc.replace(
@@ -327,13 +327,13 @@ def _parse_exit_code(_logger: logger.NexusServiceLogger, last_line: str) -> int:
     return int(exit_code_str)
 
 
-@exc.handle_exception(Exception, message="Error determining exit code", reraise=False, default_return=None)
-def get_job_exit_code(_logger: logger.NexusServiceLogger, job_id: str, job_dir: pl.Path | None) -> int | None:
+@exc.handle_exception_async(Exception, message="Error determining exit code", reraise=False, default_return=None)
+async def get_job_exit_code(_logger: logger.NexusServiceLogger, job_id: str, job_dir: pl.Path | None) -> int | None:
     if job_dir is None:
         _logger.warning(f"No directory specified for job {job_id}, cannot determine exit code")
         return None
 
-    content = get_job_logs(_logger, job_dir=job_dir, last_n_lines=1)
+    content = await async_get_job_logs(_logger, job_dir=job_dir, last_n_lines=1)
     if content is None:
         _logger.warning(f"No output log found for job {job_id}")
         raise exc.JobError(f"No output log found for job {job_id}")
@@ -351,7 +351,7 @@ def _read_log_file(_logger: logger.NexusServiceLogger, log_path: pl.Path, last_n
             return "".join(f.readlines()[-last_n_lines:])
 
 
-def get_job_logs(
+async def async_get_job_logs(
     _logger: logger.NexusServiceLogger, job_dir: pl.Path | None, last_n_lines: int | None = None
 ) -> str | None:
     if job_dir is None:

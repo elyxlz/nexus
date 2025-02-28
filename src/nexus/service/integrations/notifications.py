@@ -8,7 +8,7 @@ import pydantic as pyd
 
 from nexus.service.core import exceptions as exc
 from nexus.service.core import logger, schemas
-from nexus.service.core.job import get_job_logs
+from nexus.service.core.job import async_get_job_logs
 
 __all__ = ["notify_job_action", "update_notification_with_wandb"]
 
@@ -117,7 +117,7 @@ async def notify_job_action(_logger: logger.NexusServiceLogger, job: schemas.Job
     webhook_url = get_notification_secrets_from_job(job)[0]
 
     if action == "failed" and job.dir:
-        job_logs = get_job_logs(_logger, job_dir=job.dir, last_n_lines=20)
+        job_logs = await async_get_job_logs(_logger, job_dir=job.dir, last_n_lines=20)
         if job_logs:
             message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": f"```\n{job_logs}\n```"})
 

@@ -148,7 +148,7 @@ async def get_job_logs_endpoint(job_id: str, ctx: context.NexusServiceContext = 
         ctx.logger.warning(f"Job not found: {job_id}")
         raise exc.JobError(message=f"Job not found: {job_id}")
 
-    logs = job.get_job_logs(ctx.logger, job_dir=_job.dir)
+    logs = await job.async_get_job_logs(ctx.logger, job_dir=_job.dir)
     logs = logs or ""
     ctx.logger.info(f"Retrieved logs for job {job_id}, size: {len(logs)} characters")
     return models.JobLogsResponse(logs=logs)

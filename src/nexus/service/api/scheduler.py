@@ -20,12 +20,12 @@ async def update_running_jobs(ctx: context.NexusServiceContext) -> None:
 
         if _job.marked_for_kill and job.is_job_running(ctx.logger, job=_job):
             await job.kill_job(ctx.logger, job=_job)
-            updated_job = job.end_job(ctx.logger, _job=_job, killed=True)
+            updated_job = await job.async_end_job(ctx.logger, _job=_job, killed=True)
             await git.async_cleanup_repo(ctx.logger, job_dir=_job.dir)
             await git.async_cleanup_git_tag(ctx.logger, git_tag=_job.git_tag, git_repo_url=_job.git_repo_url)
 
         elif not job.is_job_running(ctx.logger, job=_job):
-            updated_job = job.end_job(ctx.logger, _job=_job, killed=False)
+            updated_job = await job.async_end_job(ctx.logger, _job=_job, killed=False)
             await git.async_cleanup_repo(ctx.logger, job_dir=_job.dir)
             await git.async_cleanup_git_tag(ctx.logger, git_tag=_job.git_tag, git_repo_url=_job.git_repo_url)
 
