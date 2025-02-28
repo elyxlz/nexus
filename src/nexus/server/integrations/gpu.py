@@ -47,9 +47,9 @@ def _fetch_gpu_processes(_logger: logger.NexusServerLogger) -> GpuProcesses:
 
         parts = line.split()
         if len(parts) > 1 and parts[1].strip() != "-":
-            gpu_index = int(parts[0])
-            gpu_processes[gpu_index] = gpu_processes.get(gpu_index, 0) + 1
-            _logger.debug(f"GPU {gpu_index}: process count incremented to {gpu_processes[gpu_index]}")
+            gpu_idx = int(parts[0])
+            gpu_processes[gpu_idx] = gpu_processes.get(gpu_idx, 0) + 1
+            _logger.debug(f"GPU {gpu_idx}: process count incremented to {gpu_processes[gpu_idx]}")
     _logger.debug(f"Final GPU process counts: {gpu_processes}")
     return gpu_processes
 
@@ -128,7 +128,7 @@ def _get_mock_gpus(
     _logger: logger.NexusServerLogger, running_jobs: list[schemas.Job], blacklisted_gpus: list[int]
 ) -> list[GpuInfo]:
     _logger.debug("Generating mock GPUs")
-    running_jobs_idxs = {tp.cast(int, j.gpu_index): j.id for j in running_jobs}
+    running_jobs_idxs = {tp.cast(int, j.gpu_idx): j.id for j in running_jobs}
     blacklisted_gpus_set = set(blacklisted_gpus)
 
     mock_gpu_configs = [
@@ -171,7 +171,7 @@ def get_gpus(
 
     output = _get_nvidia_smi_output(_logger)
     gpu_processes = _fetch_gpu_processes(_logger)
-    running_jobs_idxs = {tp.cast(int, j.gpu_index): j.id for j in running_jobs}
+    running_jobs_idxs = {tp.cast(int, j.gpu_idx): j.id for j in running_jobs}
     blacklisted_set = set(blacklisted_gpus)
     gpus: list[GpuInfo] = []
 

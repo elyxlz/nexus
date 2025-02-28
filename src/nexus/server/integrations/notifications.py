@@ -38,12 +38,10 @@ def _get_notification_secrets_from_job(job: schemas.Job) -> tuple[str, str]:
 def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction) -> dict:
     discord_id = _get_notification_secrets_from_job(job)[1]
     user_mention = f"<@{discord_id}>"
-    message_title = (
-        f"{EMOJI_MAPPING[job_action]} - **Job {job.id} {job_action} on GPU {job.gpu_index}** - {user_mention}"
-    )
+    message_title = f"{EMOJI_MAPPING[job_action]} - **Job {job.id} {job_action} on GPU {job.gpu_idx}** - {user_mention}"
     command = job.command
     git_info = f"{job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}"
-    gpu_index = str(job.gpu_index) if job.gpu_index is not None else "N/A"
+    gpu_idx = str(job.gpu_idx) if job.gpu_idx is not None else "N/A"
     node_name = job.node_name
     wandb_url = "Pending ..." if job_action == "started" and not job.wandb_url else (job.wandb_url or "Not Found")
     fields = [
@@ -51,7 +49,7 @@ def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction
         {"name": "W&B", "value": wandb_url},
         {"name": "Git", "value": git_info},
         {"name": "User", "value": job.user, "inline": True},
-        {"name": "GPU", "value": gpu_index, "inline": True},
+        {"name": "GPU", "value": gpu_idx, "inline": True},
         {"name": "Node", "value": node_name, "inline": True},
     ]
     if job.error_message and job_action in ["completed", "failed"]:

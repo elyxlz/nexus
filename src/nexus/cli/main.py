@@ -126,7 +126,7 @@ def parse_gpu_list(gpu_str: str) -> list[int]:
     try:
         return [int(idx.strip()) for idx in gpu_str.split(",")]
     except ValueError:
-        raise ValueError("GPU indexes must be comma-separated numbers (e.g., '0,1,2')")
+        raise ValueError("GPU idxs must be comma-separated numbers (e.g., '0,1,2')")
 
 
 def parse_targets(targets: list[str]) -> tuple[list[int], list[str]]:
@@ -376,7 +376,7 @@ def show_history(regex: str | None = None) -> None:
         for job in jobs[-25:]:  # Last 25 jobs
             # Calculate runtime and format timestamps
             runtime = calculate_runtime(job)
-            gpu = job.get("gpu_index", "Unknown")
+            gpu = job.get("gpu_idx", "Unknown")
             started_time = format_timestamp(job.get("started_at"))
 
             # Format status with color and icon
@@ -430,11 +430,11 @@ def kill_jobs(targets: list[str], bypass_confirm: bool = False) -> None:
             response.raise_for_status()
             gpus = response.json()
 
-            for gpu_index in gpu_indices:
-                matching_gpu = next((gpu for gpu in gpus if gpu["index"] == gpu_index), None)
+            for gpu_idx in gpu_indices:
+                matching_gpu = next((gpu for gpu in gpus if gpu["index"] == gpu_idx), None)
                 if matching_gpu and matching_gpu.get("running_job_id"):
                     jobs_to_kill.add(matching_gpu["running_job_id"])
-                    jobs_info.append(f"GPU {gpu_index}: Job {colored(matching_gpu['running_job_id'], 'magenta')}")
+                    jobs_info.append(f"GPU {gpu_idx}: Job {colored(matching_gpu['running_job_id'], 'magenta')}")
 
         if job_ids:
             response = requests.get(f"{get_api_base_url()}/jobs", params={"status": "running"})
@@ -577,19 +577,19 @@ def view_logs(target: str) -> None:
 
         # Check if target is a GPU index
         if target.isdigit():
-            gpu_index = int(target)
+            gpu_idx = int(target)
             response = requests.get(f"{get_api_base_url()}/gpus")
             response.raise_for_status()
             gpus = response.json()
 
-            matching_gpu = next((gpu for gpu in gpus if gpu["index"] == gpu_index), None)
+            matching_gpu = next((gpu for gpu in gpus if gpu["index"] == gpu_idx), None)
             if not matching_gpu:
-                print(colored(f"No GPU found with index {gpu_index}", "red"))
+                print(colored(f"No GPU found with index {gpu_idx}", "red"))
                 return
 
             job_id = matching_gpu.get("running_job_id")
             if not job_id:
-                print(colored(f"No running job found on GPU {gpu_index}", "yellow"))
+                print(colored(f"No running job found on GPU {gpu_idx}", "yellow"))
                 return
 
             target = job_id
@@ -616,15 +616,15 @@ def attach_to_session(target: str) -> None:
             response.raise_for_status()
             gpus = response.json()
 
-            gpu_index = int(target)
-            matching_gpu = next((gpu for gpu in gpus if gpu["index"] == gpu_index), None)
+            gpu_idx = int(target)
+            matching_gpu = next((gpu for gpu in gpus if gpu["index"] == gpu_idx), None)
             if not matching_gpu:
-                print(colored(f"No GPU found with index {gpu_index}", "red"))
+                print(colored(f"No GPU found with index {gpu_idx}", "red"))
                 return
 
             job_id = matching_gpu.get("running_job_id")
             if not job_id:
-                print(colored(f"No running job found on GPU {gpu_index}", "yellow"))
+                print(colored(f"No running job found on GPU {gpu_idx}", "yellow"))
                 return
 
             session_name = f"nexus_job_{job_id}"
@@ -644,22 +644,22 @@ def attach_to_session(target: str) -> None:
 def handle_blacklist(args) -> None:
     """Handle blacklist operations."""
     try:
-        gpu_indexes = parse_gpu_list(args.gpus)
+        gpu_idxs = parse_gpu_list(args.gpus)
 
         response = requests.get(f"{get_api_base_url()}/gpus")
         response.raise_for_status()
         gpus = response.json()
 
-        valid_indexes = {gpu["index"] for gpu in gpus}
-        invalid_indexes = [idx for idx in gpu_indexes if idx not in valid_indexes]
-        if invalid_indexes:
-            print(colored(f"Invalid GPU indexes: {', '.join(map(str, invalid_indexes))}", "red"))
+        valid_idxs = {gpu["index"] for gpu in gpus}
+        invalid_idxs = [idx for idx in gpu_idxs if idx not in valid_idxs]
+        if invalid_idxs:
+            print(colored(f"Invalid GPU idxs: {', '.join(map(str, invalid_idxs))}", "red"))
             return
 
         if args.blacklist_action == "add":
-            response = requests.post(f"{get_api_base_url()}/gpus/blacklist", json=gpu_indexes)
+            response = requests.post(f"{get_api_base_url()}/gpus/blacklist", json=gpu_idxs)
         else:  # remove
-            response = requests.delete(f"{get_api_base_url()}/gpus/blacklist", json=gpu_indexes)
+            response = requests.delete(f"{get_api_base_url()}/gpus/blacklist", json=gpu_idxs)
 
         response.raise_for_status()
         result = response.json()
@@ -769,10 +769,10 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     blacklist_add = blacklist_subparsers.add_parser("add", help="Add GPUs to blacklist")
-    blacklist_add.add_argument("gpus", help="Comma-separated GPU indexes to blacklist (e.g., '0,1,2')")
+    blacklist_add.add_argument("gpus", help="Comma-separated GPU idxs to blacklist (e.g., '0,1,2')")
 
     blacklist_remove = blacklist_subparsers.add_parser("remove", help="Remove GPUs from blacklist")
-    blacklist_remove.add_argument("gpus", help="Comma-separated GPU indexes to remove from blacklist")
+    blacklist_remove.add_argument("gpus", help="Comma-separated GPU idxs to remove from blacklist")
 
     # Logs
     logs_parser = subparsers.add_parser("logs", help="View logs for job or server")

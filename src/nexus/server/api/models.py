@@ -30,11 +30,12 @@ class JobRequest(FrozenBaseModel):
     git_repo_url: str
     git_tag: str
     git_branch: str
+    num_gpus: int = 1
+    priority: int = 0
     search_wandb: bool = False
     notifications: list[schemas.NotificationType] = []
     env: dict[str, str] = {}
     jobrc: str | None = None
-    priority: int = 0
 
     @pyd.model_validator(mode="after")
     def check_requirements(self) -> tpe.Self:

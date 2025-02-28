@@ -124,8 +124,10 @@ def _create_job_script(
 
 
 @exc.handle_exception(Exception, exc.JobError, message="Failed to build job.env")
-def _build_environment(_logger: logger.NexusServerLogger, gpu_index: int, job_env: dict[str, str]) -> dict[str, str]:
-    return {"CUDA_VISIBLE_DEVICES": str(gpu_index), **job_env}
+def _build_environment(
+    _logger: logger.NexusServerLogger, gpu_idxs: list[int], job_env: dict[str, str]
+) -> dict[str, str]:
+    return {"CUDA_VISIBLE_DEVICES": ",".join([str(i) for i in gpu_idxs]), **job_env}
 
 
 @exc.handle_exception_async(Exception, message="Error determining exit code", reraise=False, default_return=None)
@@ -204,11 +206,12 @@ def create_job(
     git_branch: str,
     user: str,
     node_name: str,
-    env: dict[str, str] = {},
-    jobrc: str | None = None,
-    priority: int = 0,
-    search_wandb: bool = False,
-    notifications: list[schemas.NotificationType] = [],
+    num_gpus: int,
+    env: dict[str, str],
+    jobrc: str | None,
+    priority: int,
+    search_wandb: bool,
+    notifications: list[schemas.NotificationType],
 ) -> schemas.Job:
     return schemas.Job(
         id=_generate_job_id(),
@@ -221,6 +224,7 @@ def create_job(
         git_branch=git_branch,
         node_name=node_name,
         priority=priority,
+        num_gpus=num_gpus,
         env=env,
         jobrc=jobrc,
         search_wandb=search_wandb,
@@ -229,7 +233,7 @@ def create_job(
         pid=None,
         dir=None,
         started_at=None,
-        gpu_index=None,
+        gpu_idxs=None,
         wandb_url=None,
         marked_for_kill=False,
         completed_at=None,
@@ -238,13 +242,13 @@ def create_job(
     )
 
 
-async def async_start_job(_logger: logger.NexusServerLogger, job: schemas.Job, gpu_index: int) -> schemas.Job:
+async def async_start_job(_logger: logger.NexusServerLogger, job: schemas.Job, gpu_idxs: list[int]) -> schemas.Job:
     if job.dir is None:
         raise exc.JobError(message=f"Job directory not set for job {job.id}")
 
     log_file, job_repo_dir = _create_directories(_logger, dir_path=job.dir)
 
-    env = _build_environment(_logger, gpu_index=gpu_index, job_env=job.env)
+    env = _build_environment(_logger, gpu_idxs=gpu_idxs, job_env=job.env)
 
     git_token = job.env.get("GIT_TOKEN")
     askpass_path = _setup_github_auth(_logger, dir_path=job.dir, git_token=git_token) if git_token else None
@@ -265,7 +269,7 @@ async def async_start_job(_logger: logger.NexusServerLogger, job: schemas.Job, g
     try:
         pid = await _launch_screen_process(_logger, session_name, str(script_path), env)
 
-        return dc.replace(job, started_at=dt.datetime.now().timestamp(), gpu_index=gpu_index, status="running", pid=pid)
+        return dc.replace(job, started_at=dt.datetime.now().timestamp(), gpu_idxs=gpu_idxs, status="running", pid=pid)
     except exc.JobError:
         raise
     except Exception as e:

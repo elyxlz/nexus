@@ -34,7 +34,13 @@ def test_add_and_get_job(tmp_path: pl.Path, mock_logger: NexusServerLogger):
         git_tag="main",
         git_branch="blah",
         user="testuser",
+        num_gpus=1,
         node_name="xx",
+        env={},
+        jobrc=None,
+        priority=0,
+        search_wandb=False,
+        notifications=[],
     )
     add_job(mock_logger, conn=conn, job=job)
     conn.commit()
@@ -123,23 +129,23 @@ def test_blacklisted_gpus(tmp_path: pl.Path, mock_logger: NexusServerLogger):
     bl = list_blacklisted_gpus(mock_logger, conn=conn)
     assert bl == []
 
-    added = add_blacklisted_gpu(mock_logger, conn=conn, gpu_index=0)
+    added = add_blacklisted_gpu(mock_logger, conn=conn, gpu_idx=0)
     assert added is True
     conn.commit()
 
     bl = list_blacklisted_gpus(mock_logger, conn=conn)
     assert 0 in bl
 
-    added_again = add_blacklisted_gpu(mock_logger, conn=conn, gpu_index=0)
+    added_again = add_blacklisted_gpu(mock_logger, conn=conn, gpu_idx=0)
     assert added_again is False
 
-    removed = remove_blacklisted_gpu(mock_logger, conn=conn, gpu_index=0)
+    removed = remove_blacklisted_gpu(mock_logger, conn=conn, gpu_idx=0)
     assert removed is True
     conn.commit()
 
     bl = list_blacklisted_gpus(mock_logger, conn=conn)
     assert 0 not in bl
 
-    removed_again = remove_blacklisted_gpu(mock_logger, conn=conn, gpu_index=0)
+    removed_again = remove_blacklisted_gpu(mock_logger, conn=conn, gpu_idx=0)
     assert removed_again is False
     conn.close()

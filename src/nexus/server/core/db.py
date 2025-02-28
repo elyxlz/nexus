@@ -34,17 +34,18 @@ def _create_tables(_logger: logger.NexusServerLogger, conn: sqlite3.Connection) 
             git_branch TEXT,
             status TEXT,
             created_at REAL,
-            priority INT,
+            priority INTEGER,
+            num_gpus INTEGER,
             env JSON, 
             node_name TEXT,
             jobrc TEXT,
-            search_wandb INT,
+            search_wandb INTEGER,
             notifications TEXT,
             notification_messages JSON,
             pid INTEGER,
             dir TEXT,
             started_at REAL,
-            gpu_index INTEGER,
+            gpu_idxs TEXT,
             wandb_url TEXT,
             marked_for_kill INTEGER,
             completed_at REAL,
@@ -55,7 +56,7 @@ def _create_tables(_logger: logger.NexusServerLogger, conn: sqlite3.Connection) 
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS blacklisted_gpus (
-            gpu_index INTEGER PRIMARY KEY
+            gpu_idx INTEGER PRIMARY KEY
         )
     """)
     conn.commit()
@@ -78,10 +79,11 @@ def _row_to_job(_logger: logger.NexusServerLogger, row: sqlite3.Row) -> schemas.
         status=row["status"],
         created_at=row["created_at"],
         priority=row["priority"],
+        num_gpus=row["num_gpus"],
         started_at=row["started_at"],
         completed_at=row["completed_at"],
         node_name=row["node_name"],
-        gpu_index=row["gpu_index"],
+        gpu_idxs=row["gpu_idxs"],
         exit_code=row["exit_code"],
         error_message=row["error_message"],
         wandb_url=row["wandb_url"],
@@ -171,28 +173,28 @@ def _delete_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job
     return True
 
 
-def _validate_gpu_index(gpu_index: int) -> None:
-    if gpu_index < 0:
-        raise exc.GPUError(message=f"Invalid GPU index: {gpu_index}. Must be a non-negative integer.")
+def _validate_gpu_idx(gpu_idx: int) -> None:
+    if gpu_idx < 0:
+        raise exc.GPUError(message=f"Invalid GPU index: {gpu_idx}. Must be a non-negative integer.")
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to blacklist GPU")
-def _add_gpu_to_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
+def _add_gpu_to_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_idx: int) -> bool:
     cur = conn.cursor()
-    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_index = ?", (gpu_index,))
+    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
     if cur.fetchone():
         return False
-    cur.execute("INSERT INTO blacklisted_gpus (gpu_index) VALUES (?)", (gpu_index,))
+    cur.execute("INSERT INTO blacklisted_gpus (gpu_idx) VALUES (?)", (gpu_idx,))
     return True
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to remove GPU from blacklist")
-def _remove_gpu_from_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
+def _remove_gpu_from_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_idx: int) -> bool:
     cur = conn.cursor()
-    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_index = ?", (gpu_index,))
+    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
     if not cur.fetchone():
         return False
-    cur.execute("DELETE FROM blacklisted_gpus WHERE gpu_index = ?", (gpu_index,))
+    cur.execute("DELETE FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
     return True
 
 
@@ -214,16 +216,17 @@ def add_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: sc
     env_json = json.dumps(job.env)
     notification_messages_json = json.dumps(job.notification_messages)
     notifications_str = ",".join(job.notifications)
+    ",".join([str(i) for i in job.gpu_idxs])
 
     cur.execute(
         """
         INSERT INTO jobs (
             id, command, git_repo_url, git_tag, git_branch, status, created_at, priority,
-            started_at, completed_at, gpu_index, exit_code, error_message, 
+            num_gpus, started_at, completed_at, gpu_idxs, exit_code, error_message, 
             wandb_url, user, marked_for_kill, dir, node_name,
             pid, jobrc, env, search_wandb, notifications, notification_messages
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (
             job.id,
@@ -234,9 +237,10 @@ def add_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: sc
             job.status,
             job.created_at,
             job.priority,
+            job.num_gpus,
             job.started_at,
             job.completed_at,
-            job.gpu_index,
+            job.gpu_idxs,
             job.exit_code,
             job.error_message,
             job.wandb_url,
@@ -272,9 +276,10 @@ def update_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job:
             status = ?,
             created_at = ?,
             priority = ?,
+            num_gpus = ?,
             started_at = ?,
             completed_at = ?,
-            gpu_index = ?,
+            gpu_idxs = ?,
             exit_code = ?,
             error_message = ?,
             wandb_url = ?,
@@ -297,9 +302,10 @@ def update_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job:
             job.status,
             job.created_at,
             job.priority,
+            job.num_gpus,
             job.started_at,
             job.completed_at,
-            job.gpu_index,
+            job.gpu_idxs,
             job.exit_code,
             job.error_message,
             job.wandb_url,
@@ -342,22 +348,22 @@ def delete_queued_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connectio
     return _delete_job(_logger, conn=conn, job_id=job_id)
 
 
-def add_blacklisted_gpu(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
-    _validate_gpu_index(gpu_index)
-    return _add_gpu_to_blacklist(_logger, conn=conn, gpu_index=gpu_index)
+def add_blacklisted_gpu(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_idx: int) -> bool:
+    _validate_gpu_idx(gpu_idx)
+    return _add_gpu_to_blacklist(_logger, conn=conn, gpu_idx=gpu_idx)
 
 
-def remove_blacklisted_gpu(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
-    _validate_gpu_index(gpu_index)
-    return _remove_gpu_from_blacklist(_logger, conn=conn, gpu_index=gpu_index)
+def remove_blacklisted_gpu(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_idx: int) -> bool:
+    _validate_gpu_idx(gpu_idx)
+    return _remove_gpu_from_blacklist(_logger, conn=conn, gpu_idx=gpu_idx)
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list blacklisted GPUs")
 def list_blacklisted_gpus(_logger: logger.NexusServerLogger, conn: sqlite3.Connection) -> list[int]:
     cur = conn.cursor()
-    cur.execute("SELECT gpu_index FROM blacklisted_gpus")
+    cur.execute("SELECT gpu_idx FROM blacklisted_gpus")
     rows = cur.fetchall()
-    return [row["gpu_index"] for row in rows]
+    return [row["gpu_idx"] for row in rows]
 
 
 def safe_transaction(func: tp.Callable[..., tp.Any]) -> tp.Callable[..., tp.Any]:

@@ -17,6 +17,7 @@ class Job:
     git_tag: str
     git_branch: str
     priority: int
+    num_gpus: int
     node_name: str
     env: dict[str, str]
     jobrc: str | None
@@ -30,7 +31,7 @@ class Job:
     pid: int | None
     dir: pl.Path | None
     started_at: float | None
-    gpu_index: int | None
+    gpu_idxs: list[int]
     wandb_url: str | None
     marked_for_kill: bool
 

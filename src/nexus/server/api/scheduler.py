@@ -91,6 +91,7 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
             break
 
         queued_jobs = sorted(queued_jobs, key=lambda x: x.priority, reverse=True)
+        queued_jobs = sorted(queued_jobs, key=lambda x: x.num_gpus, reverse=True)
         _job = queued_jobs.pop(0)
 
         jobs_dir = pl.Path(tempfile.mkdtemp())
@@ -98,7 +99,7 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
             jobs_dir = config.get_jobs_dir(ctx.config.server_dir)
 
         _job = dc.replace(_job, dir=jobs_dir / _job.id)
-        started = await job.async_start_job(ctx.logger, job=_job, gpu_index=gpu_instance.index)
+        started = await job.async_start_job(ctx.logger, job=_job, gpu_idx=gpu_instance.index)
 
         db.update_job(ctx.logger, conn=ctx.db, job=started)
         ctx.logger.info(format.format_job_action(started, action="started"))

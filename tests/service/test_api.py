@@ -126,8 +126,8 @@ def test_list_jobs_by_gpu(app_client: TestClient) -> None:
     gpus = gpus_resp.json()
     assert len(gpus) > 0
 
-    gpu_index = gpus[0]["index"]
-    by_gpu_resp = app_client.get("/v1/jobs", params={"gpu_index": gpu_index})
+    gpu_idx = gpus[0]["index"]
+    by_gpu_resp = app_client.get("/v1/jobs", params={"gpu_idx": gpu_idx})
     assert by_gpu_resp.status_code == 200
     assert isinstance(by_gpu_resp.json(), list)
 
@@ -310,43 +310,43 @@ def test_blacklist_and_remove_gpu(app_client: TestClient) -> None:
     assert resp.status_code == 200
     gpus = resp.json()
     assert len(gpus) > 0
-    gpu_index = gpus[0]["index"]
+    gpu_idx = gpus[0]["index"]
 
-    app_client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_index])
+    app_client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_idx])
 
-    blacklist_resp = app_client.post("/v1/gpus/blacklist", json=[gpu_index])
+    blacklist_resp = app_client.post("/v1/gpus/blacklist", json=[gpu_idx])
     assert blacklist_resp.status_code == 200
     bl_data = blacklist_resp.json()
-    assert gpu_index in bl_data.get("blacklisted", [])
+    assert gpu_idx in bl_data.get("blacklisted", [])
 
     resp_after_blacklist = app_client.get("/v1/gpus")
     assert resp_after_blacklist.status_code == 200
     gpus_after = resp_after_blacklist.json()
-    blacklisted_gpu = next((g for g in gpus_after if g["index"] == gpu_index), None)
+    blacklisted_gpu = next((g for g in gpus_after if g["index"] == gpu_idx), None)
     assert blacklisted_gpu is not None
     assert blacklisted_gpu["is_blacklisted"] is True
 
-    blacklist_resp2 = app_client.post("/v1/gpus/blacklist", json=[gpu_index])
+    blacklist_resp2 = app_client.post("/v1/gpus/blacklist", json=[gpu_idx])
     assert blacklist_resp2.status_code == 200
     bl_data2 = blacklist_resp2.json()
-    assert any(item.get("index") == gpu_index for item in bl_data2.get("failed", []))
+    assert any(item.get("index") == gpu_idx for item in bl_data2.get("failed", []))
 
-    remove_resp = app_client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_index])
+    remove_resp = app_client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_idx])
     assert remove_resp.status_code == 200
     rem_data = remove_resp.json()
-    assert gpu_index in rem_data.get("removed", [])
+    assert gpu_idx in rem_data.get("removed", [])
 
     resp_after_removal = app_client.get("/v1/gpus")
     assert resp_after_removal.status_code == 200
     gpus_after_removal = resp_after_removal.json()
-    non_blacklisted_gpu = next((g for g in gpus_after_removal if g["index"] == gpu_index), None)
+    non_blacklisted_gpu = next((g for g in gpus_after_removal if g["index"] == gpu_idx), None)
     assert non_blacklisted_gpu is not None
     assert non_blacklisted_gpu["is_blacklisted"] is False
 
-    remove_resp2 = app_client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_index])
+    remove_resp2 = app_client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_idx])
     assert remove_resp2.status_code == 200
     rem_data2 = remove_resp2.json()
-    assert any(item.get("index") == gpu_index for item in rem_data2.get("failed", []))
+    assert any(item.get("index") == gpu_idx for item in rem_data2.get("failed", []))
 
 
 def test_kill_running_job(app_client: TestClient, git_tag: str) -> None:

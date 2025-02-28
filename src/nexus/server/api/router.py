@@ -72,13 +72,13 @@ async def get_server_logs_endpoint(ctx: context.NexusServerContext = fa.Depends(
 @router.get("/v1/jobs", response_model=list[schemas.Job])
 async def list_jobs_endpoint(
     status: str | None = None,
-    gpu_index: int | None = None,
+    gpu_idx: int | None = None,
     command_regex: str | None = None,
     ctx: context.NexusServerContext = fa.Depends(_get_context),
 ):
     jobs = db.list_jobs(ctx.logger, conn=ctx.db, status=status, command_regex=command_regex)
-    if gpu_index is not None:
-        jobs = [j for j in jobs if j.gpu_index == gpu_index]
+    if gpu_idx is not None:
+        jobs = [j for j in jobs if j.gpu_idx == gpu_idx]
     ctx.logger.info(f"Found {len(jobs)} jobs matching criteria")
     return jobs
 
@@ -94,11 +94,13 @@ async def add_job_endpoint(job_request: models.JobRequest, ctx: context.NexusSer
         git_tag=job_request.git_tag,
         git_branch=job_request.git_branch,
         user=job_request.user,
-        node_name=ctx.config.node_name,
+        num_gpus=job_request.num_gpus,
+        priority=job_request.priority,
         env=job_request.env,
         jobrc=job_request.jobrc,
         search_wandb=job_request.search_wandb,
         notifications=job_request.notifications,
+        node_name=ctx.config.node_name,
     )
 
     db.add_job(ctx.logger, conn=ctx.db, job=j)
@@ -198,16 +200,16 @@ async def remove_queued_jobs_endpoint(job_ids: list[str], ctx: context.NexusServ
 
 @db.safe_transaction
 @router.post("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
-async def blacklist_gpus_endpoint(gpu_indexes: list[int], ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    if not gpu_indexes:
-        raise exc.GPUError(message="No GPU indexes provided")
+async def blacklist_gpus_endpoint(gpu_idxs: list[int], ctx: context.NexusServerContext = fa.Depends(_get_context)):
+    if not gpu_idxs:
+        raise exc.GPUError(message="No GPU idxs provided")
 
     successful: list[int] = []
     failed: list[models.GpuActionError] = []
 
-    for _gpu in gpu_indexes:
+    for _gpu in gpu_idxs:
         try:
-            added = db.add_blacklisted_gpu(ctx.logger, conn=ctx.db, gpu_index=_gpu)
+            added = db.add_blacklisted_gpu(ctx.logger, conn=ctx.db, gpu_idx=_gpu)
             if added:
                 successful.append(_gpu)
                 ctx.logger.info(f"Blacklisted GPU {_gpu}")
@@ -222,17 +224,17 @@ async def blacklist_gpus_endpoint(gpu_indexes: list[int], ctx: context.NexusServ
 @db.safe_transaction
 @router.delete("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
 async def remove_gpu_blacklist_endpoint(
-    gpu_indexes: list[int], ctx: context.NexusServerContext = fa.Depends(_get_context)
+    gpu_idxs: list[int], ctx: context.NexusServerContext = fa.Depends(_get_context)
 ):
-    if not gpu_indexes:
-        raise exc.GPUError(message="No GPU indexes provided")
+    if not gpu_idxs:
+        raise exc.GPUError(message="No GPU idxs provided")
 
     removed: list[int] = []
     failed: list[models.GpuActionError] = []
 
-    for _gpu in gpu_indexes:
+    for _gpu in gpu_idxs:
         try:
-            removed_flag = db.remove_blacklisted_gpu(ctx.logger, conn=ctx.db, gpu_index=_gpu)
+            removed_flag = db.remove_blacklisted_gpu(ctx.logger, conn=ctx.db, gpu_idx=_gpu)
             if removed_flag:
                 removed.append(_gpu)
                 ctx.logger.info(f"Removed GPU {_gpu} from blacklist")
