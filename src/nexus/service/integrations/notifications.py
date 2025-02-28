@@ -68,9 +68,9 @@ def get_notification_secrets_from_job(job: schemas.Job) -> tuple[str, str]:
     return webhook_url, user_id
 
 
-@exc.handle_exception(pyd.ValidationError, exc.NotificationError, message="Invalid notification message format")
-@exc.handle_exception(aiohttp.ClientError, exc.NotificationError, message="Discord notification request failed")
-@exc.handle_exception(
+@exc.handle_exception_async(pyd.ValidationError, exc.NotificationError, message="Invalid notification message format")
+@exc.handle_exception_async(aiohttp.ClientError, exc.NotificationError, message="Discord notification request failed")
+@exc.handle_exception_async(
     json.JSONDecodeError,
     exc.NotificationError,
     message="Invalid JSON response from Discord notification",
@@ -94,8 +94,10 @@ async def send_notification(
                 raise exc.NotificationError(message=error_msg)
 
 
-@exc.handle_exception(pyd.ValidationError, exc.NotificationError, message="Invalid notification message format")
-@exc.handle_exception(aiohttp.ClientError, exc.NotificationError, message="Discord notification edit request failed")
+@exc.handle_exception_async(pyd.ValidationError, exc.NotificationError, message="Invalid notification message format")
+@exc.handle_exception_async(
+    aiohttp.ClientError, exc.NotificationError, message="Discord notification edit request failed"
+)
 async def edit_notification_message(
     _logger: logger.NexusServiceLogger, notification_url: str, message_id: str, message_data: dict
 ) -> bool:

@@ -10,7 +10,7 @@ from nexus.service.core import logger, schemas
 __all__ = ["find_wandb_run_by_nexus_id"]
 
 
-@exc.handle_exception(wandb.errors.CommError, exc.WandBError, message="W&B API communication error")
+@exc.handle_exception_async(wandb.errors.CommError, exc.WandBError, message="W&B API communication error")
 async def check_project_for_run(_logger: logger.NexusServiceLogger, project, run_id: str, api) -> str:
     _logger.debug(f"Checking project {project.name} for run {run_id}")
     loop = asyncio.get_running_loop()
@@ -20,7 +20,7 @@ async def check_project_for_run(_logger: logger.NexusServiceLogger, project, run
     return url
 
 
-@exc.handle_exception(OSError, exc.WandBError, message="Error reading W&B metadata files", reraise=False)
+@exc.handle_exception_async(OSError, exc.WandBError, message="Error reading W&B metadata files", reraise=False)
 async def find_run_id_from_metadata(
     _logger: logger.NexusServiceLogger, dirs: list[str], nexus_job_id: str
 ) -> str | None:
@@ -45,7 +45,7 @@ async def find_run_id_from_metadata(
     return None
 
 
-@exc.handle_exception(wandb.errors.Error, exc.WandBError, message="W&B API error", reraise=False)
+@exc.handle_exception_async(wandb.errors.Error, exc.WandBError, message="W&B API error", reraise=False)
 async def find_wandb_run_by_nexus_id(
     _logger: logger.NexusServiceLogger, job: schemas.Job, api_timeout: int = 2
 ) -> str | None:

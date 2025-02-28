@@ -178,8 +178,8 @@ def _build_environment(_logger: logger.NexusServiceLogger, gpu_index: int, job_e
     return build_job_env(gpu_index, _env=job_env)
 
 
-@exc.handle_exception(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
-@exc.handle_exception(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
+@exc.handle_exception_async(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
+@exc.handle_exception_async(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
 async def _launch_screen_process(
     _logger: logger.NexusServiceLogger, session_name: str, script_path: str, env: dict[str, str]
 ) -> int:
@@ -364,7 +364,7 @@ async def async_get_job_logs(
     return _read_log_file(_logger, logs, last_n_lines)
 
 
-@exc.handle_exception(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
+@exc.handle_exception_async(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
 async def kill_job(_logger: logger.NexusServiceLogger, job: schemas.Job) -> None:
     if job.pid is not None:
         try:
