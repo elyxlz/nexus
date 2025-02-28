@@ -1,7 +1,7 @@
-"""Systemd service file template for Nexus GPU Job Management Service."""
+"""Systemd service file template for Nexus GPU Job Management Server."""
 
 UNIT_SECTION = """[Unit]
-Description=Nexus GPU Job Management Service
+Description=Nexus GPU Job Management Server
 After=network.target
 """
 
@@ -10,11 +10,11 @@ Type=simple
 User=nexus
 Group=nexus
 WorkingDirectory=/home/nexus
-ExecStart=/usr/local/bin/nexus-service
+ExecStart=/usr/local/bin/nexus-server
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=-/etc/nexus_service/env
+EnvironmentFile=-/etc/nexus_server/env
 """
 
 INSTALL_SECTION = """[Install]
@@ -25,5 +25,5 @@ SERVICE_FILE_CONTENT = UNIT_SECTION + SERVICE_SECTION + INSTALL_SECTION
 
 
 def get_service_file_content() -> str:
-    """Return the content of the service file."""
+    """Return the content of the server file."""
     return SERVICE_FILE_CONTENT

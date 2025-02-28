@@ -5,8 +5,8 @@ import re
 import sqlite3
 import typing as tp
 
-from nexus.service.core import context, logger, schemas
-from nexus.service.core import exceptions as exc
+from nexus.server.core import context, logger, schemas
+from nexus.server.core import exceptions as exc
 
 __all__ = [
     "create_connection",
@@ -22,16 +22,8 @@ __all__ = [
 ]
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database connection")
-def create_connection(_logger: logger.NexusServiceLogger, db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    create_tables(_logger, conn=conn)
-    return conn
-
-
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database tables")
-def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) -> None:
+def _create_tables(_logger: logger.NexusServerLogger, conn: sqlite3.Connection) -> None:
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
@@ -42,6 +34,7 @@ def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) 
             git_branch TEXT,
             status TEXT,
             created_at REAL,
+            priority INT,
             env JSON, 
             node_name TEXT,
             jobrc TEXT,
@@ -69,13 +62,13 @@ def create_tables(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) 
 
 
 @exc.handle_exception(json.JSONDecodeError, exc.DatabaseError, message="Invalid environment data in database")
-def _parse_json(_logger: logger.NexusServiceLogger, json_obj: str | None) -> dict[str, str]:
+def _parse_json(_logger: logger.NexusServerLogger, json_obj: str | None) -> dict[str, str]:
     if not json_obj:
         return {}
     return json.loads(json_obj)
 
 
-def row_to_job(_logger: logger.NexusServiceLogger, row: sqlite3.Row) -> schemas.Job:
+def _row_to_job(_logger: logger.NexusServerLogger, row: sqlite3.Row) -> schemas.Job:
     return schemas.Job(
         id=row["id"],
         command=row["command"],
@@ -84,6 +77,7 @@ def row_to_job(_logger: logger.NexusServiceLogger, row: sqlite3.Row) -> schemas.
         git_branch=row["git_branch"],
         status=row["status"],
         created_at=row["created_at"],
+        priority=row["priority"],
         started_at=row["started_at"],
         completed_at=row["completed_at"],
         node_name=row["node_name"],
@@ -103,9 +97,119 @@ def row_to_job(_logger: logger.NexusServiceLogger, row: sqlite3.Row) -> schemas.
     )
 
 
+def _validate_job_id(job_id: str) -> None:
+    if not job_id:
+        raise exc.JobError(message="Job ID cannot be empty")
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job")
+def _query_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job | None:
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+    row = cur.fetchone()
+    if row:
+        return _row_to_job(_logger, row=row)
+    return None
+
+
+def _validate_job_status(status: str | None) -> None:
+    if status is not None:
+        valid_statuses = {"queued", "running", "completed", "failed"}
+        if status not in valid_statuses:
+            raise exc.JobError(message=f"Invalid job status: {status}. Must be one of {', '.join(valid_statuses)}")
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list jobs")
+def _query_jobs(
+    _logger: logger.NexusServerLogger, conn: sqlite3.Connection, status: str | None, command_regex: str | None = None
+) -> list[schemas.Job]:
+    cur = conn.cursor()
+
+    query = "SELECT * FROM jobs"
+    params = []
+    conditions = []
+
+    if status is not None:
+        conditions.append("status = ?")
+        params.append(status)
+
+    if command_regex is not None:
+        conditions.append("command REGEXP ?")
+        params.append(command_regex)
+
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+
+    conn.create_function("REGEXP", 2, lambda pattern, text: bool(re.search(pattern, text or "")) if text else False)
+
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    return [_row_to_job(_logger, row=row) for row in rows]
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job status")
+def _check_job_status(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> str:
+    cur = conn.cursor()
+    cur.execute("SELECT status FROM jobs WHERE id = ?", (job_id,))
+    row = cur.fetchone()
+    if not row:
+        raise exc.JobError(message=f"Job not found: {job_id}")
+    return row["status"]
+
+
+def _verify_job_is_queued(job_id: str, status: str) -> None:
+    if status != "queued":
+        raise exc.JobError(
+            message=f"Cannot delete job {job_id} with status '{status}'. Only queued jobs can be deleted.",
+        )
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to delete job")
+def _delete_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> bool:
+    cur = conn.cursor()
+    cur.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+    return True
+
+
+def _validate_gpu_index(gpu_index: int) -> None:
+    if gpu_index < 0:
+        raise exc.GPUError(message=f"Invalid GPU index: {gpu_index}. Must be a non-negative integer.")
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to blacklist GPU")
+def _add_gpu_to_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_index = ?", (gpu_index,))
+    if cur.fetchone():
+        return False
+    cur.execute("INSERT INTO blacklisted_gpus (gpu_index) VALUES (?)", (gpu_index,))
+    return True
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to remove GPU from blacklist")
+def _remove_gpu_from_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_index = ?", (gpu_index,))
+    if not cur.fetchone():
+        return False
+    cur.execute("DELETE FROM blacklisted_gpus WHERE gpu_index = ?", (gpu_index,))
+    return True
+
+
+####################
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database connection")
+def create_connection(_logger: logger.NexusServerLogger, db_path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _create_tables(_logger, conn=conn)
+    return conn
+
+
 @exc.handle_exception(sqlite3.IntegrityError, exc.JobError, message="Job already exists")
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add job to database")
-def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
+def add_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
     env_json = json.dumps(job.env)
     notification_messages_json = json.dumps(job.notification_messages)
@@ -114,12 +218,12 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: s
     cur.execute(
         """
         INSERT INTO jobs (
-            id, command, git_repo_url, git_tag, git_branch, status, created_at, 
+            id, command, git_repo_url, git_tag, git_branch, status, created_at, priority,
             started_at, completed_at, gpu_index, exit_code, error_message, 
             wandb_url, user, marked_for_kill, dir, node_name,
             pid, jobrc, env, search_wandb, notifications, notification_messages
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (
             job.id,
@@ -129,6 +233,7 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: s
             job.git_branch,
             job.status,
             job.created_at,
+            job.priority,
             job.started_at,
             job.completed_at,
             job.gpu_index,
@@ -150,13 +255,12 @@ def add_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: s
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to update job")
-def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
+def update_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
 
-    # Serialize environment and notification messages to JSON if present
-    env_json = json.dumps(job.env) if job.env else None
-    notification_messages_json = json.dumps(job.notification_messages) if job.notification_messages else None
-    notifications_str = ",".join(job.notifications) if job.notifications else None
+    env_json = json.dumps(job.env) if job.status in ["failed", "completed"] else {}  # clear env for completed jobs
+    notification_messages_json = json.dumps(job.notification_messages)
+    notifications_str = ",".join(job.notifications)
 
     cur.execute(
         """
@@ -167,6 +271,7 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             git_branch = ?,
             status = ?,
             created_at = ?,
+            priority = ?,
             started_at = ?,
             completed_at = ?,
             gpu_index = ?,
@@ -191,6 +296,7 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
             job.git_branch,
             job.status,
             job.created_at,
+            job.priority,
             job.started_at,
             job.completed_at,
             job.gpu_index,
@@ -214,69 +320,13 @@ def update_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job
         raise exc.JobError(message="Job not found")
 
 
-def _validate_job_id(job_id: str) -> None:
-    if not job_id:
-        raise exc.JobError(message="Job ID cannot be empty")
-
-
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job")
-def _query_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job | None:
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-    row = cur.fetchone()
-    if row:
-        return row_to_job(_logger, row=row)
-    return None
-
-
-def get_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job | None:
+def get_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job | None:
     _validate_job_id(job_id)
     return _query_job(_logger, conn=conn, job_id=job_id)
 
 
-def _validate_job_status(status: str | None) -> None:
-    if status is not None:
-        valid_statuses = {"queued", "running", "completed", "failed"}
-        if status not in valid_statuses:
-            raise exc.JobError(message=f"Invalid job status: {status}. Must be one of {', '.join(valid_statuses)}")
-
-
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list jobs")
-def _query_jobs(
-    _logger: logger.NexusServiceLogger, conn: sqlite3.Connection, status: str | None, command_regex: str | None = None
-) -> list[schemas.Job]:
-    cur = conn.cursor()
-
-    # Start with base query
-    query = "SELECT * FROM jobs"
-    params = []
-    conditions = []
-
-    # Add specific filters
-    if status is not None:
-        conditions.append("status = ?")
-        params.append(status)
-
-    # Add regex filter for command if provided
-    if command_regex is not None:
-        conditions.append("command REGEXP ?")
-        params.append(command_regex)
-
-    # Combine all conditions
-    if conditions:
-        query += " WHERE " + " AND ".join(conditions)
-
-    # Enable regex function for SQLite
-    conn.create_function("REGEXP", 2, lambda pattern, text: bool(re.search(pattern, text or "")) if text else False)
-
-    # Execute query
-    cur.execute(query, params)
-    rows = cur.fetchall()
-    return [row_to_job(_logger, row=row) for row in rows]
-
-
 def list_jobs(
-    _logger: logger.NexusServiceLogger,
+    _logger: logger.NexusServerLogger,
     conn: sqlite3.Connection,
     status: str | None = None,
     command_regex: str | None = None,
@@ -285,74 +335,25 @@ def list_jobs(
     return _query_jobs(_logger, conn=conn, status=status, command_regex=command_regex)
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job status")
-def _check_job_status(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> str:
-    cur = conn.cursor()
-    cur.execute("SELECT status FROM jobs WHERE id = ?", (job_id,))
-    row = cur.fetchone()
-    if not row:
-        raise exc.JobError(message=f"Job not found: {job_id}")
-    return row["status"]
-
-
-def _verify_job_is_queued(job_id: str, status: str) -> None:
-    if status != "queued":
-        raise exc.JobError(
-            message=f"Cannot delete job {job_id} with status '{status}'. Only queued jobs can be deleted.",
-        )
-
-
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to delete job")
-def _delete_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> bool:
-    cur = conn.cursor()
-    cur.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
-    return True
-
-
-def delete_queued_job(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, job_id: str) -> bool:
+def delete_queued_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> bool:
     _validate_job_id(job_id)
     status = _check_job_status(_logger, conn=conn, job_id=job_id)
     _verify_job_is_queued(job_id, status)
     return _delete_job(_logger, conn=conn, job_id=job_id)
 
 
-def _validate_gpu_index(gpu_index: int) -> None:
-    if gpu_index < 0:
-        raise exc.GPUError(message=f"Invalid GPU index: {gpu_index}. Must be a non-negative integer.")
-
-
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to blacklist GPU")
-def _add_gpu_to_blacklist(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
-    cur = conn.cursor()
-    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_index = ?", (gpu_index,))
-    if cur.fetchone():
-        return False
-    cur.execute("INSERT INTO blacklisted_gpus (gpu_index) VALUES (?)", (gpu_index,))
-    return True
-
-
-def add_blacklisted_gpu(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
+def add_blacklisted_gpu(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
     _validate_gpu_index(gpu_index)
     return _add_gpu_to_blacklist(_logger, conn=conn, gpu_index=gpu_index)
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to remove GPU from blacklist")
-def _remove_gpu_from_blacklist(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
-    cur = conn.cursor()
-    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_index = ?", (gpu_index,))
-    if not cur.fetchone():
-        return False
-    cur.execute("DELETE FROM blacklisted_gpus WHERE gpu_index = ?", (gpu_index,))
-    return True
-
-
-def remove_blacklisted_gpu(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
+def remove_blacklisted_gpu(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_index: int) -> bool:
     _validate_gpu_index(gpu_index)
     return _remove_gpu_from_blacklist(_logger, conn=conn, gpu_index=gpu_index)
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list blacklisted GPUs")
-def list_blacklisted_gpus(_logger: logger.NexusServiceLogger, conn: sqlite3.Connection) -> list[int]:
+def list_blacklisted_gpus(_logger: logger.NexusServerLogger, conn: sqlite3.Connection) -> list[int]:
     cur = conn.cursor()
     cur.execute("SELECT gpu_index FROM blacklisted_gpus")
     rows = cur.fetchall()
@@ -364,18 +365,18 @@ def safe_transaction(func: tp.Callable[..., tp.Any]) -> tp.Callable[..., tp.Any]
     async def wrapper(*args: tp.Any, **kwargs: tp.Any) -> tp.Any:
         ctx = None
         for arg in args:
-            if isinstance(arg, context.NexusServiceContext):
+            if isinstance(arg, context.NexusServerContext):
                 ctx = arg
                 break
 
         if ctx is None:
             for arg_value in kwargs.values():
-                if isinstance(arg_value, context.NexusServiceContext):
+                if isinstance(arg_value, context.NexusServerContext):
                     ctx = arg_value
                     break
 
         if ctx is None:
-            raise exc.ServiceError(message="Transaction decorator requires a NexusServiceContext parameter")
+            raise exc.ServerError(message="Transaction decorator requires a NexusServerContext parameter")
 
         try:
             result = await func(*args, **kwargs)

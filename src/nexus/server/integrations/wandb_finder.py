@@ -4,14 +4,14 @@ import pathlib as pl
 import wandb
 import wandb.errors
 
-from nexus.service.core import exceptions as exc
-from nexus.service.core import logger, schemas
+from nexus.server.core import exceptions as exc
+from nexus.server.core import logger, schemas
 
 __all__ = ["find_wandb_run_by_nexus_id"]
 
 
 @exc.handle_exception_async(wandb.errors.CommError, exc.WandBError, message="W&B API communication error")
-async def check_project_for_run(_logger: logger.NexusServiceLogger, project, run_id: str, api) -> str:
+async def _check_project_for_run(_logger: logger.NexusServerLogger, project, run_id: str, api) -> str:
     _logger.debug(f"Checking project {project.name} for run {run_id}")
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, lambda: api.run(f"{project.entity}/{project.name}/{run_id}"))
@@ -21,8 +21,8 @@ async def check_project_for_run(_logger: logger.NexusServiceLogger, project, run
 
 
 @exc.handle_exception_async(OSError, exc.WandBError, message="Error reading W&B metadata files", reraise=False)
-async def find_run_id_from_metadata(
-    _logger: logger.NexusServiceLogger, dirs: list[str], nexus_job_id: str
+async def _find_run_id_from_metadata(
+    _logger: logger.NexusServerLogger, dirs: list[str], nexus_job_id: str
 ) -> str | None:
     _logger.debug(f"Searching for nexus job ID {nexus_job_id} in directories: {dirs}")
     loop = asyncio.get_running_loop()
@@ -45,9 +45,12 @@ async def find_run_id_from_metadata(
     return None
 
 
+####################
+
+
 @exc.handle_exception_async(wandb.errors.Error, exc.WandBError, message="W&B API error", reraise=False)
 async def find_wandb_run_by_nexus_id(
-    _logger: logger.NexusServiceLogger, job: schemas.Job, api_timeout: int = 2
+    _logger: logger.NexusServerLogger, job: schemas.Job, api_timeout: int = 2
 ) -> str | None:
     nexus_job_id = job.id
     dirs = [str(job.dir)] if job.dir else []
@@ -62,7 +65,7 @@ async def find_wandb_run_by_nexus_id(
     if not wandb_entity:
         raise exc.WandBError("Missing WANDB_ENTITY in job environment")
 
-    run_id = await find_run_id_from_metadata(_logger, dirs, nexus_job_id)
+    run_id = await _find_run_id_from_metadata(_logger, dirs, nexus_job_id)
     if run_id is None:
         return None
 
@@ -82,7 +85,7 @@ async def find_wandb_run_by_nexus_id(
     projects = await loop.run_in_executor(None, lambda: api.projects(entity))
 
     _logger.debug("Starting parallel project search")
-    tasks = [check_project_for_run(_logger, project, run_id, api) for project in projects]
+    tasks = [_check_project_for_run(_logger, project, run_id, api) for project in projects]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for result in results:

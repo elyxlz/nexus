@@ -6,13 +6,14 @@ import typing as tp
 import aiohttp
 import pydantic as pyd
 
-from nexus.service.core import exceptions as exc
-from nexus.service.core import logger, schemas
-from nexus.service.core.job import async_get_job_logs
+from nexus.server.core import exceptions as exc
+from nexus.server.core import logger, schemas
+from nexus.server.core.job import async_get_job_logs
 
 __all__ = ["notify_job_action", "update_notification_with_wandb"]
 
 JobAction = tp.Literal["started", "completed", "failed"]
+
 EMOJI_MAPPING = {"started": ":rocket:", "completed": ":checkered_flag:", "failed": ":interrobang:"}
 
 
@@ -22,8 +23,20 @@ class NotificationMessage(pyd.BaseModel):
     username: str = "Nexus"
 
 
-def format_job_message_for_notification(job: schemas.Job, job_action: JobAction) -> dict:
-    discord_id = get_notification_secrets_from_job(job)[1]
+def _get_notification_secrets_from_job(job: schemas.Job) -> tuple[str, str]:
+    webhook_url = job.env.get("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        raise exc.NotificationError("Missing DISCORD_WEBHOOK_URL in job environment")
+
+    user_id = job.env.get("DISCORD_USER_ID")
+    if not user_id:
+        raise exc.NotificationError("Missing DISCORD_USER_ID in job environment")
+
+    return webhook_url, user_id
+
+
+def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction) -> dict:
+    discord_id = _get_notification_secrets_from_job(job)[1]
     user_mention = f"<@{discord_id}>"
     message_title = (
         f"{EMOJI_MAPPING[job_action]} - **Job {job.id} {job_action} on GPU {job.gpu_index}** - {user_mention}"
@@ -56,18 +69,6 @@ def format_job_message_for_notification(job: schemas.Job, job_action: JobAction)
     }
 
 
-def get_notification_secrets_from_job(job: schemas.Job) -> tuple[str, str]:
-    webhook_url = job.env.get("DISCORD_WEBHOOK_URL")
-    if not webhook_url:
-        raise exc.NotificationError("Missing DISCORD_WEBHOOK_URL in job environment")
-
-    user_id = job.env.get("DISCORD_USER_ID")
-    if not user_id:
-        raise exc.NotificationError("Missing DISCORD_USER_ID in job environment")
-
-    return webhook_url, user_id
-
-
 @exc.handle_exception_async(pyd.ValidationError, exc.NotificationError, message="Invalid notification message format")
 @exc.handle_exception_async(aiohttp.ClientError, exc.NotificationError, message="Discord notification request failed")
 @exc.handle_exception_async(
@@ -75,8 +76,8 @@ def get_notification_secrets_from_job(job: schemas.Job) -> tuple[str, str]:
     exc.NotificationError,
     message="Invalid JSON response from Discord notification",
 )
-async def send_notification(
-    _logger: logger.NexusServiceLogger, webhook_url: str, message_data: dict, wait: bool = False
+async def _send_notification(
+    _logger: logger.NexusServerLogger, webhook_url: str, message_data: dict, wait: bool = False
 ) -> str | None:
     notification_data = NotificationMessage(**message_data)
     params = {"wait": "true"} if wait else {}
@@ -98,8 +99,8 @@ async def send_notification(
 @exc.handle_exception_async(
     aiohttp.ClientError, exc.NotificationError, message="Discord notification edit request failed"
 )
-async def edit_notification_message(
-    _logger: logger.NexusServiceLogger, notification_url: str, message_id: str, message_data: dict
+async def _edit_notification_message(
+    _logger: logger.NexusServerLogger, notification_url: str, message_id: str, message_data: dict
 ) -> bool:
     edit_url = f"{notification_url}/messages/{message_id}"
     notification_data = NotificationMessage(**message_data)
@@ -113,10 +114,13 @@ async def edit_notification_message(
             return True
 
 
-async def notify_job_action(_logger: logger.NexusServiceLogger, job: schemas.Job, action: JobAction) -> schemas.Job:
-    message_data = format_job_message_for_notification(job, action)
+####################
 
-    webhook_url = get_notification_secrets_from_job(job)[0]
+
+async def notify_job_action(_logger: logger.NexusServerLogger, job: schemas.Job, action: JobAction) -> schemas.Job:
+    message_data = _format_job_message_for_notification(job, action)
+
+    webhook_url = _get_notification_secrets_from_job(job)[0]
 
     if action == "failed" and job.dir:
         job_logs = await async_get_job_logs(_logger, job_dir=job.dir, last_n_lines=20)
@@ -124,29 +128,25 @@ async def notify_job_action(_logger: logger.NexusServiceLogger, job: schemas.Job
             message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": f"```\n{job_logs}\n```"})
 
     if action == "started":
-        message_id = await send_notification(_logger, webhook_url=webhook_url, message_data=message_data, wait=True)
+        message_id = await _send_notification(_logger, webhook_url=webhook_url, message_data=message_data, wait=True)
         if message_id:
             updated_messages = dict(job.notification_messages)
             updated_messages["discord_start_job"] = message_id
             return dc.replace(job, notification_messages=updated_messages)
         return job
     else:
-        await send_notification(_logger, webhook_url=webhook_url, message_data=message_data)
+        await _send_notification(_logger, webhook_url=webhook_url, message_data=message_data)
         return job
 
 
-async def update_notification_with_wandb(_logger: logger.NexusServiceLogger, job: schemas.Job) -> None:
-    webhook_url, user_id = get_notification_secrets_from_job(job)
-
-    webhook_url = job.env.get("DISCORD_WEBHOOK_URL")
-    if not webhook_url:
-        raise exc.NotificationError("Missing DISCORD_WEBHOOK_URL in job environment")
+async def update_notification_with_wandb(_logger: logger.NexusServerLogger, job: schemas.Job) -> None:
+    webhook_url = _get_notification_secrets_from_job(job)[0]
 
     notification_id = job.notification_messages.get("discord_start_job")
 
     if not job.wandb_url or not notification_id:
         raise exc.NotificationError("No Discord start job message id found")
 
-    message_data = format_job_message_for_notification(job, "started")
-    await edit_notification_message(_logger, webhook_url, notification_id, message_data)
+    message_data = _format_job_message_for_notification(job, "started")
+    await _edit_notification_message(_logger, webhook_url, notification_id, message_data)
     _logger.info(f"Updated notification message for job {job.id} with W&B URL")

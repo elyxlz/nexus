@@ -16,15 +16,17 @@ class Job:
     git_repo_url: str
     git_tag: str
     git_branch: str
-    status: JobStatus
-    created_at: float
+    priority: int
     node_name: str
     env: dict[str, str]
     jobrc: str | None
-    search_wandb: bool
     notifications: list[NotificationType]
-    notification_messages: dict[str, str]  # {discord_start:12352}
+    search_wandb: bool
 
+    status: JobStatus
+    created_at: float
+
+    notification_messages: dict[str, str]
     pid: int | None
     dir: pl.Path | None
     started_at: float | None

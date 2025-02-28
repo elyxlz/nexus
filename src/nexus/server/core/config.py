@@ -6,7 +6,7 @@ import pydantic_settings as pyds
 import toml
 
 __all__ = [
-    "NexusServiceConfig",
+    "NexusServerConfig",
     "get_env_path",
     "get_config_path",
     "get_db_path",
@@ -17,10 +17,10 @@ __all__ = [
 ]
 
 
-class NexusServiceConfig(pyds.BaseSettings):
+class NexusServerConfig(pyds.BaseSettings):
     model_config = pyds.SettingsConfigDict(env_prefix="ns_", frozen=True)
 
-    service_dir: pl.Path | None  # if none, never persist
+    server_dir: pl.Path | None  # if none, never persist
     refresh_rate: int = pyd.Field(default=3)
     host: str = pyd.Field(default="localhost")
     port: int = pyd.Field(default=54323)
@@ -40,35 +40,35 @@ class NexusServiceConfig(pyds.BaseSettings):
         return env_settings, init_settings
 
 
-def get_env_path(service_dir: pl.Path) -> pl.Path:
-    return service_dir / ".env"
+def get_env_path(server_dir: pl.Path) -> pl.Path:
+    return server_dir / ".env"
 
 
-def get_config_path(service_dir: pl.Path) -> pl.Path:
-    return service_dir / "config.toml"
+def get_config_path(server_dir: pl.Path) -> pl.Path:
+    return server_dir / "config.toml"
 
 
-def get_db_path(service_dir: pl.Path) -> pl.Path:
-    return service_dir / "nexus_service.db"
+def get_db_path(server_dir: pl.Path) -> pl.Path:
+    return server_dir / "nexus_server.db"
 
 
-def get_log_dir(service_dir: pl.Path) -> pl.Path:
-    return service_dir / "logs"
+def get_log_dir(server_dir: pl.Path) -> pl.Path:
+    return server_dir / "logs"
 
 
-def get_jobs_dir(service_dir: pl.Path) -> pl.Path:
-    return service_dir / "jobs"
+def get_jobs_dir(server_dir: pl.Path) -> pl.Path:
+    return server_dir / "jobs"
 
 
-def save_config(config: NexusServiceConfig) -> None:
-    assert config.service_dir is not None
+def save_config(config: NexusServerConfig) -> None:
+    assert config.server_dir is not None
     config_dict = json.loads(config.model_dump_json())
-    with get_config_path(config.service_dir).open("w") as f:
+    with get_config_path(config.server_dir).open("w") as f:
         toml.dump(config_dict, f)
 
 
-def load_config(service_dir: pl.Path) -> NexusServiceConfig:
-    config_file = get_config_path(service_dir)
+def load_config(server_dir: pl.Path) -> NexusServerConfig:
+    config_file = get_config_path(server_dir)
     config_data = toml.load(config_file)
-    config_data["service_dir"] = service_dir
-    return NexusServiceConfig(**config_data)
+    config_data["server_dir"] = server_dir
+    return NexusServerConfig(**config_data)

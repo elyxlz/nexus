@@ -48,6 +48,7 @@
 - [x] improve notification system
 - [x] make get job logs async
 - [ ] multi gpu jobs
+- [ ] priority jobs
 - [ ] dependent jobs (a after b is done)
 - [ ] nexus run endpoint
 - [ ] better exceptions for users
@@ -56,6 +57,7 @@
 - [ ] job execution isolation
 - [ ] add tests for persistence
 - [ ] whatsapp notification support
+- [ ] phone call notification support
 - [ ] git branch mode
 - [ ] easy way to show logs for running jobs on discord
 - [ ] multi node and auth

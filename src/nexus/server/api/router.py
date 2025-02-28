@@ -8,72 +8,53 @@ import pathlib as pl
 
 import fastapi as fa
 
-from nexus.service.api import models
-from nexus.service.core import context, db, job, schemas
-from nexus.service.core import exceptions as exc
-from nexus.service.integrations import git, gpu
-from nexus.service.utils import format
+from nexus.server.api import models
+from nexus.server.core import context, db, job, schemas
+from nexus.server.core import exceptions as exc
+from nexus.server.integrations import git, gpu
+from nexus.server.utils import format
 
-__all__ = [
-    "router",
-    "get_context",
-    "get_status",
-    "get_service_logs",
-    "list_jobs",
-    "add_job",
-    "get_job",
-    "get_job_logs_endpoint",
-    "kill_running_jobs",
-    "remove_queued_jobs",
-    "blacklist_gpus",
-    "remove_gpu_blacklist",
-    "list_gpus",
-    "stop_service",
-]
+__all__ = ["router"]
 
 router = fa.APIRouter()
 
 
-def get_context(request: fa.Request) -> context.NexusServiceContext:
+def _get_context(request: fa.Request) -> context.NexusServerContext:
     return request.app.state.ctx
 
 
-@router.get("/v1/service/status", response_model=models.ServiceStatusResponse)
-async def get_status(ctx: context.NexusServiceContext = fa.Depends(get_context)):
-    # Get jobs from the database with specific status filters
+@router.get("/v1/server/status", response_model=models.ServerStatusResponse)
+async def get_status_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
     queued_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="queued")
     running_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
     completed_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="completed")
     failed_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="failed")
 
-    # Count jobs by status directly using database queries
     queued = len(queued_jobs)
     running = len(running_jobs)
     completed = len(completed_jobs) + len(failed_jobs)
 
-    # For GPU info, pass the list of running jobs and blacklisted GPUs
     blacklisted = db.list_blacklisted_gpus(ctx.logger, conn=ctx.db)
     gpus = gpu.get_gpus(
         ctx.logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
     )
 
-    response = models.ServiceStatusResponse(
+    response = models.ServerStatusResponse(
         gpu_count=len(gpus),
         queued_jobs=queued,
         running_jobs=running,
         completed_jobs=completed,
-        service_user=getpass.getuser(),
-        service_version=importlib.metadata.version("nexusai"),
+        server_user=getpass.getuser(),
+        server_version=importlib.metadata.version("nexusai"),
     )
-    ctx.logger.info(f"Service status: {response}")
+    ctx.logger.info(f"Server status: {response}")
     return response
 
 
-@router.get("/v1/service/logs", response_model=models.ServiceLogsResponse)
-async def get_service_logs(ctx: context.NexusServiceContext = fa.Depends(get_context)):
+@router.get("/v1/server/logs", response_model=models.ServerLogsResponse)
+async def get_server_logs_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
     logs: str = ""
 
-    # Get log file path from the logger's file handler
     for handler in ctx.logger.handlers:
         if isinstance(handler, logging.handlers.RotatingFileHandler):
             log_path = pl.Path(handler.baseFilename)
@@ -84,16 +65,16 @@ async def get_service_logs(ctx: context.NexusServiceContext = fa.Depends(get_con
     if not logs:
         ctx.logger.warning("Could not retrieve log content from logger handlers")
 
-    ctx.logger.info(f"Service logs retrieved, size: {len(logs)} characters")
-    return models.ServiceLogsResponse(logs=logs)
+    ctx.logger.info(f"Server logs retrieved, size: {len(logs)} characters")
+    return models.ServerLogsResponse(logs=logs)
 
 
 @router.get("/v1/jobs", response_model=list[schemas.Job])
-async def list_jobs(
+async def list_jobs_endpoint(
     status: str | None = None,
     gpu_index: int | None = None,
     command_regex: str | None = None,
-    ctx: context.NexusServiceContext = fa.Depends(get_context),
+    ctx: context.NexusServerContext = fa.Depends(_get_context),
 ):
     jobs = db.list_jobs(ctx.logger, conn=ctx.db, status=status, command_regex=command_regex)
     if gpu_index is not None:
@@ -104,11 +85,7 @@ async def list_jobs(
 
 @db.safe_transaction
 @router.post("/v1/jobs", response_model=schemas.Job)
-async def add_job(job_request: models.JobRequest, ctx: context.NexusServiceContext = fa.Depends(get_context)):
-    if not git.validate_git_url(job_request.git_repo_url):
-        ctx.logger.error(f"Invalid git URL format: {job_request.git_repo_url}")
-        raise exc.GitError(message="Invalid git repository URL format")
-
+async def add_job_endpoint(job_request: models.JobRequest, ctx: context.NexusServerContext = fa.Depends(_get_context)):
     norm_url = git.normalize_git_url(job_request.git_repo_url)
 
     j = job.create_job(
@@ -132,7 +109,7 @@ async def add_job(job_request: models.JobRequest, ctx: context.NexusServiceConte
 
 
 @router.get("/v1/jobs/{job_id}", response_model=schemas.Job)
-async def get_job(job_id: str, ctx: context.NexusServiceContext = fa.Depends(get_context)):
+async def get_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Depends(_get_context)):
     job_instance = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
     if not job_instance:
         ctx.logger.warning(f"Job not found: {job_id}")
@@ -142,7 +119,7 @@ async def get_job(job_id: str, ctx: context.NexusServiceContext = fa.Depends(get
 
 
 @router.get("/v1/jobs/{job_id}/logs", response_model=models.JobLogsResponse)
-async def get_job_logs_endpoint(job_id: str, ctx: context.NexusServiceContext = fa.Depends(get_context)):
+async def get_job_logs_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Depends(_get_context)):
     _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
     if not _job:
         ctx.logger.warning(f"Job not found: {job_id}")
@@ -156,7 +133,7 @@ async def get_job_logs_endpoint(job_id: str, ctx: context.NexusServiceContext = 
 
 @db.safe_transaction
 @router.delete("/v1/jobs/running", response_model=models.JobActionResponse)
-async def kill_running_jobs(job_ids: list[str], ctx: context.NexusServiceContext = fa.Depends(get_context)):
+async def kill_running_jobs_endpoint(job_ids: list[str], ctx: context.NexusServerContext = fa.Depends(_get_context)):
     if not job_ids:
         raise exc.JobError(message="No job IDs provided")
 
@@ -195,7 +172,7 @@ async def kill_running_jobs(job_ids: list[str], ctx: context.NexusServiceContext
 
 @db.safe_transaction
 @router.delete("/v1/jobs/queued", response_model=models.JobQueueActionResponse)
-async def remove_queued_jobs(job_ids: list[str], ctx: context.NexusServiceContext = fa.Depends(get_context)):
+async def remove_queued_jobs_endpoint(job_ids: list[str], ctx: context.NexusServerContext = fa.Depends(_get_context)):
     if not job_ids:
         raise exc.JobError(message="No job IDs provided")
 
@@ -221,7 +198,7 @@ async def remove_queued_jobs(job_ids: list[str], ctx: context.NexusServiceContex
 
 @db.safe_transaction
 @router.post("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
-async def blacklist_gpus(gpu_indexes: list[int], ctx: context.NexusServiceContext = fa.Depends(get_context)):
+async def blacklist_gpus_endpoint(gpu_indexes: list[int], ctx: context.NexusServerContext = fa.Depends(_get_context)):
     if not gpu_indexes:
         raise exc.GPUError(message="No GPU indexes provided")
 
@@ -244,7 +221,9 @@ async def blacklist_gpus(gpu_indexes: list[int], ctx: context.NexusServiceContex
 
 @db.safe_transaction
 @router.delete("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
-async def remove_gpu_blacklist(gpu_indexes: list[int], ctx: context.NexusServiceContext = fa.Depends(get_context)):
+async def remove_gpu_blacklist_endpoint(
+    gpu_indexes: list[int], ctx: context.NexusServerContext = fa.Depends(_get_context)
+):
     if not gpu_indexes:
         raise exc.GPUError(message="No GPU indexes provided")
 
@@ -269,7 +248,7 @@ async def remove_gpu_blacklist(gpu_indexes: list[int], ctx: context.NexusService
 
 
 @router.get("/v1/gpus", response_model=list[gpu.GpuInfo])
-async def list_gpus(ctx: context.NexusServiceContext = fa.Depends(get_context)):
+async def list_gpus_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
     running_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
     blacklisted = db.list_blacklisted_gpus(ctx.logger, conn=ctx.db)
 
@@ -281,12 +260,12 @@ async def list_gpus(ctx: context.NexusServiceContext = fa.Depends(get_context)):
     return gpus
 
 
-@router.post("/v1/service/stop", response_model=models.ServiceActionResponse)
-async def stop_service(ctx: context.NexusServiceContext = fa.Depends(get_context)):
-    async def shutdown_service():
+@router.post("/v1/server/stop", response_model=models.ServerActionResponse)
+async def stop_server_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
+    async def shutdown_server():
         await asyncio.sleep(1)
         os._exit(0)
 
-    ctx.logger.info("Service shutdown initiated by API request")
-    asyncio.create_task(shutdown_service())
-    return models.ServiceActionResponse(status="stopping")
+    ctx.logger.info("Server shutdown initiated by API request")
+    asyncio.create_task(shutdown_server())
+    return models.ServerActionResponse(status="stopping")

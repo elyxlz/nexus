@@ -5,26 +5,26 @@ import typing as tp
 
 import colorlog as cl
 
-__all__ = ["NexusServiceLogger", "create_service_logger"]
+__all__ = ["NexusServerLogger", "create_logger"]
 
 
-class NexusServiceLogger(logging.Logger):
+class NexusServerLogger(logging.Logger):
     pass
 
 
-logging.setLoggerClass(NexusServiceLogger)
+logging.setLoggerClass(NexusServerLogger)
 
 
-def create_service_logger(
+def create_logger(
     log_dir: pl.Path | None,
-    name: str = "service",
-    log_file: str = "service.log",
+    name: str = "server",
+    log_file: str = "server.log",
     log_level: str = "info",
     max_bytes: int = 10 * 1024 * 1024,
     backup_count: int = 5,
     console_output: bool = True,
-) -> NexusServiceLogger:
-    logging.setLoggerClass(NexusServiceLogger)
+) -> NexusServerLogger:
+    logging.setLoggerClass(NexusServerLogger)
     log_level_map = {
         "debug": logging.DEBUG,
         "info": logging.INFO,
@@ -74,4 +74,4 @@ def create_service_logger(
         console_handler.setLevel(numeric_log_level)
         logger.addHandler(console_handler)
 
-    return tp.cast(NexusServiceLogger, logger)
+    return tp.cast(NexusServerLogger, logger)

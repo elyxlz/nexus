@@ -50,4 +50,4 @@ asyncio_default_fixture_loop_scope = "function"
 [project.scripts]
 nexus = "nexus.cli.main:main"
 nx = "nexus.cli.main:main"
-nexus-service = "nexus.service.main:main"
+nexus-server = "nexus.server.main:main"

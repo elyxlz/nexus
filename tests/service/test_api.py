@@ -4,12 +4,12 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from nexus.service.api.app import create_app
-from nexus.service.core import exceptions as exc
-from nexus.service.core.config import NexusServiceConfig
-from nexus.service.core.context import NexusServiceContext
-from nexus.service.core.db import create_connection
-from nexus.service.core.logger import create_service_logger
+from nexus.server.api.app import create_app
+from nexus.server.core import exceptions as exc
+from nexus.server.core.config import NexusServerConfig
+from nexus.server.core.context import NexusServerContext
+from nexus.server.core.db import create_connection
+from nexus.server.core.logger import create_logger
 
 
 @pytest.fixture
@@ -19,8 +19,8 @@ def git_tag():
 
 @pytest.fixture
 def app_client() -> Iterator[TestClient]:
-    config = NexusServiceConfig(
-        service_dir=None,
+    config = NexusServerConfig(
+        server_dir=None,
         refresh_rate=1,
         host="localhost",
         port=54324,
@@ -29,9 +29,9 @@ def app_client() -> Iterator[TestClient]:
         mock_gpus=True,
     )
 
-    _logger = create_service_logger(log_dir=None, name="nexus_test")
+    _logger = create_logger(log_dir=None, name="nexus_test")
     _db = create_connection(_logger, ":memory:")
-    context = NexusServiceContext(db=_db, config=config, logger=_logger)
+    context = NexusServerContext(db=_db, config=config, logger=_logger)
     _app = create_app(ctx=context)
 
     with TestClient(_app) as client:
@@ -61,21 +61,21 @@ def created_job(app_client: TestClient, job_payload: dict) -> dict:
     return job
 
 
-def test_service_status(app_client: TestClient) -> None:
-    response = app_client.get("/v1/service/status")
+def test_server_status(app_client: TestClient) -> None:
+    response = app_client.get("/v1/server/status")
     assert response.status_code == 200
     data = response.json()
     assert "gpu_count" in data
-    assert "service_version" in data
+    assert "server_version" in data
     assert "gpu_count" in data
     assert "queued_jobs" in data
     assert "running_jobs" in data
     assert "completed_jobs" in data
-    assert "service_user" in data
+    assert "server_user" in data
 
 
-def test_service_logs(app_client: TestClient) -> None:
-    response = app_client.get("/v1/service/logs")
+def test_server_logs(app_client: TestClient) -> None:
+    response = app_client.get("/v1/server/logs")
     assert response.status_code == 200
     data = response.json()
     assert "logs" in data
@@ -218,7 +218,7 @@ def test_get_nonexistent_job(app_client: TestClient) -> None:
 
 
 def test_job_lifecycle(app_client: TestClient, git_tag: str) -> None:
-    status_response = app_client.get("/v1/service/status")
+    status_response = app_client.get("/v1/server/status")
     attempt = None
     assert status_response.status_code == 200
     assert "gpu_count" in status_response.json()
@@ -250,7 +250,7 @@ def test_job_lifecycle(app_client: TestClient, git_tag: str) -> None:
         job_data = job_response.json()
 
         if job_data["status"] != "queued":
-            app_client.get("/v1/service/status")
+            app_client.get("/v1/server/status")
             break
 
         if attempt % 5 == 0:
@@ -421,8 +421,8 @@ def test_remove_nonexistent_queued_job(app_client: TestClient) -> None:
     assert "nonexistent" not in rem_data.get("removed", [])
 
 
-def test_service_stop(app_client: TestClient) -> None:
-    response = app_client.post("/v1/service/stop")
+def test_server_stop(app_client: TestClient) -> None:
+    response = app_client.post("/v1/server/stop")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "stopping"

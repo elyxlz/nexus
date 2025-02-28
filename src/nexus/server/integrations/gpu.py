@@ -2,8 +2,8 @@ import dataclasses as dc
 import subprocess
 import typing as tp
 
-from nexus.service.core import exceptions as exc
-from nexus.service.core import logger, schemas
+from nexus.server.core import exceptions as exc
+from nexus.server.core import logger, schemas
 
 __all__ = ["GpuInfo", "get_gpus", "is_gpu_available"]
 
@@ -22,14 +22,10 @@ class GpuInfo:
 GpuProcesses = dict[int, int]
 
 
-def is_gpu_available(gpu_info: GpuInfo) -> bool:
-    return not gpu_info.is_blacklisted and gpu_info.running_job_id is None and gpu_info.process_count == 0
-
-
 @exc.handle_exception(subprocess.TimeoutExpired, exc.GPUError, message="Command timed out")
 @exc.handle_exception(subprocess.CalledProcessError, exc.GPUError, message="Command failed with error")
 @exc.handle_exception(Exception, exc.GPUError, message="Error executing command")
-def run_command(_logger: logger.NexusServiceLogger, command: list[str], timeout: int = 5) -> str:
+def _run_command(_logger: logger.NexusServerLogger, command: list[str], timeout: int = 5) -> str:
     result = subprocess.run(
         command,
         capture_output=True,
@@ -40,9 +36,9 @@ def run_command(_logger: logger.NexusServiceLogger, command: list[str], timeout:
     return result.stdout
 
 
-def fetch_gpu_processes(_logger: logger.NexusServiceLogger) -> GpuProcesses:
+def _fetch_gpu_processes(_logger: logger.NexusServerLogger) -> GpuProcesses:
     _logger.debug("Executing nvidia-smi pmon command")
-    output = run_command(_logger, ["nvidia-smi", "pmon", "-c", "1"])
+    output = _run_command(_logger, ["nvidia-smi", "pmon", "-c", "1"])
 
     gpu_processes: GpuProcesses = {}
     for line in output.strip().split("\n")[2:]:
@@ -58,7 +54,7 @@ def fetch_gpu_processes(_logger: logger.NexusServiceLogger) -> GpuProcesses:
     return gpu_processes
 
 
-def create_gpu_info(
+def _create_gpu_info(
     index: int,
     name: str,
     total_memory: int,
@@ -80,11 +76,11 @@ def create_gpu_info(
 
 
 @exc.handle_exception(ValueError, exc.GPUError, message="Error parsing GPU info line")
-def parse_gpu_line(
-    _logger: logger.NexusServiceLogger, line: str, gpu_processes: dict, blacklisted_gpus: set, running_jobs_idxs: dict
+def _parse_gpu_line(
+    _logger: logger.NexusServerLogger, line: str, gpu_processes: dict, blacklisted_gpus: set, running_jobs_idxs: dict
 ) -> GpuInfo:
     index, name, total, used = (x.strip() for x in line.split(","))
-    return create_gpu_info(
+    return _create_gpu_info(
         int(index),
         name=name,
         total_memory=int(float(total)),
@@ -95,9 +91,9 @@ def parse_gpu_line(
     )
 
 
-def _get_nvidia_smi_output(_logger: logger.NexusServiceLogger) -> str:
+def _get_nvidia_smi_output(_logger: logger.NexusServerLogger) -> str:
     _logger.debug("Executing nvidia-smi command for GPU stats")
-    output = run_command(
+    output = _run_command(
         _logger, ["nvidia-smi", "--query-gpu=index,name,memory.total,memory.used", "--format=csv,noheader,nounits"]
     )
 
@@ -117,9 +113,9 @@ def _process_gpu_line(
     gpu_processes: GpuProcesses,
     blacklisted_set: set[int],
     running_jobs_idxs: dict[int, str],
-    _logger: logger.NexusServiceLogger,
+    _logger: logger.NexusServerLogger,
 ) -> GpuInfo:
-    return parse_gpu_line(
+    return _parse_gpu_line(
         _logger,
         line=line,
         gpu_processes=gpu_processes,
@@ -128,33 +124,8 @@ def _process_gpu_line(
     )
 
 
-def get_gpus(
-    _logger: logger.NexusServiceLogger, running_jobs: list[schemas.Job], blacklisted_gpus: list[int], mock_gpus: bool
-) -> list[GpuInfo]:
-    if mock_gpus:
-        _logger.debug("MOCK_GPUS parameter is True. Returning mock GPU information.")
-        return get_mock_gpus(_logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted_gpus)
-
-    output = _get_nvidia_smi_output(_logger)
-    gpu_processes = fetch_gpu_processes(_logger)
-    running_jobs_idxs = {tp.cast(int, j.gpu_index): j.id for j in running_jobs}
-    blacklisted_set = set(blacklisted_gpus)
-    gpus: list[GpuInfo] = []
-
-    for line in output.strip().split("\n"):
-        gpu = _process_gpu_line(line, gpu_processes, blacklisted_set, running_jobs_idxs, _logger)
-        if gpu:
-            gpus.append(gpu)
-
-    _logger.debug(f"Total GPUs found: {len(gpus)}")
-    if not gpus:
-        _logger.warning("No GPUs detected on the system")
-
-    return gpus
-
-
-def get_mock_gpus(
-    _logger: logger.NexusServiceLogger, running_jobs: list[schemas.Job], blacklisted_gpus: list[int]
+def _get_mock_gpus(
+    _logger: logger.NexusServerLogger, running_jobs: list[schemas.Job], blacklisted_gpus: list[int]
 ) -> list[GpuInfo]:
     _logger.debug("Generating mock GPUs")
     running_jobs_idxs = {tp.cast(int, j.gpu_index): j.id for j in running_jobs}
@@ -166,7 +137,7 @@ def get_mock_gpus(
     ]
 
     mock_gpus = [
-        create_gpu_info(
+        _create_gpu_info(
             index,
             name=name,
             total_memory=total,
@@ -183,3 +154,34 @@ def get_mock_gpus(
 
     _logger.debug(f"Total mock GPUs generated: {len(mock_gpus)}")
     return mock_gpus
+
+
+####################
+
+
+def is_gpu_available(gpu_info: GpuInfo) -> bool:
+    return not gpu_info.is_blacklisted and gpu_info.running_job_id is None and gpu_info.process_count == 0
+
+
+def get_gpus(
+    _logger: logger.NexusServerLogger, running_jobs: list[schemas.Job], blacklisted_gpus: list[int], mock_gpus: bool
+) -> list[GpuInfo]:
+    if mock_gpus:
+        return _get_mock_gpus(_logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted_gpus)
+
+    output = _get_nvidia_smi_output(_logger)
+    gpu_processes = _fetch_gpu_processes(_logger)
+    running_jobs_idxs = {tp.cast(int, j.gpu_index): j.id for j in running_jobs}
+    blacklisted_set = set(blacklisted_gpus)
+    gpus: list[GpuInfo] = []
+
+    for line in output.strip().split("\n"):
+        gpu = _process_gpu_line(line, gpu_processes, blacklisted_set, running_jobs_idxs, _logger)
+        if gpu:
+            gpus.append(gpu)
+
+    _logger.debug(f"Total GPUs found: {len(gpus)}")
+    if not gpus:
+        _logger.warning("No GPUs detected on the system")
+
+    return gpus

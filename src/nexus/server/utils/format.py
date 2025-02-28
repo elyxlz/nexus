@@ -1,7 +1,7 @@
 import datetime as dt
 import typing as tp
 
-from nexus.service.core import schemas
+from nexus.server.core import schemas
 
 __all__ = ["format_runtime", "format_timestamp", "calculate_runtime", "format_job_action"]
 

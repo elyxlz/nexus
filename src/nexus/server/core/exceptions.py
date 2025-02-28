@@ -2,12 +2,12 @@ import functools
 import typing as tp
 from collections import abc
 
-from nexus.service.core import logger
+from nexus.server.core import logger
 
 __all__ = [
-    "NexusServiceError",
+    "NexusServerError",
     "ConfigurationError",
-    "ServiceError",
+    "ServerError",
     "GPUError",
     "GitError",
     "DatabaseError",
@@ -19,7 +19,7 @@ __all__ = [
 ]
 
 
-class NexusServiceError(Exception):
+class NexusServerError(Exception):
     ERROR_CODE = "NEXUS_ERROR"
 
     def __init__(self, message: str | None = None):
@@ -28,35 +28,35 @@ class NexusServiceError(Exception):
         super().__init__(self.message)
 
 
-class ConfigurationError(NexusServiceError):
+class ConfigurationError(NexusServerError):
     ERROR_CODE = "CONFIG_ERROR"
 
 
-class ServiceError(NexusServiceError):
-    ERROR_CODE = "SERVICE_ERROR"
+class ServerError(NexusServerError):
+    ERROR_CODE = "SERVER_ERROR"
 
 
-class GPUError(NexusServiceError):
+class GPUError(NexusServerError):
     ERROR_CODE = "GPU_ERROR"
 
 
-class GitError(NexusServiceError):
+class GitError(NexusServerError):
     ERROR_CODE = "GIT_ERROR"
 
 
-class DatabaseError(NexusServiceError):
+class DatabaseError(NexusServerError):
     ERROR_CODE = "DB_ERROR"
 
 
-class JobError(NexusServiceError):
+class JobError(NexusServerError):
     ERROR_CODE = "JOB_ERROR"
 
 
-class WandBError(NexusServiceError):
+class WandBError(NexusServerError):
     ERROR_CODE = "WANDB_ERROR"
 
 
-class NotificationError(NexusServiceError):
+class NotificationError(NexusServerError):
     ERROR_CODE = "WEBHOOK_ERROR"
 
 
@@ -66,7 +66,7 @@ P = tp.ParamSpec("P")  # This captures the parameter specification of the wrappe
 
 def handle_exception(
     source_exception: type[Exception],
-    target_exception: type[NexusServiceError] | None = None,
+    target_exception: type[NexusServerError] | None = None,
     message: str = "An error occurred",
     reraise: bool = True,
     default_return: tp.Any = None,
@@ -77,18 +77,18 @@ def handle_exception(
             _logger = None
 
             for arg in args:
-                if isinstance(arg, logger.NexusServiceLogger):
+                if isinstance(arg, logger.NexusServerLogger):
                     _logger = arg
                     break
 
             if _logger is None:
                 for arg_name, arg_value in kwargs.items():
-                    if isinstance(arg_value, logger.NexusServiceLogger):
+                    if isinstance(arg_value, logger.NexusServerLogger):
                         _logger = arg_value
                         break
 
             if _logger is None:
-                raise ValueError(f"Function '{func.__name__}' requires a NexusServiceLogger parameter")
+                raise ValueError(f"Function '{func.__name__}' requires a NexusServerLogger parameter")
 
             try:
                 return func(*args, **kwargs)
@@ -115,7 +115,7 @@ def handle_exception(
 
 def handle_exception_async(
     source_exception: type[Exception],
-    target_exception: type[NexusServiceError] | None = None,
+    target_exception: type[NexusServerError] | None = None,
     message: str = "An error occurred",
     reraise: bool = True,
     default_return: tp.Any = None,
@@ -126,18 +126,18 @@ def handle_exception_async(
             _logger = None
 
             for arg in args:
-                if isinstance(arg, logger.NexusServiceLogger):
+                if isinstance(arg, logger.NexusServerLogger):
                     _logger = arg
                     break
 
             if _logger is None:
                 for arg_name, arg_value in kwargs.items():
-                    if isinstance(arg_value, logger.NexusServiceLogger):
+                    if isinstance(arg_value, logger.NexusServerLogger):
                         _logger = arg_value
                         break
 
             if _logger is None:
-                raise ValueError(f"Function '{func.__name__}' requires a NexusServiceLogger parameter")
+                raise ValueError(f"Function '{func.__name__}' requires a NexusServerLogger parameter")
 
             try:
                 return await func(*args, **kwargs)

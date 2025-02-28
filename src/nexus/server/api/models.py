@@ -1,12 +1,12 @@
 import pydantic as pyd
 import typing_extensions as tpe
 
-from nexus.service.core.schemas import NotificationType
+from nexus.server.core import schemas
 
 __all__ = [
     "JobRequest",
-    "ServiceLogsResponse",
-    "ServiceActionResponse",
+    "ServerLogsResponse",
+    "ServerActionResponse",
     "JobLogsResponse",
     "JobActionError",
     "JobActionResponse",
@@ -14,7 +14,7 @@ __all__ = [
     "JobQueueActionResponse",
     "GpuActionError",
     "GpuActionResponse",
-    "ServiceStatusResponse",
+    "ServerStatusResponse",
 ]
 
 REQUIRED_ENV_VARS = {"wandb": ["WANDB_API_KEY", "WANDB_ENTITY"], "discord": ["DISCORD_USER_ID", "DISCORD_WEBHOOK_URL"]}
@@ -26,14 +26,15 @@ class FrozenBaseModel(pyd.BaseModel):
 
 class JobRequest(FrozenBaseModel):
     command: str
+    user: str
     git_repo_url: str
     git_tag: str
     git_branch: str
-    user: str
     search_wandb: bool = False
-    notifications: list[NotificationType] = []
+    notifications: list[schemas.NotificationType] = []
     env: dict[str, str] = {}
     jobrc: str | None = None
+    priority: int = 0
 
     @pyd.model_validator(mode="after")
     def check_requirements(self) -> tpe.Self:
@@ -52,11 +53,11 @@ class JobRequest(FrozenBaseModel):
         return self
 
 
-class ServiceLogsResponse(FrozenBaseModel):
+class ServerLogsResponse(FrozenBaseModel):
     logs: str
 
 
-class ServiceActionResponse(FrozenBaseModel):
+class ServerActionResponse(FrozenBaseModel):
     status: str
 
 
@@ -95,10 +96,10 @@ class GpuActionResponse(FrozenBaseModel):
     failed: list[GpuActionError]
 
 
-class ServiceStatusResponse(FrozenBaseModel):
+class ServerStatusResponse(FrozenBaseModel):
     gpu_count: int
     queued_jobs: int
     running_jobs: int
     completed_jobs: int
-    service_user: str
-    service_version: str
+    server_user: str
+    server_version: str

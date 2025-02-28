@@ -1,6 +1,7 @@
 # Nexus Codebase Style Guidelines
 
 ## Programming Paradigm
+
 - **Purely Functional Core**: Implement core logic as pure functions with immutable data models
 - **Avoid OOP**: No classes with methods, inheritance, or complex object hierarchies
 - **Dataclasses Only**: Use frozen dataclasses for data structures, never mutable classes
@@ -8,14 +9,16 @@
 - **Function Composition**: Build complex operations by composing smaller pure functions
 
 ## Function Design
+
 - **Pure Functions**: No side effects, same output for same input (see `generate_job_id`, `build_job_env`)
-- **Error Decorators**: Wrap functions with `@handle_exceptions` and `@catch_and_log` for error handling
+- **Error Decorators**: Wrap functions with `@handle_exceptions` for error handling
 - **Function Naming**: Use verb_noun format for function names (`create_job`, `update_job`)
 - **Function Size**: Keep functions under 20 lines, extract helpers for logical parts
 - **Private Helpers**: Use underscore prefix (`_parse_exit_code`, `_build_script_content`)
 - **Function Replacement**: Prefer `dc.replace()` over mutation to modify dataclass instances
 
-## Type System 
+## Type System
+
 - **Full Type Annotations**: Use complete type hints for all parameters and return values
 - **Union Types**: Use pipe syntax for union types (`str | None`, not `Optional[str]`)
 - **Literal Types**: Use `Literal` for constrained string values (`JobStatus = Literal["queued", "running", "completed", "failed"]`)
@@ -23,6 +26,7 @@
 - **Return Type Clarity**: Always specify return types, including `None` when appropriate
 
 ## Import Style
+
 - **Standard Imports First**: stdlib -> third-party -> local modules
 - **Fixed Abbreviations**:
   - `import dataclasses as dc`
@@ -33,6 +37,7 @@
 - **Local Import Format**: `from nexus.service.core import exceptions, logger, models`
 
 ## Error Handling
+
 - **Custom Exceptions**: Define domain-specific exception hierarchy
 - **Decorator Pattern**: Use decorators to standardize error handling
 - **Exception Mapping**: Map third-party exceptions to domain exceptions
@@ -40,6 +45,7 @@
 - **Error Codes**: Use consistent error codes for all exceptions
 
 ## Database Operations
+
 - **Pure Database Functions**: Each function does one database operation
 - **Transaction Safety**: Explicit transaction boundaries with proper error handling
 - **Data Mapping**: Explicit row-to-model mapping functions
@@ -47,6 +53,7 @@
 - **SQL Validation**: Validate inputs before sending to database
 
 ## Utils & Helpers
+
 - **Composable Utils**: Small, reusable utility functions
 - **Consistent Naming**: Similar operations use similar naming patterns
 - **Parameter Order**: Context/logger parameters first, optional params last
@@ -54,6 +61,7 @@
 - **Default Values**: Use sensible defaults for optional parameters
 
 ## Code Documentation
+
 - **Self-Documenting Code**: Prefer clear, descriptive variable and function names over comments
 - **No Redundant Comments**: Avoid comments that repeat what the code already expresses
 - **No Implementation Comments**: Don't comment on how code works; make code readable instead
@@ -61,3 +69,4 @@
 - **Type-Based Documentation**: Rely on type signatures to document interfaces, not comments
 - **Clean Interfaces**: Function names and signatures should be clear enough without comments
 - **Docstrings Optional**: Only add docstrings when function purpose isn't obvious from name/types
+

@@ -40,53 +40,53 @@ def get_api_base_url() -> str:
     return f"http://{config.host}:{config.port}/v1"
 
 
-# Service Management
-def is_service_running() -> bool:
-    """Check if the Nexus service is running by pinging the API."""
+# Server Management
+def is_server_running() -> bool:
+    """Check if the Nexus server is running by pinging the API."""
     config = load_config()
     try:
-        response = requests.get(f"http://{config.host}:{config.port}/v1/service/status", timeout=2)
+        response = requests.get(f"http://{config.host}:{config.port}/v1/server/status", timeout=2)
         return response.status_code == 200
     except requests.RequestException:
         return False
 
 
-def get_service_session_name() -> str:
-    """Get the screen session name for the service."""
+def get_server_session_name() -> str:
+    """Get the screen session name for the server."""
     config = load_config()
-    return f"nexus_service_{config.port}"
+    return f"nexus_server_{config.port}"
 
 
-def start_service() -> None:
-    """Start the Nexus service if not running."""
-    if is_service_running():
+def start_server() -> None:
+    """Start the Nexus server if not running."""
+    if is_server_running():
         return
 
-    session_name = get_service_session_name()
+    session_name = get_server_session_name()
     try:
-        subprocess.run(["screen", "-dmS", session_name, "nexus-service"], check=True)
+        subprocess.run(["screen", "-dmS", session_name, "nexus-server"], check=True)
 
-        # Wait for service to start (max 10 seconds)
+        # Wait for server to start (max 10 seconds)
         for _ in range(10):
-            if is_service_running():
-                print(colored("Nexus service started successfully.", "green"))
+            if is_server_running():
+                print(colored("Nexus server started successfully.", "green"))
                 return
             time.sleep(1)
 
-        # If we get here, service didn't start properly
-        raise RuntimeError("Service started but API is not responding")
+        # If we get here, server didn't start properly
+        raise RuntimeError("Server started but API is not responding")
 
     except subprocess.CalledProcessError as e:
-        print(colored(f"Error starting Nexus service: {e}", "red"))
+        print(colored(f"Error starting Nexus server: {e}", "red"))
         print(
             colored(
-                "Make sure 'screen' and 'nexus-service' are installed and in your PATH.",
+                "Make sure 'screen' and 'nexus-server' are installed and in your PATH.",
                 "yellow",
             )
         )
     except RuntimeError as e:
         print(colored(f"Error: {e}", "red"))
-        print(colored("Check the service logs for more information.", "yellow"))
+        print(colored("Check the server logs for more information.", "yellow"))
         # Try to clean up the screen session if it exists
         try:
             subprocess.run(["screen", "-S", session_name, "-X", "quit"], check=False)
@@ -176,20 +176,20 @@ def expand_job_commands(commands: list[str], repeat: int = 1) -> list[str]:
 def print_status_snapshot() -> None:
     """Show status snapshot."""
     try:
-        assert is_service_running(), "nexus service is not running"
+        assert is_server_running(), "nexus server is not running"
 
-        # After fetching the service status in print_status_snapshot() or main()
+        # After fetching the server status in print_status_snapshot() or main()
         status = None
         try:
-            response = requests.get(f"{get_api_base_url()}/service/status")
+            response = requests.get(f"{get_api_base_url()}/server/status")
             response.raise_for_status()
             status = response.json()
 
-            service_version = status.get("service_version", "unknown")
-            if service_version != VERSION:
+            server_version = status.get("server_version", "unknown")
+            if server_version != VERSION:
                 print(
                     colored(
-                        f"WARNING: Nexus client version ({VERSION}) does not match Nexus service version ({service_version}).",
+                        f"WARNING: Nexus client version ({VERSION}) does not match Nexus server version ({server_version}).",
                         "yellow",
                     )
                 )
@@ -544,34 +544,34 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
             print(colored(f"Error removing jobs: {e}", "red"))
 
 
-def stop_service() -> None:
-    """Stop the Nexus service."""
+def stop_server() -> None:
+    """Stop the Nexus server."""
     try:
-        response = requests.post(f"{get_api_base_url()}/service/stop")
+        response = requests.post(f"{get_api_base_url()}/server/stop")
         response.raise_for_status()
-        print(colored("Nexus service stopped.", "green"))
+        print(colored("Nexus server stopped.", "green"))
     except requests.RequestException as e:
-        print(colored(f"Error stopping service: {e}", "red"))
+        print(colored(f"Error stopping server: {e}", "red"))
 
 
-def restart_service() -> None:
-    """Restart the Nexus service."""
+def restart_server() -> None:
+    """Restart the Nexus server."""
     try:
-        stop_service()
+        stop_server()
         time.sleep(2)
-        start_service()
+        start_server()
     except Exception as e:
-        print(colored(f"Error restarting service: {e}", "red"))
+        print(colored(f"Error restarting server: {e}", "red"))
 
 
 def view_logs(target: str) -> None:
-    """View logs for a job, GPU, or service."""
+    """View logs for a job, GPU, or server."""
 
     try:
-        if target == "service":
-            response = requests.get(f"{get_api_base_url()}/service/logs")
+        if target == "server":
+            response = requests.get(f"{get_api_base_url()}/server/logs")
             response.raise_for_status()
-            print(colored("=== Service Logs ===", "blue", attrs=["bold"]))
+            print(colored("=== Server Logs ===", "blue", attrs=["bold"]))
             print(response.json().get("logs", ""))
             return
 
@@ -609,8 +609,8 @@ def attach_to_session(target: str) -> None:
     config = load_config()
 
     try:
-        if target == "service":
-            session_name = f"nexus_service_{config.port}"
+        if target == "server":
+            session_name = f"nexus_server_{config.port}"
         elif target.isdigit():
             response = requests.get(f"{get_api_base_url()}/gpus")
             response.raise_for_status()
@@ -729,8 +729,8 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Basic commands
-    subparsers.add_parser("stop", help="Stop the Nexus service")
-    subparsers.add_parser("restart", help="Restart the Nexus service")
+    subparsers.add_parser("stop", help="Stop the Nexus server")
+    subparsers.add_parser("restart", help="Restart the Nexus server")
     subparsers.add_parser("queue", help="Show pending jobs")
     subparsers.add_parser("config", help="Show configuration")
     subparsers.add_parser("version", help="Show version information")
@@ -775,12 +775,12 @@ def create_parser() -> argparse.ArgumentParser:
     blacklist_remove.add_argument("gpus", help="Comma-separated GPU indexes to remove from blacklist")
 
     # Logs
-    logs_parser = subparsers.add_parser("logs", help="View logs for job or service")
-    logs_parser.add_argument("id", help="Job ID or 'service' to view service logs")
+    logs_parser = subparsers.add_parser("logs", help="View logs for job or server")
+    logs_parser.add_argument("id", help="Job ID or 'server' to view server logs")
 
     # Attach
     attach_parser = subparsers.add_parser("attach", help="Attach to screen session")
-    attach_parser.add_argument("target", help="Job ID, GPU number, or 'service'")
+    attach_parser.add_argument("target", help="Job ID, GPU number, or 'server'")
 
     return parser
 
@@ -791,13 +791,13 @@ def main() -> None:
     args = parser.parse_args()
 
     if not args.command:
-        start_service()
+        start_server()
         print_status_snapshot()
         return
 
     command_handlers = {
-        "stop": lambda: stop_service(),
-        "restart": lambda: restart_service(),
+        "stop": lambda: stop_server(),
+        "restart": lambda: restart_server(),
         "add": lambda: add_jobs(
             args.commands,
             repeat=args.repeat,
