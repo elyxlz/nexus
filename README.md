@@ -46,17 +46,18 @@
 - [x] remove discord id from job
 - [x] add branch information on job
 - [x] improve notification system
+- [x] make get job logs async
+- [ ] multi gpu jobs
+- [ ] dependent jobs (a after b is done)
+- [ ] nexus run endpoint
 - [ ] better exceptions for users
-- [ ] make get job logs async
-- [ ] better secretes management
+- [ ] better secrets management
 - [ ] add time based cache to gpu call
 - [ ] job execution isolation
 - [ ] add tests for persistence
 - [ ] whatsapp notification support
 - [ ] git branch mode
-- [ ] multi gpu jobs
 - [ ] easy way to show logs for running jobs on discord
-- [ ] dependent jobs (a after b is done)
 - [ ] multi node and auth
 - [ ] documentation
 - [ ] cli: command templates

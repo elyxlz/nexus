@@ -528,7 +528,6 @@ dependencies = [
     { name = "colorlog" },
     { name = "fastapi" },
     { name = "pydantic-settings", extra = ["toml"] },
-    { name = "pyright" },
     { name = "requests" },
     { name = "termcolor" },
     { name = "toml" },
@@ -540,6 +539,7 @@ dependencies = [
 dev = [
     { name = "httpx" },
     { name = "pydeps" },
+    { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "requests-mock" },
@@ -552,7 +552,6 @@ requires-dist = [
     { name = "colorlog", specifier = ">=6.8.2" },
     { name = "fastapi", specifier = ">=0.115.3" },
     { name = "pydantic-settings", extras = ["toml"], specifier = ">=2.6.0" },
-    { name = "pyright", specifier = ">=1.1.386" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "termcolor", specifier = ">=2.5.0" },
     { name = "toml", specifier = ">=0.10.2" },
@@ -564,6 +563,7 @@ requires-dist = [
 dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pydeps", specifier = ">=3.0.1" },
+    { name = "pyright", specifier = ">=1.1.386" },
     { name = "pytest", specifier = ">=7.4.2" },
     { name = "pytest-asyncio", specifier = ">=0.21.0" },
     { name = "requests-mock", specifier = ">=1.11.0" },
