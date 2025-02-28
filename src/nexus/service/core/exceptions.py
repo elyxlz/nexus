@@ -15,6 +15,7 @@ __all__ = [
     "WandBError",
     "NotificationError",
     "handle_exception",
+    "handle_exception_async",
 ]
 
 
@@ -91,6 +92,55 @@ def handle_exception(
 
             try:
                 return func(*args, **kwargs)
+            except Exception as e:
+                if isinstance(e, source_exception):
+                    error_msg = f"{message}: {str(e)}"
+                    _logger.error(error_msg)
+
+                    if not reraise:
+                        return tp.cast(T, default_return)
+
+                    if target_exception is not None:
+                        new_err_msg = f"{error_msg} (converted from {type(e).__name__})"
+                        raise target_exception(message=new_err_msg) from e
+
+                    raise
+
+                raise
+
+        return wrapper
+
+    return decorator
+
+
+def handle_exception_async(
+    source_exception: type[Exception],
+    target_exception: type[NexusServiceError] | None = None,
+    message: str = "An error occurred",
+    reraise: bool = True,
+    default_return: tp.Any = None,
+) -> abc.Callable[[abc.Callable[P, tp.Awaitable[T]]], abc.Callable[P, tp.Awaitable[T]]]:
+    def decorator(func: abc.Callable[P, tp.Awaitable[T]]) -> abc.Callable[P, tp.Awaitable[T]]:
+        @functools.wraps(func)
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            _logger = None
+
+            for arg in args:
+                if isinstance(arg, logger.NexusServiceLogger):
+                    _logger = arg
+                    break
+
+            if _logger is None:
+                for arg_name, arg_value in kwargs.items():
+                    if isinstance(arg_value, logger.NexusServiceLogger):
+                        _logger = arg_value
+                        break
+
+            if _logger is None:
+                raise ValueError(f"Function '{func.__name__}' requires a NexusServiceLogger parameter")
+
+            try:
+                return await func(*args, **kwargs)
             except Exception as e:
                 if isinstance(e, source_exception):
                     error_msg = f"{message}: {str(e)}"
