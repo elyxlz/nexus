@@ -95,19 +95,19 @@ def create_directories(_logger: logger.NexusServiceLogger, dir_path: pl.Path) ->
 
 @exc.handle_exception(PermissionError, exc.JobError, message="Failed to create GitHub token helper")
 @exc.handle_exception(OSError, exc.JobError, message="Failed to create GitHub token helper")
-def _create_github_token_helper(_logger: logger.NexusServiceLogger, dir_path: pl.Path, github_token: str) -> pl.Path:
+def _create_git_token_helper(_logger: logger.NexusServiceLogger, dir_path: pl.Path, git_token: str) -> pl.Path:
     askpass_path = dir_path / "askpass.sh"
-    askpass_script = f'#!/usr/bin/env bash\necho "{github_token}"\n'
+    askpass_script = f'#!/usr/bin/env bash\necho "{git_token}"\n'
     askpass_path.write_text(askpass_script)
     askpass_path.chmod(0o700)
     return askpass_path
 
 
-def setup_github_auth(_logger: logger.NexusServiceLogger, dir_path: pl.Path, github_token: str) -> pl.Path | None:
-    if not github_token:
+def setup_github_auth(_logger: logger.NexusServiceLogger, dir_path: pl.Path, git_token: str) -> pl.Path | None:
+    if not git_token:
         return None
 
-    return _create_github_token_helper(_logger, dir_path, github_token)
+    return _create_git_token_helper(_logger, dir_path, git_token)
 
 
 def _build_script_content(
@@ -229,8 +229,8 @@ async def async_start_job(
     env = _build_environment(_logger, gpu_index=gpu_index, job_env=job.env)
 
     # Get GitHub token from environment if available
-    github_token = job.env.get("GITHUB_TOKEN")
-    askpass_path = setup_github_auth(_logger, dir_path=job.dir, github_token=github_token) if github_token else None
+    git_token = job.env.get("GIT_TOKEN")
+    askpass_path = setup_github_auth(_logger, dir_path=job.dir, git_token=git_token) if git_token else None
 
     # Create the job script
     script_path = create_job_script(

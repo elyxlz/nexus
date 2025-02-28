@@ -24,15 +24,15 @@ from dataclasses import dataclass
 from nexus.service.core import config, context, db, logger
 
 # Installation paths
-SYSTEM_CONFIG_DIR = pl.Path("/etc/nexus_service")
-USER_CONFIG_DIR = pl.Path.home() / ".nexus_service"
+SYSTEM_service_dir = pl.Path("/etc/nexus_service")
+USER_service_dir = pl.Path.home() / ".nexus_service"
 SYSTEMD_DIR = pl.Path("/etc/systemd/system")
 SERVICE_FILENAME = "nexus.service"
 SERVICE_USER = "nexus"
 
 # Marker files
-MARKER_SYSTEM = SYSTEM_CONFIG_DIR / "nexus_service.json"
-MARKER_USER = USER_CONFIG_DIR / "nexus_service.json"
+MARKER_SYSTEM = SYSTEM_service_dir / "nexus_service.json"
+MARKER_USER = USER_service_dir / "nexus_service.json"
 
 
 @dataclass(frozen=True)
@@ -54,8 +54,8 @@ def get_installation_info() -> InstallationInfo:
                 version=data.get("version", "unknown"),
                 install_date=data.get("install_date", "unknown"),
                 install_mode="system",
-                install_path=SYSTEM_CONFIG_DIR,
-                config_path=SYSTEM_CONFIG_DIR / "config.toml",
+                install_path=SYSTEM_service_dir,
+                config_path=SYSTEM_service_dir / "config.toml",
                 installed_by=data.get("installed_by"),
                 service_enabled=data.get("service_enabled", False),
             )
@@ -69,8 +69,8 @@ def get_installation_info() -> InstallationInfo:
                 version=data.get("version", "unknown"),
                 install_date=data.get("install_date", "unknown"),
                 install_mode="user",
-                install_path=USER_CONFIG_DIR,
-                config_path=USER_CONFIG_DIR / "config.toml",
+                install_path=USER_service_dir,
+                config_path=USER_service_dir / "config.toml",
                 installed_by=data.get("installed_by"),
                 service_enabled=False,
             )
@@ -96,13 +96,13 @@ def get_service_directory() -> tuple[pl.Path | None, bool]:
     info = get_installation_info()
 
     if info.install_mode == "system":
-        return SYSTEM_CONFIG_DIR, False
+        return SYSTEM_service_dir, False
     elif info.install_mode == "user":
-        return USER_CONFIG_DIR, False
+        return USER_service_dir, False
 
     # Check for user config without marker
-    if (USER_CONFIG_DIR / "config.toml").exists():
-        return USER_CONFIG_DIR, False
+    if (USER_service_dir / "config.toml").exists():
+        return USER_service_dir, False
 
     return None, True
 
@@ -160,10 +160,10 @@ def write_installation_marker(mode: tp.Literal["system", "user"], service_enable
     return current_version
 
 
-def create_directories(config_dir: pl.Path) -> None:
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "logs").mkdir(parents=True, exist_ok=True)
-    (config_dir / "jobs").mkdir(parents=True, exist_ok=True)
+def create_directories(service_dir: pl.Path) -> None:
+    service_dir.mkdir(parents=True, exist_ok=True)
+    (service_dir / "logs").mkdir(parents=True, exist_ok=True)
+    (service_dir / "jobs").mkdir(parents=True, exist_ok=True)
 
 
 def create_service_user() -> bool:
@@ -185,8 +185,8 @@ def configure_multiuser_screen() -> bool:
 
 
 def set_system_permissions() -> None:
-    subprocess.run(["chown", "-R", f"{SERVICE_USER}:{SERVICE_USER}", str(SYSTEM_CONFIG_DIR)], check=True)
-    subprocess.run(["chmod", "-R", "770", str(SYSTEM_CONFIG_DIR)], check=True)
+    subprocess.run(["chown", "-R", f"{SERVICE_USER}:{SERVICE_USER}", str(SYSTEM_service_dir)], check=True)
+    subprocess.run(["chmod", "-R", "770", str(SYSTEM_service_dir)], check=True)
 
 
 def setup_systemd_service() -> tuple[bool, str | None]:
@@ -261,15 +261,15 @@ def create_interactive_config(default_config: config.NexusServiceConfig) -> conf
 
 
 def setup_config(
-    config_dir: pl.Path, interactive: bool = True, config_file: pl.Path | None = None
+    service_dir: pl.Path, interactive: bool = True, config_file: pl.Path | None = None
 ) -> config.NexusServiceConfig:
-    default_config = config.NexusServiceConfig(service_dir=config_dir)
+    default_config = config.NexusServiceConfig(service_dir=service_dir)
 
     if config_file and config_file.exists():
         try:
             # Load config from service directory
-            file_config = config.load_config(config_dir)
-            file_config.service_dir = config_dir  # Ensure correct service_dir
+            file_config = config.load_config(service_dir)
+            file_config.service_dir = service_dir  # Ensure correct service_dir
             return file_config
         except Exception as e:
             print(f"Error loading config file: {e}")
@@ -322,16 +322,16 @@ def create_persistent_directory(_config: config.NexusServiceConfig) -> None:
 
 
 def remove_installation_files(mode: tp.Literal["system", "user"], keep_config: bool) -> None:
-    config_dir = SYSTEM_CONFIG_DIR if mode == "system" else USER_CONFIG_DIR
-    if not keep_config and config_dir.exists():
-        shutil.rmtree(config_dir, ignore_errors=True)
-        print(f"Removed directory: {config_dir}")
+    service_dir = SYSTEM_service_dir if mode == "system" else USER_service_dir
+    if not keep_config and service_dir.exists():
+        shutil.rmtree(service_dir, ignore_errors=True)
+        print(f"Removed directory: {service_dir}")
     else:
         marker = MARKER_SYSTEM if mode == "system" else MARKER_USER
         if marker.exists():
             marker.unlink()
         if keep_config:
-            print(f"Kept configuration directory: {config_dir}")
+            print(f"Kept configuration directory: {service_dir}")
 
 
 def remove_service_user() -> bool:
@@ -375,8 +375,8 @@ def check_installation_prerequisites(mode: tp.Literal["system", "user"], force: 
 
 
 def prepare_system_environment() -> None:
-    create_directories(SYSTEM_CONFIG_DIR)
-    print(f"Created system directory: {SYSTEM_CONFIG_DIR}")
+    create_directories(SYSTEM_service_dir)
+    print(f"Created system directory: {SYSTEM_service_dir}")
 
     if create_service_user():
         print(f"Created {SERVICE_USER} system user.")
@@ -409,9 +409,9 @@ def install_system(
     print("Installing Nexus service in system mode...")
     prepare_system_environment()
 
-    _config = setup_config(SYSTEM_CONFIG_DIR, interactive, config_file)
+    _config = setup_config(SYSTEM_service_dir, interactive, config_file)
     create_persistent_directory(_config)
-    print(f"Created configuration at: {config.get_config_path(SYSTEM_CONFIG_DIR)}")
+    print(f"Created configuration at: {config.get_config_path(SYSTEM_service_dir)}")
 
     if interactive:
         display_config(_config)
@@ -435,12 +435,12 @@ def install_user(interactive: bool = True, config_file: pl.Path | None = None, f
     check_installation_prerequisites("user", force)
 
     print("Installing Nexus service in user mode...")
-    create_directories(USER_CONFIG_DIR)
-    print(f"Created user directory: {USER_CONFIG_DIR}")
+    create_directories(USER_service_dir)
+    print(f"Created user directory: {USER_service_dir}")
 
-    _config = setup_config(USER_CONFIG_DIR, interactive, config_file)
+    _config = setup_config(USER_service_dir, interactive, config_file)
     create_persistent_directory(_config)
-    print(f"Created configuration at: {config.get_config_path(USER_CONFIG_DIR)}")
+    print(f"Created configuration at: {config.get_config_path(USER_service_dir)}")
 
     if interactive:
         display_config(_config)
