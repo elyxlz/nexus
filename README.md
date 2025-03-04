@@ -52,16 +52,16 @@
 - [x] add time based cache to gpu call
 - [x] add tests for persistence
 - [x] killed job status
-- [ ] health endpoint
-- [ ] dependent jobs (a after b is done)
+- [x] health endpoint
 - [ ] nexus run endpoint
-- [ ] better exceptions for users
-- [ ] better secrets management
-- [ ] job execution isolation
 - [ ] whatsapp notification support
 - [ ] phone call notification support
-- [ ] git branch mode
 - [ ] easy way to show logs for running jobs on discord
+- [ ] better exceptions for users
+- [ ] dependent jobs (a after b is done)
+- [ ] better secrets management
+- [ ] job execution isolation
+- [ ] git branch mode
 - [ ] multi node and auth
 - [ ] documentation
 - [ ] cli: command templates

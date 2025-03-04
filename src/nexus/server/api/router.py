@@ -11,7 +11,7 @@ import fastapi as fa
 from nexus.server.api import models
 from nexus.server.core import context, db, job, schemas
 from nexus.server.core import exceptions as exc
-from nexus.server.integrations import git, gpu
+from nexus.server.integrations import git, gpu, system
 from nexus.server.utils import format
 
 __all__ = ["router"]
@@ -98,6 +98,7 @@ async def add_job_endpoint(job_request: models.JobRequest, ctx: context.NexusSer
 
     j = job.create_job(
         command=job_request.command,
+        status="queued",
         git_repo_url=norm_url,
         git_tag=job_request.git_tag,
         git_branch=job_request.git_branch,
@@ -279,3 +280,30 @@ async def stop_server_endpoint(ctx: context.NexusServerContext = fa.Depends(_get
     ctx.logger.info("Server shutdown initiated by API request")
     asyncio.create_task(shutdown_server())
     return models.ServerActionResponse(status="stopping")
+
+
+@router.get("/v1/health", response_model=models.HealthResponse)
+async def health_check_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
+    health_result = system.check_health()
+
+    return models.HealthResponse(
+        status=health_result.status,
+        score=health_result.score,
+        disk=models.DiskStatsResponse(
+            total=health_result.disk.total,
+            used=health_result.disk.used,
+            free=health_result.disk.free,
+            percent_used=health_result.disk.percent_used,
+        ),
+        network=models.NetworkStatsResponse(
+            download_speed=health_result.network.download_speed,
+            upload_speed=health_result.network.upload_speed,
+            ping=health_result.network.ping,
+        ),
+        system=models.SystemStatsResponse(
+            cpu_percent=health_result.system.cpu_percent,
+            memory_percent=health_result.system.memory_percent,
+            uptime=health_result.system.uptime,
+            load_avg=health_result.system.load_avg,
+        ),
+    )

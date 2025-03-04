@@ -7,12 +7,13 @@ import pathlib as pl
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 
 import base58
 
+from nexus.server.core import config, logger, schemas
 from nexus.server.core import exceptions as exc
-from nexus.server.core import logger, schemas
 
 __all__ = [
     "create_job",
@@ -202,6 +203,7 @@ async def _launch_screen_process(
 
 def create_job(
     command: str,
+    status: schemas.JobStatus,
     git_repo_url: str,
     git_tag: str,
     git_branch: str,
@@ -217,7 +219,7 @@ def create_job(
     return schemas.Job(
         id=_generate_job_id(),
         command=command.strip(),
-        status="queued",
+        status=status,
         created_at=dt.datetime.now().timestamp(),
         user=user,
         git_repo_url=git_repo_url,
@@ -243,7 +245,15 @@ def create_job(
     )
 
 
-async def async_start_job(_logger: logger.NexusServerLogger, job: schemas.Job, gpu_idxs: list[int]) -> schemas.Job:
+async def async_start_job(
+    _logger: logger.NexusServerLogger, job: schemas.Job, gpu_idxs: list[int], server_dir: pl.Path | None
+) -> schemas.Job:
+    jobs_dir = pl.Path(tempfile.mkdtemp())
+    if server_dir is not None:
+        jobs_dir = config.get_jobs_dir(server_dir)
+
+    job = dc.replace(job, dir=jobs_dir)
+
     if job.dir is None:
         raise exc.JobError(message=f"Job directory not set for job {job.id}")
 

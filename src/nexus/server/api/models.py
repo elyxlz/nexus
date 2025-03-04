@@ -15,6 +15,7 @@ __all__ = [
     "GpuActionError",
     "GpuActionResponse",
     "ServerStatusResponse",
+    "HealthResponse",
 ]
 
 REQUIRED_ENV_VARS = {"wandb": ["WANDB_API_KEY", "WANDB_ENTITY"], "discord": ["DISCORD_USER_ID", "DISCORD_WEBHOOK_URL"]}
@@ -104,3 +105,31 @@ class ServerStatusResponse(FrozenBaseModel):
     completed_jobs: int
     server_user: str
     server_version: str
+
+
+class DiskStatsResponse(FrozenBaseModel):
+    total: int
+    used: int
+    free: int
+    percent_used: float
+
+
+class NetworkStatsResponse(FrozenBaseModel):
+    download_speed: float
+    upload_speed: float
+    ping: float
+
+
+class SystemStatsResponse(FrozenBaseModel):
+    cpu_percent: float
+    memory_percent: float
+    uptime: float
+    load_avg: list[float]
+
+
+class HealthResponse(FrozenBaseModel):
+    status: str
+    score: float
+    disk: DiskStatsResponse
+    network: NetworkStatsResponse
+    system: SystemStatsResponse

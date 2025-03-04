@@ -14,7 +14,12 @@ __all__ = ["notify_job_action", "update_notification_with_wandb"]
 
 JobAction = tp.Literal["started", "completed", "failed", "killed"]
 
-EMOJI_MAPPING = {"started": ":rocket:", "completed": ":checkered_flag:", "failed": ":interrobang:", "killed": ":octagonal_sign:"}
+EMOJI_MAPPING = {
+    "started": ":rocket:",
+    "completed": ":checkered_flag:",
+    "failed": ":interrobang:",
+    "killed": ":octagonal_sign:",
+}
 
 
 class NotificationMessage(pyd.BaseModel):

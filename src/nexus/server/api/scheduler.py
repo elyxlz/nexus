@@ -1,10 +1,8 @@
 import asyncio
 import dataclasses as dc
 import datetime as dt
-import pathlib as pl
-import tempfile
 
-from nexus.server.core import config, context, db, job
+from nexus.server.core import context, db, job
 from nexus.server.integrations import git, gpu, notifications, wandb_finder
 from nexus.server.utils import format
 
@@ -39,7 +37,7 @@ async def update_running_jobs(ctx: context.NexusServerContext) -> None:
                 action = "killed"
             else:
                 action = "failed"
-                
+
             msg = format.format_job_action(updated_job, action=action)
             ctx.logger.info(msg) if action == "completed" else ctx.logger.error(msg)
 
@@ -93,23 +91,16 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
         ctx.logger.debug("No available GPUs")
         return
 
-    # Get the indices of available GPUs
     available_gpu_idxs = [g.index for g in available_gpus]
 
-    # Get the highest priority job from the queue
     _job = queued_jobs[0]
 
-    # Check if we have enough GPUs for this job
     if _job.num_gpus <= len(available_gpu_idxs):
-        # Assign GPUs to this job
         job_gpu_idxs = available_gpu_idxs[: _job.num_gpus]
 
-        jobs_dir = pl.Path(tempfile.mkdtemp())
-        if ctx.config.server_dir is not None:
-            jobs_dir = config.get_jobs_dir(ctx.config.server_dir)
-
-        _job = dc.replace(_job, dir=jobs_dir / _job.id)
-        started = await job.async_start_job(ctx.logger, job=_job, gpu_idxs=job_gpu_idxs)
+        started = await job.async_start_job(
+            ctx.logger, job=_job, gpu_idxs=job_gpu_idxs, server_dir=ctx.config.server_dir
+        )
 
         db.update_job(ctx.logger, conn=ctx.db, job=started)
         ctx.logger.info(format.format_job_action(started, action="started"))
