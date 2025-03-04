@@ -33,7 +33,13 @@ async def update_running_jobs(ctx: context.NexusServerContext) -> None:
             continue
 
         if updated_job.status != "running":
-            action = "completed" if updated_job.status == "completed" else "failed"
+            if updated_job.status == "completed":
+                action = "completed"
+            elif updated_job.status == "killed":
+                action = "killed"
+            else:
+                action = "failed"
+                
             msg = format.format_job_action(updated_job, action=action)
             ctx.logger.info(msg) if action == "completed" else ctx.logger.error(msg)
 

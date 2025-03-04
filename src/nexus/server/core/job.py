@@ -315,7 +315,7 @@ async def async_end_job(_logger: logger.NexusServerLogger, _job: schemas.Job, ki
     completed_at = dt.datetime.now().timestamp()
 
     if killed:
-        new_job = dc.replace(_job, status="failed", error_message="Killed by user", completed_at=completed_at)
+        new_job = dc.replace(_job, status="killed", error_message="Killed by user", completed_at=completed_at)
     elif job_log is None:
         new_job = dc.replace(
             _job, status="failed", error_message="No output log found", completed_at=dt.datetime.now().timestamp()

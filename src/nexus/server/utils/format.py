@@ -21,14 +21,14 @@ def format_timestamp(timestamp: float | None) -> str:
 def calculate_runtime(job: schemas.Job) -> float:
     if not job.started_at:
         return 0.0
-    if job.status == "completed" and job.completed_at:
+    if job.status in ["completed", "failed", "killed"] and job.completed_at:
         return job.completed_at - job.started_at
     elif job.status == "running":
         return dt.datetime.now().timestamp() - job.started_at
     return 0.0
 
 
-def format_job_action(job: schemas.Job, action: tp.Literal["added", "started", "completed", "failed"]) -> str:
+def format_job_action(job: schemas.Job, action: tp.Literal["added", "started", "completed", "failed", "killed"]) -> str:
     runtime = calculate_runtime(job)
     gpu_info = f" on GPUs {','.join(map(str, job.gpu_idxs))}" if job.gpu_idxs else ""
     time_info = ""
@@ -37,7 +37,7 @@ def format_job_action(job: schemas.Job, action: tp.Literal["added", "started", "
         time_info = f" at {format_timestamp(job.created_at)}"
     elif action == "started":
         time_info = f" at {format_timestamp(job.started_at)}"
-    elif action in ("completed", "failed"):
+    elif action in ("completed", "failed", "killed"):
         time_info = f" after {format_runtime(runtime)}"
 
     error_info = f" ({job.error_message})" if job.error_message else ""

@@ -4,7 +4,7 @@ import typing as tp
 
 __all__ = ["JobStatus", "NotificationType", "Job"]
 
-JobStatus = tp.Literal["queued", "running", "completed", "failed"]
+JobStatus = tp.Literal["queued", "running", "completed", "failed", "killed"]
 NotificationType = tp.Literal["discord"]
 
 

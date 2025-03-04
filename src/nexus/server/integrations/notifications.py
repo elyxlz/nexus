@@ -12,9 +12,9 @@ from nexus.server.core.job import async_get_job_logs
 
 __all__ = ["notify_job_action", "update_notification_with_wandb"]
 
-JobAction = tp.Literal["started", "completed", "failed"]
+JobAction = tp.Literal["started", "completed", "failed", "killed"]
 
-EMOJI_MAPPING = {"started": ":rocket:", "completed": ":checkered_flag:", "failed": ":interrobang:"}
+EMOJI_MAPPING = {"started": ":rocket:", "completed": ":checkered_flag:", "failed": ":interrobang:", "killed": ":octagonal_sign:"}
 
 
 class NotificationMessage(pyd.BaseModel):
@@ -122,7 +122,7 @@ async def notify_job_action(_logger: logger.NexusServerLogger, job: schemas.Job,
 
     webhook_url = _get_notification_secrets_from_job(job)[0]
 
-    if action == "failed" and job.dir:
+    if (action == "failed" or action == "killed") and job.dir:
         job_logs = await async_get_job_logs(_logger, job_dir=job.dir, last_n_lines=20)
         if job_logs:
             message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": f"```\n{job_logs}\n```"})

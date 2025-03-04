@@ -419,13 +419,13 @@ def test_kill_running_job(app_client: TestClient, git_tag: str) -> None:
     for attempt in range(max_attempts):
         job_response = app_client.get(f"/v1/jobs/{job_id}")
         job_data = job_response.json()
-        if job_data["status"] == "failed":
+        if job_data["status"] == "killed":
             break
         time.sleep(0.5)
 
     job_response = app_client.get(f"/v1/jobs/{job_id}")
     job_data = job_response.json()
-    assert job_data["status"] == "failed"
+    assert job_data["status"] == "killed"
     assert "Killed by user" in job_data.get("error_message", "")
 
 

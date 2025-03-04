@@ -51,7 +51,8 @@
 - [x] multi gpu jobs
 - [x] add time based cache to gpu call
 - [x] add tests for persistence
-- [ ] killed job status
+- [x] killed job status
+- [ ] health endpoint
 - [ ] dependent jobs (a after b is done)
 - [ ] nexus run endpoint
 - [ ] better exceptions for users

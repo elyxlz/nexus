@@ -116,7 +116,7 @@ def _query_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_
 
 def _validate_job_status(status: str | None) -> None:
     if status is not None:
-        valid_statuses = {"queued", "running", "completed", "failed"}
+        valid_statuses = {"queued", "running", "completed", "failed", "killed"}
         if status not in valid_statuses:
             raise exc.JobError(message=f"Invalid job status: {status}. Must be one of {', '.join(valid_statuses)}")
 
