@@ -55,6 +55,8 @@ def job_payload(git_tag) -> dict:
         "priority": 0,
         "search_wandb": False,
         "notifications": [],
+        "gpu_idxs": None,
+        "ignore_blacklist": False,
     }
 
 
@@ -426,7 +428,6 @@ def test_kill_running_job(app_client: TestClient, git_tag: str) -> None:
     job_response = app_client.get(f"/v1/jobs/{job_id}")
     job_data = job_response.json()
     assert job_data["status"] == "killed"
-    assert "Killed by user" in job_data.get("error_message", "")
 
 
 def test_remove_queued_jobs(app_client: TestClient, created_job: dict) -> None:
@@ -462,3 +463,64 @@ def test_server_stop(app_client: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "stopping"
+
+
+def test_job_with_gpu_idxs(app_client: TestClient, git_tag: str) -> None:
+    # Get available GPUs
+    gpus_resp = app_client.get("/v1/gpus")
+    assert gpus_resp.status_code == 200
+    gpus = gpus_resp.json()
+    assert len(gpus) > 0
+    
+    gpu_idx = gpus[0]["index"]
+    
+    # Create job with specific GPU index
+    job_payload = {
+        "command": "echo 'Testing specific GPU'",
+        "git_repo_url": "https://github.com/elyxlz/nexus.git",
+        "git_tag": git_tag,
+        "git_branch": "master",
+        "user": "test_user",
+        "num_gpus": 1,
+        "env": {},
+        "jobrc": None,
+        "priority": 0,
+        "search_wandb": False,
+        "notifications": [],
+        "gpu_idxs": [gpu_idx],
+        "ignore_blacklist": False,
+    }
+    
+    submit_response = app_client.post("/v1/jobs", json=job_payload)
+    assert submit_response.status_code == 200
+    job = submit_response.json()
+    assert job["gpu_idxs"] == [gpu_idx]
+    
+    # Test blacklist ignore
+    # First blacklist a GPU
+    app_client.post("/v1/gpus/blacklist", json=[gpu_idx])
+    
+    # Create job with ignore_blacklist=True
+    job_payload = {
+        "command": "echo 'Testing ignore blacklist'",
+        "git_repo_url": "https://github.com/elyxlz/nexus.git",
+        "git_tag": git_tag,
+        "git_branch": "master",
+        "user": "test_user",
+        "num_gpus": 1,
+        "env": {},
+        "jobrc": None,
+        "priority": 0,
+        "search_wandb": False,
+        "notifications": [],
+        "gpu_idxs": [gpu_idx],
+        "ignore_blacklist": True,
+    }
+    
+    submit_response = app_client.post("/v1/jobs", json=job_payload)
+    assert submit_response.status_code == 200
+    job = submit_response.json()
+    assert job["ignore_blacklist"] is True
+    
+    # Clean up by removing from blacklist
+    app_client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_idx])

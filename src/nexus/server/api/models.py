@@ -37,6 +37,8 @@ class JobRequest(FrozenBaseModel):
     notifications: list[schemas.NotificationType] = []
     env: dict[str, str] = {}
     jobrc: str | None = None
+    gpu_idxs: list[int] | None = None
+    ignore_blacklist: bool = False
 
     @pyd.model_validator(mode="after")
     def check_requirements(self) -> tpe.Self:
@@ -51,6 +53,10 @@ class JobRequest(FrozenBaseModel):
                     raise ValueError(
                         f"Missing required environment variable {key} for {notification_type} notifications"
                     )
+
+        # Validate that gpu_idxs, if provided, has the correct length
+        if self.gpu_idxs is not None and len(self.gpu_idxs) != self.num_gpus:
+            raise ValueError(f"gpu_idxs must have exactly {self.num_gpus} elements if specified")
 
         return self
 

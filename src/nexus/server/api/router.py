@@ -110,6 +110,8 @@ async def add_job_endpoint(job_request: models.JobRequest, ctx: context.NexusSer
         search_wandb=job_request.search_wandb,
         notifications=job_request.notifications,
         node_name=ctx.config.node_name,
+        gpu_idxs=job_request.gpu_idxs,
+        ignore_blacklist=job_request.ignore_blacklist,
     )
 
     db.add_job(ctx.logger, conn=ctx.db, job=j)

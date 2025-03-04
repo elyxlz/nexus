@@ -215,6 +215,8 @@ def create_job(
     priority: int,
     search_wandb: bool,
     notifications: list[schemas.NotificationType],
+    gpu_idxs: list[int] | None = None,
+    ignore_blacklist: bool = False,
 ) -> schemas.Job:
     return schemas.Job(
         id=_generate_job_id(),
@@ -236,9 +238,10 @@ def create_job(
         pid=None,
         dir=None,
         started_at=None,
-        gpu_idxs=[],
+        gpu_idxs=gpu_idxs or [],
         wandb_url=None,
         marked_for_kill=False,
+        ignore_blacklist=ignore_blacklist,
         completed_at=None,
         exit_code=None,
         error_message=None,
@@ -325,7 +328,7 @@ async def async_end_job(_logger: logger.NexusServerLogger, _job: schemas.Job, ki
     completed_at = dt.datetime.now().timestamp()
 
     if killed:
-        new_job = dc.replace(_job, status="killed", error_message="Killed by user", completed_at=completed_at)
+        new_job = dc.replace(_job, status="killed", completed_at=completed_at)
     elif job_log is None:
         new_job = dc.replace(
             _job, status="failed", error_message="No output log found", completed_at=dt.datetime.now().timestamp()

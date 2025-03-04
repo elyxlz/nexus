@@ -34,6 +34,7 @@ class Job:
     gpu_idxs: list[int]
     wandb_url: str | None
     marked_for_kill: bool
+    ignore_blacklist: bool
 
     completed_at: float | None
     exit_code: int | None

@@ -53,7 +53,7 @@
 - [x] add tests for persistence
 - [x] killed job status
 - [x] health endpoint
-- [ ] nexus run endpoint
+- [x] nexus run endpoint ( kind of )
 - [ ] whatsapp notification support
 - [ ] phone call notification support
 - [ ] easy way to show logs for running jobs on discord
