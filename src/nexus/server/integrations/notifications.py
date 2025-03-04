@@ -4,6 +4,7 @@ import json
 import typing as tp
 
 import aiohttp
+import privatebinapi
 import pydantic as pyd
 
 from nexus.server.core import exceptions as exc
@@ -122,15 +123,49 @@ async def _edit_notification_message(
 ####################
 
 
+@exc.handle_exception_async(
+    Exception, exc.NotificationError, message="PrivateBin upload failed", reraise=False, default_return=None
+)
+async def _upload_logs_to_privatebin(_logger: logger.NexusServerLogger, job: schemas.Job) -> str | None:
+    if not job.dir:
+        return None
+
+    job_logs = await async_get_job_logs(_logger, job_dir=job.dir)
+    if not job_logs:
+        return None
+
+    instance_url = job.env.get("PRIVATEBIN_URL", "https://privatebin.net/")
+    if not instance_url.endswith("/"):
+        instance_url += "/"
+
+    result = privatebinapi.send(
+        server=instance_url, text=job_logs, expiration="1week", discussion=False, burn_after_reading=False
+    )
+
+    paste_url = result.get("url")
+    if paste_url:
+        _logger.info(f"Uploaded job logs for {job.id} to PrivateBin: {paste_url}")
+        return paste_url
+
+    _logger.error(f"Failed to get URL from PrivateBin response: {result}")
+    return None
+
+
 async def notify_job_action(_logger: logger.NexusServerLogger, job: schemas.Job, action: JobAction) -> schemas.Job:
     message_data = _format_job_message_for_notification(job, action)
 
     webhook_url = _get_notification_secrets_from_job(job)[0]
 
-    if (action == "failed" or action == "killed") and job.dir:
+    if action in ["completed", "failed", "killed"] and job.dir:
         job_logs = await async_get_job_logs(_logger, job_dir=job.dir, last_n_lines=20)
         if job_logs:
             message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": f"```\n{job_logs}\n```"})
+
+        privatebin_url = await _upload_logs_to_privatebin(_logger, job)
+        if privatebin_url:
+            message_data["embeds"][0]["fields"].append(
+                {"name": "Full logs", "value": f"[View full logs on PrivateBin]({privatebin_url})"}
+            )
 
     if action == "started":
         message_id = await _send_notification(_logger, webhook_url=webhook_url, message_data=message_data, wait=True)

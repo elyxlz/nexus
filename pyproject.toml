@@ -16,6 +16,7 @@ dependencies = [
   "wandb>=0.18.5",
   "aiohttp>=3.10.10",
   "psutil>=7.0.0",
+  "privatebinapi>=1.0.0",
 ]
 
 [dependency-groups]
