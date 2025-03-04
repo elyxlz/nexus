@@ -7,11 +7,7 @@ from nexus.server.core import logger, schemas
 
 __all__ = ["GpuInfo", "get_gpus", "is_gpu_available"]
 
-_nvidia_smi_cache = {
-    "timestamp": 0.0,
-    "output": "",
-    "processes": {}
-}
+_nvidia_smi_cache = {"timestamp": 0.0, "output": "", "processes": {}}
 
 CACHE_TTL = 5
 
@@ -42,6 +38,7 @@ def _run_command(_logger: logger.NexusServerLogger, command: list[str], timeout:
         timeout=timeout,
     )
     return result.stdout
+
 
 def _create_gpu_info(
     index: int,
@@ -119,25 +116,25 @@ def is_gpu_available(gpu_info: GpuInfo) -> bool:
 def _get_gpu_info(_logger: logger.NexusServerLogger) -> tuple[str, GpuProcesses]:
     current_time = time.time()
     cache_age = current_time - _nvidia_smi_cache["timestamp"]
-    
+
     if cache_age < CACHE_TTL and _nvidia_smi_cache["output"] and _nvidia_smi_cache["processes"]:
         _logger.debug("Using cached GPU information")
         return _nvidia_smi_cache["output"], _nvidia_smi_cache["processes"]
-    
+
     _logger.debug("Refreshing GPU cache")
     output = _run_command(
         _logger, ["nvidia-smi", "--query-gpu=index,name,memory.total,memory.used", "--format=csv,noheader,nounits"]
     )
-    
+
     if not output.strip():
         error = exc.GPUError(
             message="nvidia-smi returned no output. Ensure that nvidia-smi is installed and GPUs are available."
         )
         _logger.debug(f"GPU error code: {error.code}")
         raise error
-    
+
     pmon_output = _run_command(_logger, ["nvidia-smi", "pmon", "-c", "1", "-s", "m"])
-    
+
     gpu_processes: GpuProcesses = {}
     for line in pmon_output.strip().split("\n")[2:]:
         if not line.strip():
@@ -147,11 +144,11 @@ def _get_gpu_info(_logger: logger.NexusServerLogger) -> tuple[str, GpuProcesses]
         if len(parts) > 1 and parts[1].strip() != "-":
             gpu_idx = int(parts[0])
             gpu_processes[gpu_idx] = gpu_processes.get(gpu_idx, 0) + 1
-    
+
     _nvidia_smi_cache["timestamp"] = current_time
     _nvidia_smi_cache["output"] = output
     _nvidia_smi_cache["processes"] = gpu_processes
-    
+
     return output, gpu_processes
 
 

@@ -50,13 +50,13 @@
 - [x] priority jobs
 - [x] multi gpu jobs
 - [x] add time based cache to gpu call
+- [x] add tests for persistence
 - [ ] killed job status
 - [ ] dependent jobs (a after b is done)
 - [ ] nexus run endpoint
 - [ ] better exceptions for users
 - [ ] better secrets management
 - [ ] job execution isolation
-- [ ] add tests for persistence
 - [ ] whatsapp notification support
 - [ ] phone call notification support
 - [ ] git branch mode
