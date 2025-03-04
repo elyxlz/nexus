@@ -57,7 +57,7 @@
 - [x] easy way to show logs for running jobs on discord
 - [x] whatsapp notification support
 - [x] phone call notification support
-- [ ] better exceptions for users
+- [x] better exceptions for users
 - [ ] dependent jobs (a after b is done)
 - [ ] better secrets management
 - [ ] job execution isolation

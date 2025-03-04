@@ -126,7 +126,7 @@ async def get_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Dep
     job_instance = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
     if not job_instance:
         ctx.logger.warning(f"Job not found: {job_id}")
-        raise exc.JobError(message=f"Job not found: {job_id}")
+        raise exc.JobNotFoundError(message=f"Job not found: {job_id}")
     ctx.logger.info(f"Job found: {job_instance}")
     return job_instance
 
@@ -136,7 +136,7 @@ async def get_job_logs_endpoint(job_id: str, ctx: context.NexusServerContext = f
     _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
     if not _job:
         ctx.logger.warning(f"Job not found: {job_id}")
-        raise exc.JobError(message=f"Job not found: {job_id}")
+        raise exc.JobNotFoundError(message=f"Job not found: {job_id}")
 
     logs = await job.async_get_job_logs(ctx.logger, job_dir=_job.dir)
     logs = logs or ""
@@ -157,13 +157,13 @@ async def kill_running_jobs_endpoint(job_ids: list[str], ctx: context.NexusServe
         try:
             _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
             if not _job:
+                # We don't raise here to collect multiple errors
                 failed.append(models.JobActionError(id=job_id, error="Job not found"))
                 continue
 
             if _job.status != "running":
-                failed.append(
-                    models.JobActionError(id=_job.id, error=f"Job is not running (current status: {_job.status})")
-                )
+                error_msg = f"Job is not running (current status: {_job.status})"
+                failed.append(models.JobActionError(id=_job.id, error=error_msg))
                 continue
 
             updated = dc.replace(_job, marked_for_kill=True)
@@ -171,11 +171,12 @@ async def kill_running_jobs_endpoint(job_ids: list[str], ctx: context.NexusServe
             killed.append(_job.id)
             ctx.logger.info(f"Marked job {_job.id} for termination")
 
+        except exc.JobNotFoundError as e:
+            failed.append(models.JobActionError(id=job_id, error=e.message))
+        except exc.InvalidJobStateError as e:
+            failed.append(models.JobActionError(id=job_id, error=e.message))
         except exc.JobError as e:
-            if "not found" in str(e).lower():
-                failed.append(models.JobActionError(id=job_id, error="Job not found"))
-            else:
-                failed.append(models.JobActionError(id=job_id, error=e.message))
+            failed.append(models.JobActionError(id=job_id, error=e.message))
         except Exception as e:
             ctx.logger.error(f"Unexpected error killing job {job_id}: {e}")
             failed.append(models.JobActionError(id=job_id, error=f"Internal error: {str(e)}"))
@@ -197,11 +198,12 @@ async def remove_queued_jobs_endpoint(job_ids: list[str], ctx: context.NexusServ
             db.delete_queued_job(ctx.logger, conn=ctx.db, job_id=job_id)
             removed.append(job_id)
             ctx.logger.info(f"Removed queued job {job_id}")
+        except exc.JobNotFoundError as e:
+            failed.append(models.JobQueueActionError(id=job_id, error=e.message))
+        except exc.InvalidJobStateError as e:
+            failed.append(models.JobQueueActionError(id=job_id, error=e.message))
         except exc.JobError as e:
-            if "not found" in str(e).lower():
-                failed.append(models.JobQueueActionError(id=job_id, error="Job not found"))
-            else:
-                failed.append(models.JobQueueActionError(id=job_id, error=e.message))
+            failed.append(models.JobQueueActionError(id=job_id, error=e.message))
         except Exception as e:
             ctx.logger.error(f"Unexpected error removing job {job_id}: {e}")
             failed.append(models.JobQueueActionError(id=job_id, error=f"Internal error: {str(e)}"))

@@ -157,13 +157,13 @@ def _check_job_status(_logger: logger.NexusServerLogger, conn: sqlite3.Connectio
     cur.execute("SELECT status FROM jobs WHERE id = ?", (job_id,))
     row = cur.fetchone()
     if not row:
-        raise exc.JobError(message=f"Job not found: {job_id}")
+        raise exc.JobNotFoundError(message=f"Job not found: {job_id}")
     return row["status"]
 
 
 def _verify_job_is_queued(job_id: str, status: str) -> None:
     if status != "queued":
-        raise exc.JobError(
+        raise exc.InvalidJobStateError(
             message=f"Cannot delete job {job_id} with status '{status}'. Only queued jobs can be deleted.",
         )
 
@@ -331,7 +331,7 @@ def update_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job:
     )
 
     if cur.rowcount == 0:
-        raise exc.JobError(message="Job not found")
+        raise exc.JobNotFoundError(message="Job not found")
 
 
 def get_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job | None:

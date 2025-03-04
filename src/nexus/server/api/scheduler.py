@@ -42,7 +42,7 @@ async def update_running_jobs(ctx: context.NexusServerContext) -> None:
             ctx.logger.info(msg) if action == "completed" else ctx.logger.error(msg)
 
             if _job.notifications:
-                await notifications.notify_job_action(ctx.logger, job=_job, action=action)
+                await notifications.notify_job_action(ctx.logger, _job=_job, action=action)
 
         db.update_job(ctx.logger, conn=ctx.db, job=updated_job)
 
@@ -78,7 +78,6 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
 
     _job = queued_jobs[0]
 
-    # Get all GPUs including blacklisted ones
     all_gpus = gpu.get_gpus(
         ctx.logger,
         running_jobs=db.list_jobs(ctx.logger, conn=ctx.db, status="running"),
@@ -86,7 +85,6 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
         mock_gpus=ctx.config.mock_gpus,
     )
 
-    # Filter available GPUs, respecting ignore_blacklist flag
     available_gpus = [g for g in all_gpus if gpu.is_gpu_available(g, ignore_blacklist=_job.ignore_blacklist)]
 
     if not available_gpus:
@@ -95,15 +93,12 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
 
     available_gpu_idxs = [g.index for g in available_gpus]
 
-    # Check if job has specified GPU indices and if they're available
     if _job.gpu_idxs and all(idx in available_gpu_idxs for idx in _job.gpu_idxs):
         job_gpu_idxs = _job.gpu_idxs
         ctx.logger.info(f"Using user-specified GPU indices {job_gpu_idxs} for job {_job.id}")
     elif _job.num_gpus <= len(available_gpu_idxs):
-        # No specific GPUs requested, use automatic allocation
         job_gpu_idxs = available_gpu_idxs[: _job.num_gpus]
     else:
-        # Not enough GPUs available
         return
 
     started = await job.async_start_job(ctx.logger, job=_job, gpu_idxs=job_gpu_idxs, server_dir=ctx.config.server_dir)
@@ -112,7 +107,7 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
     ctx.logger.info(format.format_job_action(started, action="started"))
 
     if started.notifications:
-        job_with_notification = await notifications.notify_job_action(ctx.logger, job=started, action="started")
+        job_with_notification = await notifications.notify_job_action(ctx.logger, _job=started, action="started")
         db.update_job(ctx.logger, conn=ctx.db, job=job_with_notification)
 
     remaining = len(db.list_jobs(ctx.logger, conn=ctx.db, status="queued"))

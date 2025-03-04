@@ -3,19 +3,58 @@ import contextlib
 import importlib.metadata
 
 import fastapi as fa
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from nexus.server.api import router, scheduler
 from nexus.server.core import context
+from nexus.server.core import exceptions as exc
 
 
 def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
-    """Create and configure the FastAPI application."""
     app = fa.FastAPI(
         title="Nexus GPU Job Server",
         description="GPU Job Management Server",
         version=importlib.metadata.version("nexusai"),
     )
     app.state.ctx = ctx
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.exception_handler(exc.NexusServerError)
+    async def nexus_exception_handler(request: fa.Request, error: exc.NexusServerError):
+        status_code = getattr(error, "STATUS_CODE", 500)
+        ctx.logger.error(f"API error: {error.code} - {error.message}")
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "error": error.code,
+                "message": error.message,
+                "status_code": status_code,
+            },
+        )
+
+    @app.exception_handler(exc.NotFoundError)
+    async def not_found_exception_handler(request: fa.Request, error: exc.NotFoundError):
+        ctx.logger.warn(f"Not found error: {error.code} - {error.message}")
+        return JSONResponse(
+            status_code=404,
+            content={"error": error.code, "message": error.message, "status_code": 404},
+        )
+
+    @app.exception_handler(exc.InvalidRequestError)
+    async def invalid_request_exception_handler(request: fa.Request, error: exc.InvalidRequestError):
+        ctx.logger.warn(f"Invalid request error: {error.code} - {error.message}")
+        return JSONResponse(
+            status_code=400,
+            content={"error": error.code, "message": error.message, "status_code": 400},
+        )
 
     @contextlib.asynccontextmanager
     async def lifespan(app: fa.FastAPI):

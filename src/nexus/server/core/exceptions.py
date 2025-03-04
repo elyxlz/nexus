@@ -14,6 +14,11 @@ __all__ = [
     "JobError",
     "WandBError",
     "NotificationError",
+    "NotFoundError",
+    "JobNotFoundError",
+    "GPUNotFoundError",
+    "InvalidRequestError",
+    "InvalidJobStateError",
     "handle_exception",
     "handle_exception_async",
 ]
@@ -21,6 +26,7 @@ __all__ = [
 
 class NexusServerError(Exception):
     ERROR_CODE = "NEXUS_ERROR"
+    STATUS_CODE = 500
 
     def __init__(self, message: str | None = None):
         self.code = self.__class__.ERROR_CODE
@@ -48,8 +54,32 @@ class DatabaseError(NexusServerError):
     ERROR_CODE = "DB_ERROR"
 
 
+# Not Found errors (404)
+class NotFoundError(NexusServerError):
+    ERROR_CODE = "NOT_FOUND"
+    STATUS_CODE = 404
+
+
+class JobNotFoundError(NotFoundError):
+    ERROR_CODE = "JOB_NOT_FOUND"
+
+
+class GPUNotFoundError(NotFoundError):
+    ERROR_CODE = "GPU_NOT_FOUND"
+
+
+# Invalid request errors (400)
+class InvalidRequestError(NexusServerError):
+    ERROR_CODE = "INVALID_REQUEST"
+    STATUS_CODE = 400
+
+
 class JobError(NexusServerError):
     ERROR_CODE = "JOB_ERROR"
+
+
+class InvalidJobStateError(InvalidRequestError):
+    ERROR_CODE = "INVALID_JOB_STATE"
 
 
 class WandBError(NexusServerError):

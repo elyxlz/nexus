@@ -10,8 +10,7 @@ import twilio.base.exceptions
 import twilio.rest
 
 from nexus.server.core import exceptions as exc
-from nexus.server.core import logger, schemas
-from nexus.server.core.job import async_get_job_logs
+from nexus.server.core import job, logger, schemas
 
 __all__ = ["notify_job_action", "update_notification_with_wandb"]
 
@@ -150,21 +149,18 @@ async def _edit_notification_message(
             return True
 
 
-####################
-
-
 @exc.handle_exception_async(
     Exception, exc.NotificationError, message="PrivateBin upload failed", reraise=False, default_return=None
 )
-async def _upload_logs_to_privatebin(_logger: logger.NexusServerLogger, job: schemas.Job) -> str | None:
-    if not job.dir:
+async def _upload_logs_to_privatebin(_logger: logger.NexusServerLogger, _job: schemas.Job) -> str | None:
+    if not _job.dir:
         return None
 
-    job_logs = await async_get_job_logs(_logger, job_dir=job.dir)
+    job_logs = await job.async_get_job_logs(_logger, job_dir=_job.dir)
     if not job_logs:
         return None
 
-    instance_url = job.env.get("PRIVATEBIN_URL", "https://privatebin.net/")
+    instance_url = _job.env.get("PRIVATEBIN_URL", "https://privatebin.net/")
     if not instance_url.endswith("/"):
         instance_url += "/"
 
@@ -174,7 +170,7 @@ async def _upload_logs_to_privatebin(_logger: logger.NexusServerLogger, job: sch
 
     paste_url = result.get("url")
     if paste_url:
-        _logger.info(f"Uploaded job logs for {job.id} to PrivateBin: {paste_url}")
+        _logger.info(f"Uploaded job logs for {_job.id} to PrivateBin: {paste_url}")
         return paste_url
 
     _logger.error(f"Failed to get URL from PrivateBin response: {result}")
@@ -187,7 +183,6 @@ async def _upload_logs_to_privatebin(_logger: logger.NexusServerLogger, job: sch
 async def _send_whatsapp_notification(_logger: logger.NexusServerLogger, job: schemas.Job, message: str) -> None:
     account_sid, auth_token, from_number, to_number = _get_twilio_secrets(job)
 
-    # Format WhatsApp from number with whatsapp: prefix
     whatsapp_from = f"whatsapp:{from_number}"
     whatsapp_to = f"whatsapp:{to_number}"
 
@@ -206,7 +201,6 @@ async def _send_phone_notification(_logger: logger.NexusServerLogger, job: schem
 
     client = twilio.rest.Client(account_sid, auth_token)
 
-    # Create TwiML for the phone call
     twiml = f"""
     <Response>
         <Say>{message}</Say>
@@ -240,22 +234,24 @@ def _create_message_for_twilio(job: schemas.Job, action: JobAction) -> str:
     return "\n".join(message_parts)
 
 
-async def notify_job_action(_logger: logger.NexusServerLogger, job: schemas.Job, action: JobAction) -> schemas.Job:
-    updated_job = job
+####################
 
-    # Process Discord notifications
-    if "discord" in job.notifications:
-        message_data = _format_job_message_for_notification(job, action)
-        webhook_url = _get_discord_secrets(job)[0]
 
-        if action in ["completed", "failed", "killed"] and job.dir:
-            job_logs = await async_get_job_logs(_logger, job_dir=job.dir, last_n_lines=20)
+async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job, action: JobAction) -> schemas.Job:
+    updated_job = _job
+
+    if "discord" in _job.notifications:
+        message_data = _format_job_message_for_notification(_job, action)
+        webhook_url = _get_discord_secrets(_job)[0]
+
+        if action in ["completed", "failed", "killed"] and _job.dir:
+            job_logs = await job.async_get_job_logs(_logger, job_dir=_job.dir, last_n_lines=20)
             if job_logs:
                 message_data["embeds"][0]["fields"].append(
                     {"name": "Last few log lines", "value": f"```\n{job_logs}\n```"}
                 )
 
-            privatebin_url = await _upload_logs_to_privatebin(_logger, job)
+            privatebin_url = await _upload_logs_to_privatebin(_logger, _job)
             if privatebin_url:
                 message_data["embeds"][0]["fields"].append(
                     {"name": "Full logs", "value": f"[View full logs on PrivateBin]({privatebin_url})"}
@@ -266,23 +262,20 @@ async def notify_job_action(_logger: logger.NexusServerLogger, job: schemas.Job,
                 _logger, webhook_url=webhook_url, message_data=message_data, wait=True
             )
             if message_id:
-                updated_messages = dict(job.notification_messages)
+                updated_messages = dict(_job.notification_messages)
                 updated_messages["discord_start_job"] = message_id
                 updated_job = dc.replace(updated_job, notification_messages=updated_messages)
         else:
             await _send_notification(_logger, webhook_url=webhook_url, message_data=message_data)
 
-    # Process WhatsApp notifications
-    if "whatsapp" in job.notifications:
-        twilio_message = _create_message_for_twilio(job, action)
-        await _send_whatsapp_notification(_logger, job, twilio_message)
+    if "whatsapp" in _job.notifications:
+        twilio_message = _create_message_for_twilio(_job, action)
+        await _send_whatsapp_notification(_logger, _job, twilio_message)
 
-    # Process Phone notifications
-    if "phone" in job.notifications:
-        # Only make phone calls for completed, failed, or killed jobs
+    if "phone" in _job.notifications:
         if action in ["completed", "failed", "killed"]:
-            twilio_message = _create_message_for_twilio(job, action)
-            await _send_phone_notification(_logger, job, twilio_message)
+            twilio_message = _create_message_for_twilio(_job, action)
+            await _send_phone_notification(_logger, _job, twilio_message)
 
     return updated_job
 
