@@ -471,9 +471,9 @@ def test_job_with_gpu_idxs(app_client: TestClient, git_tag: str) -> None:
     assert gpus_resp.status_code == 200
     gpus = gpus_resp.json()
     assert len(gpus) > 0
-    
+
     gpu_idx = gpus[0]["index"]
-    
+
     # Create job with specific GPU index
     job_payload = {
         "command": "echo 'Testing specific GPU'",
@@ -490,16 +490,16 @@ def test_job_with_gpu_idxs(app_client: TestClient, git_tag: str) -> None:
         "gpu_idxs": [gpu_idx],
         "ignore_blacklist": False,
     }
-    
+
     submit_response = app_client.post("/v1/jobs", json=job_payload)
     assert submit_response.status_code == 200
     job = submit_response.json()
     assert job["gpu_idxs"] == [gpu_idx]
-    
+
     # Test blacklist ignore
     # First blacklist a GPU
     app_client.post("/v1/gpus/blacklist", json=[gpu_idx])
-    
+
     # Create job with ignore_blacklist=True
     job_payload = {
         "command": "echo 'Testing ignore blacklist'",
@@ -516,11 +516,11 @@ def test_job_with_gpu_idxs(app_client: TestClient, git_tag: str) -> None:
         "gpu_idxs": [gpu_idx],
         "ignore_blacklist": True,
     }
-    
+
     submit_response = app_client.post("/v1/jobs", json=job_payload)
     assert submit_response.status_code == 200
     job = submit_response.json()
     assert job["ignore_blacklist"] is True
-    
+
     # Clean up by removing from blacklist
     app_client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_idx])

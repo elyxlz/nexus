@@ -77,7 +77,7 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
         return
 
     _job = queued_jobs[0]
-    
+
     # Get all GPUs including blacklisted ones
     all_gpus = gpu.get_gpus(
         ctx.logger,
@@ -85,19 +85,16 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
         blacklisted_gpus=db.list_blacklisted_gpus(ctx.logger, conn=ctx.db),
         mock_gpus=ctx.config.mock_gpus,
     )
-    
+
     # Filter available GPUs, respecting ignore_blacklist flag
-    available_gpus = [
-        g for g in all_gpus 
-        if gpu.is_gpu_available(g, ignore_blacklist=_job.ignore_blacklist)
-    ]
+    available_gpus = [g for g in all_gpus if gpu.is_gpu_available(g, ignore_blacklist=_job.ignore_blacklist)]
 
     if not available_gpus:
         ctx.logger.debug("No available GPUs")
         return
 
     available_gpu_idxs = [g.index for g in available_gpus]
-    
+
     # Check if job has specified GPU indices and if they're available
     if _job.gpu_idxs and all(idx in available_gpu_idxs for idx in _job.gpu_idxs):
         job_gpu_idxs = _job.gpu_idxs
@@ -109,9 +106,7 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
         # Not enough GPUs available
         return
 
-    started = await job.async_start_job(
-        ctx.logger, job=_job, gpu_idxs=job_gpu_idxs, server_dir=ctx.config.server_dir
-    )
+    started = await job.async_start_job(ctx.logger, job=_job, gpu_idxs=job_gpu_idxs, server_dir=ctx.config.server_dir)
 
     db.update_job(ctx.logger, conn=ctx.db, job=started)
     ctx.logger.info(format.format_job_action(started, action="started"))
