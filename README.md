@@ -54,9 +54,9 @@
 - [x] killed job status
 - [x] health endpoint
 - [x] nexus run endpoint ( kind of )
+- [x] easy way to show logs for running jobs on discord
 - [ ] whatsapp notification support
 - [ ] phone call notification support
-- [ ] easy way to show logs for running jobs on discord
 - [ ] better exceptions for users
 - [ ] dependent jobs (a after b is done)
 - [ ] better secrets management
