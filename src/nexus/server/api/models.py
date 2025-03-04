@@ -18,7 +18,12 @@ __all__ = [
     "HealthResponse",
 ]
 
-REQUIRED_ENV_VARS = {"wandb": ["WANDB_API_KEY", "WANDB_ENTITY"], "discord": ["DISCORD_USER_ID", "DISCORD_WEBHOOK_URL"]}
+REQUIRED_ENV_VARS = {
+    "wandb": ["WANDB_API_KEY", "WANDB_ENTITY"],
+    "discord": ["DISCORD_USER_ID", "DISCORD_WEBHOOK_URL"],
+    "whatsapp": ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "WHATSAPP_TO_NUMBER"],
+    "phone": ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "PHONE_TO_NUMBER"],
+}
 
 
 class FrozenBaseModel(pyd.BaseModel):

@@ -17,6 +17,7 @@ dependencies = [
   "aiohttp>=3.10.10",
   "psutil>=7.0.0",
   "privatebinapi>=1.0.0",
+  "twilio>=9.4.6",
 ]
 
 [dependency-groups]
