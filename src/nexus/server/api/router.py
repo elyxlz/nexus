@@ -78,9 +78,17 @@ async def list_jobs_endpoint(
 ):
     jobs = db.list_jobs(ctx.logger, conn=ctx.db, status=status, command_regex=command_regex)
     if gpu_idx is not None:
-        jobs = [j for j in jobs if j.gpu_idx == gpu_idx]
+        jobs = [j for j in jobs if gpu_idx in j.gpu_idxs]
     ctx.logger.info(f"Found {len(jobs)} jobs matching criteria")
     return jobs
+
+
+@router.get("/v1/queue", response_model=list[schemas.Job])
+async def get_queue_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
+    queued_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="queued")
+    queue = job.get_queue(queued_jobs)
+    ctx.logger.info(f"Returning sorted queue with {len(queue)} jobs")
+    return queue
 
 
 @db.safe_transaction

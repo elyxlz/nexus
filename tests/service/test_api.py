@@ -49,6 +49,12 @@ def job_payload(git_tag) -> dict:
         "git_branch": "master",
         "user": "testuser",
         "discord_id": None,
+        "num_gpus": 1,
+        "env": {},
+        "jobrc": None,
+        "priority": 0,
+        "search_wandb": False,
+        "notifications": [],
     }
 
 
@@ -141,6 +147,12 @@ def test_list_jobs_with_regex(app_client: TestClient, git_tag: str) -> None:
             "git_branch": "master",
             "user": "regex_test_user",
             "discord_id": None,
+            "num_gpus": 1,
+            "env": {},
+            "jobrc": None,
+            "priority": 0,
+            "search_wandb": False,
+            "notifications": [],
         },
         {
             "command": "python train.py --model=bert",
@@ -149,6 +161,12 @@ def test_list_jobs_with_regex(app_client: TestClient, git_tag: str) -> None:
             "git_branch": "master",
             "user": "regex_test_user",
             "discord_id": None,
+            "num_gpus": 1,
+            "env": {},
+            "jobrc": None,
+            "priority": 0,
+            "search_wandb": False,
+            "notifications": [],
         },
         {
             "command": "python evaluate.py --model=gpt2",
@@ -157,6 +175,12 @@ def test_list_jobs_with_regex(app_client: TestClient, git_tag: str) -> None:
             "git_branch": "master",
             "user": "regex_test_user",
             "discord_id": None,
+            "num_gpus": 1,
+            "env": {},
+            "jobrc": None,
+            "priority": 0,
+            "search_wandb": False,
+            "notifications": [],
         },
     ]
 
@@ -230,6 +254,12 @@ def test_job_lifecycle(app_client: TestClient, git_tag: str) -> None:
         "git_branch": "master",
         "user": "test_user",
         "discord_id": None,
+        "num_gpus": 1,
+        "env": {},
+        "jobrc": None,
+        "priority": 0,
+        "search_wandb": False,
+        "notifications": [],
     }
 
     submit_response = app_client.post("/v1/jobs", json=job_payload)
@@ -357,6 +387,12 @@ def test_kill_running_job(app_client: TestClient, git_tag: str) -> None:
         "git_branch": "master",
         "user": "test_user",
         "discord_id": None,
+        "num_gpus": 1,
+        "env": {},
+        "jobrc": None,
+        "priority": 0,
+        "search_wandb": False,
+        "notifications": [],
     }
 
     submit_response = app_client.post("/v1/jobs", json=job_payload)

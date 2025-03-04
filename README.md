@@ -48,12 +48,13 @@
 - [x] improve notification system
 - [x] make get job logs async
 - [x] priority jobs
-- [ ] multi gpu jobs
+- [x] multi gpu jobs
+- [x] add time based cache to gpu call
+- [ ] killed job status
 - [ ] dependent jobs (a after b is done)
 - [ ] nexus run endpoint
 - [ ] better exceptions for users
 - [ ] better secrets management
-- [ ] add time based cache to gpu call
 - [ ] job execution isolation
 - [ ] add tests for persistence
 - [ ] whatsapp notification support

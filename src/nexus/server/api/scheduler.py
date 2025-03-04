@@ -66,6 +66,7 @@ async def update_wandb_urls(ctx: context.NexusServerContext) -> None:
 @db.safe_transaction
 async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
     queued_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="queued")
+    queued_jobs = job.get_queue(queued_jobs)
 
     if not queued_jobs:
         ctx.logger.debug("No jobs in queue")
@@ -84,22 +85,25 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
 
     if not available_gpus:
         ctx.logger.debug("No available GPUs")
+        return
 
-    for gpu_instance in available_gpus:
-        if not queued_jobs:
-            ctx.logger.debug("No queued_jobs")
-            break
+    # Get the indices of available GPUs
+    available_gpu_idxs = [g.index for g in available_gpus]
 
-        queued_jobs = sorted(queued_jobs, key=lambda x: x.priority, reverse=True)
-        queued_jobs = sorted(queued_jobs, key=lambda x: x.num_gpus, reverse=True)
-        _job = queued_jobs.pop(0)
+    # Get the highest priority job from the queue
+    _job = queued_jobs[0]
+
+    # Check if we have enough GPUs for this job
+    if _job.num_gpus <= len(available_gpu_idxs):
+        # Assign GPUs to this job
+        job_gpu_idxs = available_gpu_idxs[: _job.num_gpus]
 
         jobs_dir = pl.Path(tempfile.mkdtemp())
         if ctx.config.server_dir is not None:
             jobs_dir = config.get_jobs_dir(ctx.config.server_dir)
 
         _job = dc.replace(_job, dir=jobs_dir / _job.id)
-        started = await job.async_start_job(ctx.logger, job=_job, gpu_idx=gpu_instance.index)
+        started = await job.async_start_job(ctx.logger, job=_job, gpu_idxs=job_gpu_idxs)
 
         db.update_job(ctx.logger, conn=ctx.db, job=started)
         ctx.logger.info(format.format_job_action(started, action="started"))

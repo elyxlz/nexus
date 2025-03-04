@@ -30,7 +30,7 @@ def calculate_runtime(job: schemas.Job) -> float:
 
 def format_job_action(job: schemas.Job, action: tp.Literal["added", "started", "completed", "failed"]) -> str:
     runtime = calculate_runtime(job)
-    gpu_info = f" on GPU {job.gpu_idx}" if job.gpu_idx is not None else ""
+    gpu_info = f" on GPUs {','.join(map(str, job.gpu_idxs))}" if job.gpu_idxs else ""
     time_info = ""
 
     if action == "added":

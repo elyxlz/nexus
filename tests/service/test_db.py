@@ -62,6 +62,12 @@ def test_update_job(tmp_path: pl.Path, mock_logger: NexusServerLogger):
         git_branch="blah",
         user="testuser",
         node_name="xx",
+        num_gpus=1,
+        env={},
+        jobrc=None,
+        priority=0,
+        search_wandb=False,
+        notifications=[],
     )
     add_job(mock_logger, conn=conn, job=job)
     conn.commit()
@@ -87,6 +93,12 @@ def test_list_and_delete_jobs(tmp_path: pl.Path, mock_logger: NexusServerLogger)
         git_branch="test",
         user="user1",
         node_name="test",
+        num_gpus=1,
+        env={},
+        jobrc=None,
+        priority=0,
+        search_wandb=False,
+        notifications=[],
     )
     job2 = create_job(
         "echo 'Job2'",
@@ -95,6 +107,12 @@ def test_list_and_delete_jobs(tmp_path: pl.Path, mock_logger: NexusServerLogger)
         git_branch="test",
         user="user1",
         node_name="test",
+        num_gpus=1,
+        env={},
+        jobrc=None,
+        priority=0,
+        search_wandb=False,
+        notifications=[],
     )
     job2 = job2.__class__(**{**job2.__dict__, "status": "running"})
 
