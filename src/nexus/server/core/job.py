@@ -66,6 +66,9 @@ def _setup_github_auth(_logger: logger.NexusServerLogger, dir_path: pl.Path, git
     return _create_git_token_helper(_logger, dir_path, git_token)
 
 
+import pathlib as pl
+
+
 def _build_script_content(
     log_file: pl.Path,
     job_repo_dir: pl.Path,
@@ -84,19 +87,12 @@ def _build_script_content(
     if askpass_path:
         script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
 
-    script_command_lines = [
-        f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet '{git_repo_url}' '{job_repo_dir}'",
-        f"cd '{job_repo_dir}'",
-    ]
+    script_lines.append(
+        f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet '{git_repo_url}' '{job_repo_dir}'"
+    )
+    script_lines.append(f"cd '{job_repo_dir}'")
 
-    if jobrc:
-        script_command_lines.append(jobrc)
-
-    script_command_lines.append(command)
-
-    script_lines.append('script -f -q -c "')
-    script_lines.extend(script_command_lines)
-    script_lines.append(f'" "{log_file}"')
+    script_lines.append(f"script -f -q -c \"{jobrc + '; ' if jobrc else ''}{command}\" \"{log_file}\"")
 
     return "\n".join(script_lines)
 

@@ -561,7 +561,7 @@ def handle_command(args: argparse.Namespace) -> bool:
 def prompt_installation_mode() -> None:
     print("First run detected. Nexus server is not installed.")
     print("You can run in the following modes:")
-    print("  1. Install as system server (requires sudo)")
+    print("  1. Install as systemd service (requires sudo)")
     print("  2. Install for current user only")
     print("  3. Run without installing (stateless)")
 

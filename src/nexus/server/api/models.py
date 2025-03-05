@@ -16,6 +16,7 @@ __all__ = [
     "GpuActionResponse",
     "ServerStatusResponse",
     "HealthResponse",
+    "HeartbeatResponse",
 ]
 
 REQUIRED_ENV_VARS = {
@@ -144,3 +145,7 @@ class HealthResponse(FrozenBaseModel):
     disk: DiskStatsResponse
     network: NetworkStatsResponse
     system: SystemStatsResponse
+
+
+class HeartbeatResponse(FrozenBaseModel):
+    alive: bool = True

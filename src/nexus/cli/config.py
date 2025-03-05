@@ -1,32 +1,36 @@
 import pathlib as pl
+import typing as tp
 
 import pydantic as pyd
 import pydantic_settings as pyds
+import toml
+
+NotificationType = tp.Literal["discord", "whatsapp", "phone"]
+
+
+REQUIRED_ENV_VARS = {
+    "wandb": ["WANDB_API_KEY", "WANDB_ENTITY"],
+    "discord": ["DISCORD_USER_ID", "DISCORD_WEBHOOK_URL"],
+    "whatsapp": ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "WHATSAPP_TO_NUMBER"],
+    "phone": ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "PHONE_TO_NUMBER"],
+}
 
 
 class NexusCliConfig(pyds.BaseSettings):
     host: str = pyd.Field(default="localhost")
     port: int = pyd.Field(default=54323)
     user: str | None = pyd.Field(default=None)
-    discord_id: str | None = pyd.Field(default=None)
+    search_wandb: bool = False
+    default_notifications: list[NotificationType] = []
 
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[pyds.BaseSettings],
-        init_settings: pyds.PydanticBaseSettingsSource,
-        env_settings: pyds.PydanticBaseSettingsSource,
-        dotenv_settings: pyds.PydanticBaseSettingsSource,
-        file_secret_settings: pyds.PydanticBaseSettingsSource,
-    ) -> tuple[pyds.PydanticBaseSettingsSource, ...]:
-        return (
-            init_settings,
-            pyds.TomlConfigSettingsSource(settings_cls, toml_file=pl.Path.home() / ".nexus" / "config.toml"),
-        )
+    model_config = {"env_prefix": "NEXUS_", "env_nested_delimiter": "__"}
+
+
+def get_config_path() -> pl.Path:
+    return pl.Path.home() / ".nexus" / "config.toml"
 
 
 def create_default_config() -> None:
-    """Create default configuration files if they don't exist."""
     config_dir = pl.Path.home() / ".nexus"
     config_path = config_dir / "config.toml"
 
@@ -36,17 +40,28 @@ def create_default_config() -> None:
     if not config_path.exists():
         # Create default config if it doesn't exist
         config = NexusCliConfig()
-        # Write default config
-        with open(config_path, "w") as f:
-            f.write(f"""# Nexus CLI Configuration
-host = "{config.host}"
-port = {config.port}
-user = ""  # Your username
-discord_id = ""  # Your Discord user ID for notifications
-""")
+        save_config(config)
 
 
 def load_config() -> NexusCliConfig:
-    """Load CLI configuration."""
     create_default_config()
+    config_path = get_config_path()
+
+    if config_path.exists():
+        try:
+            with open(config_path) as f:
+                config_dict = toml.load(f)
+            return NexusCliConfig(**config_dict)
+        except Exception as e:
+            print(f"Error loading config from {config_path}: {e}")
+            return NexusCliConfig()
     return NexusCliConfig()
+
+
+def save_config(config: NexusCliConfig) -> None:
+    config_path = get_config_path()
+    config_dict = config.model_dump()
+
+    with open(config_path, "w") as f:
+        f.write("# Nexus CLI Configuration\n")
+        toml.dump(config_dict, f)

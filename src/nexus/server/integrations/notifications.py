@@ -4,13 +4,13 @@ import json
 import typing as tp
 
 import aiohttp
-import privatebinapi
 import pydantic as pyd
 import twilio.base.exceptions
 import twilio.rest
 
 from nexus.server.core import exceptions as exc
 from nexus.server.core import job, logger, schemas
+from nexus.server.integrations import nullpointer
 
 __all__ = ["notify_job_action", "update_notification_with_wandb"]
 
@@ -73,21 +73,16 @@ def _get_twilio_secrets(job: schemas.Job) -> tuple[str, str, str, str]:
 def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction) -> dict:
     discord_id = _get_discord_secrets(job)[1]
     user_mention = f"<@{discord_id}>"
-    message_title = (
-        f"{EMOJI_MAPPING[job_action]} - **Job {job.id} {job_action} on GPUs {job.gpu_idxs}** - {user_mention}"
-    )
+    gpu_idxs = ", ".join(str(idx) for idx in job.gpu_idxs)
+    message_title = f"{EMOJI_MAPPING[job_action]} - **Job {job.id} {job_action} on GPU {gpu_idxs} - ({job.node_name})** - {user_mention}"
     command = job.command
     git_info = f"{job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}"
-    gpu_idxs = str(job.gpu_idxs)
-    node_name = job.node_name
     wandb_url = "Pending ..." if job_action == "started" and not job.wandb_url else (job.wandb_url or "Not Found")
     fields = [
         {"name": "Command", "value": command},
         {"name": "W&B", "value": wandb_url},
         {"name": "Git", "value": git_info},
         {"name": "User", "value": job.user, "inline": True},
-        {"name": "GPUs", "value": gpu_idxs, "inline": True},
-        {"name": "Node", "value": node_name, "inline": True},
     ]
     if job.error_message and job_action in ["completed", "failed"]:
         fields.insert(1, {"name": "Error Message", "value": job.error_message})
@@ -149,10 +144,7 @@ async def _edit_notification_message(
             return True
 
 
-@exc.handle_exception_async(
-    Exception, exc.NotificationError, message="PrivateBin upload failed", reraise=False, default_return=None
-)
-async def _upload_logs_to_privatebin(_logger: logger.NexusServerLogger, _job: schemas.Job) -> str | None:
+async def _upload_logs_to_nullpointer(_logger: logger.NexusServerLogger, _job: schemas.Job) -> str | None:
     if not _job.dir:
         return None
 
@@ -160,21 +152,15 @@ async def _upload_logs_to_privatebin(_logger: logger.NexusServerLogger, _job: sc
     if not job_logs:
         return None
 
-    instance_url = _job.env.get("PRIVATEBIN_URL", "https://privatebin.net/")
-    if not instance_url.endswith("/"):
-        instance_url += "/"
+    instance_url = _job.env.get("NULLPOINTER_URL", "https://0x0.st/")
 
-    result = privatebinapi.send(
-        server=instance_url, text=job_logs, expiration="1week", discussion=False, burn_after_reading=False
-    )
+    # Use our new nullpointer implementation - just upload the raw logs
+    paste_url = await nullpointer.upload_text_to_nullpointer(_logger, job_logs, instance_url)
 
-    paste_url = result.get("url")
     if paste_url:
-        _logger.info(f"Uploaded job logs for {_job.id} to PrivateBin: {paste_url}")
-        return paste_url
+        _logger.info(f"Uploaded job logs for {_job.id} to 0x0.st: {paste_url}")
 
-    _logger.error(f"Failed to get URL from PrivateBin response: {result}")
-    return None
+    return paste_url
 
 
 @exc.handle_exception_async(
@@ -245,16 +231,19 @@ async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job
         webhook_url = _get_discord_secrets(_job)[0]
 
         if action in ["completed", "failed", "killed"] and _job.dir:
-            job_logs = await job.async_get_job_logs(_logger, job_dir=_job.dir, last_n_lines=20)
-            if job_logs:
-                message_data["embeds"][0]["fields"].append(
-                    {"name": "Last few log lines", "value": f"```\n{job_logs}\n```"}
-                )
+            # Only show inline logs for failed jobs, not successful ones
+            if action in ["failed", "killed"]:
+                job_logs = await job.async_get_job_logs(_logger, job_dir=_job.dir, last_n_lines=20)
+                if job_logs:
+                    message_data["embeds"][0]["fields"].append(
+                        {"name": "Last few log lines", "value": f"```\n{job_logs}\n```"}
+                    )
 
-            privatebin_url = await _upload_logs_to_privatebin(_logger, _job)
-            if privatebin_url:
+            logs_url = await _upload_logs_to_nullpointer(_logger, _job)
+            if logs_url:
+                _logger.info(f"Adding logs URL to Discord message: {logs_url}")
                 message_data["embeds"][0]["fields"].append(
-                    {"name": "Full logs", "value": f"[View full logs on PrivateBin]({privatebin_url})"}
+                    {"name": "Full logs", "value": f"[View full logs]({logs_url})"}
                 )
 
         if action == "started":

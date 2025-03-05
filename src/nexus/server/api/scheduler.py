@@ -20,12 +20,22 @@ async def update_running_jobs(ctx: context.NexusServerContext) -> None:
             await job.kill_job(ctx.logger, job=_job)
             updated_job = await job.async_end_job(ctx.logger, _job=_job, killed=True)
             await job.async_cleanup_job_repo(ctx.logger, job_dir=_job.dir)
-            await git.async_cleanup_git_tag(ctx.logger, git_tag=_job.git_tag, git_repo_url=_job.git_repo_url)
+
+            active_jobs = running_jobs + db.list_jobs(ctx.logger, conn=ctx.db, status="queued")
+            jobs_with_same_tag = [j for j in active_jobs if j.git_tag == _job.git_tag and j.id != _job.id]
+
+            if not jobs_with_same_tag:
+                await git.async_cleanup_git_tag(ctx.logger, git_tag=_job.git_tag, git_repo_url=_job.git_repo_url)
 
         elif not job.is_job_running(ctx.logger, job=_job):
             updated_job = await job.async_end_job(ctx.logger, _job=_job, killed=False)
             await job.async_cleanup_job_repo(ctx.logger, job_dir=_job.dir)
-            await git.async_cleanup_git_tag(ctx.logger, git_tag=_job.git_tag, git_repo_url=_job.git_repo_url)
+
+            active_jobs = running_jobs + db.list_jobs(ctx.logger, conn=ctx.db, status="queued")
+            jobs_with_same_tag = [j for j in active_jobs if j.git_tag == _job.git_tag and j.id != _job.id]
+
+            if not jobs_with_same_tag:
+                await git.async_cleanup_git_tag(ctx.logger, git_tag=_job.git_tag, git_repo_url=_job.git_repo_url)
 
         else:
             continue

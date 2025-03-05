@@ -64,6 +64,10 @@
 - [ ] git branch mode
 - [ ] multi node and auth
 - [ ] documentation
-- [ ] cli: command templates
-- [ ] cli: follow logs with -f
-- [ ] cli: More job details when printing job stuff, especially when removing or killing
+
+# cli todo
+
+- [x] setup
+- [ ] command templates
+- [ ] follow logs with -f
+- [ ] more job details when printing job stuff, especially when removing or killing

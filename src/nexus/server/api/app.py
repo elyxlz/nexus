@@ -5,6 +5,7 @@ import importlib.metadata
 import fastapi as fa
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from nexus.server.api import router, scheduler
 from nexus.server.core import context
@@ -54,6 +55,21 @@ def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
         return JSONResponse(
             status_code=400,
             content={"error": error.code, "message": error.message, "status_code": 400},
+        )
+
+    @app.exception_handler(ValidationError)
+    async def validation_exception_handler(request: fa.Request, error: ValidationError):
+        errors = error.errors()
+        error_details = ", ".join([f"{e['loc'][-1]}: {e['msg']}" for e in errors])
+        ctx.logger.warn(f"Validation error: {error_details}")
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "VALIDATION_ERROR",
+                "message": error_details,
+                "status_code": 422,
+                "detail": errors,
+            },
         )
 
     @contextlib.asynccontextmanager

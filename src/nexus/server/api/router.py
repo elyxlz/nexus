@@ -311,3 +311,9 @@ async def health_check_endpoint(ctx: context.NexusServerContext = fa.Depends(_ge
             load_avg=health_result.system.load_avg,
         ),
     )
+
+
+@router.get("/v1/heartbeat", response_model=models.HeartbeatResponse)
+async def heartbeat_endpoint() -> models.HeartbeatResponse:
+    """Simple heartbeat endpoint that responds with {alive: true} when server is running."""
+    return models.HeartbeatResponse()

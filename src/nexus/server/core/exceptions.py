@@ -125,7 +125,7 @@ def handle_exception(
             except Exception as e:
                 if isinstance(e, source_exception):
                     error_msg = f"{message}: {str(e)}"
-                    _logger.error(error_msg)
+                    _logger.exception(error_msg)
 
                     if not reraise:
                         return tp.cast(T, default_return)
@@ -174,7 +174,7 @@ def handle_exception_async(
             except Exception as e:
                 if isinstance(e, source_exception):
                     error_msg = f"{message}: {str(e)}"
-                    _logger.error(error_msg)
+                    _logger.exception(error_msg)
 
                     if not reraise:
                         return tp.cast(T, default_return)
