@@ -11,8 +11,8 @@ NotificationType = tp.Literal["discord", "whatsapp", "phone"]
 REQUIRED_ENV_VARS = {
     "wandb": ["WANDB_API_KEY", "WANDB_ENTITY"],
     "discord": ["DISCORD_USER_ID", "DISCORD_WEBHOOK_URL"],
-    "whatsapp": ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "WHATSAPP_TO_NUMBER"],
-    "phone": ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "PHONE_TO_NUMBER"],
+    "whatsapp": ["CALLMEBOT_API_KEY", "WHATSAPP_TO_NUMBER"],
+    "phone": ["PHONE_TO_NUMBER"],
 }
 
 

@@ -76,21 +76,11 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
     # WhatsApp notifications
     if utils.ask_yes_no("Would you like to set up WhatsApp notifications?"):
         configured_notifications.append("whatsapp")
-        print(colored("\nWhatsApp requires Twilio integration with the following:", "cyan"))
+        print(colored("\nWhatsApp requires CallMeBot integration with the following:", "cyan"))
 
-        twilio_sid = utils.get_user_input(
-            "Twilio Account SID",
-            default=env_vars.get("TWILIO_ACCOUNT_SID", ""),
-            required=True,
-        )
-        twilio_token = utils.get_user_input(
-            "Twilio Auth Token",
-            default=env_vars.get("TWILIO_AUTH_TOKEN", ""),
-            required=True,
-        )
-        twilio_from = utils.get_user_input(
-            "Twilio From Number (with country code, e.g. +1234567890)",
-            default=env_vars.get("TWILIO_FROM_NUMBER", ""),
+        callmebot_api_key = utils.get_user_input(
+            "CallMeBot API Key",
+            default=env_vars.get("CALLMEBOT_API_KEY", ""),
             required=True,
         )
         whatsapp_to = utils.get_user_input(
@@ -99,40 +89,17 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
             required=True,
         )
 
-        env_vars["TWILIO_ACCOUNT_SID"] = twilio_sid
-        env_vars["TWILIO_AUTH_TOKEN"] = twilio_token
-        env_vars["TWILIO_FROM_NUMBER"] = twilio_from
+        env_vars["CALLMEBOT_API_KEY"] = callmebot_api_key
         env_vars["WHATSAPP_TO_NUMBER"] = whatsapp_to
 
     # Phone notifications
     if utils.ask_yes_no("Would you like to set up Phone call notifications?"):
         configured_notifications.append("phone")
-
-        if "whatsapp" not in configured_notifications:
-            # We haven't collected Twilio info yet
-            print(colored("\nPhone calls require Twilio integration with the following:", "cyan"))
-            twilio_sid = utils.get_user_input(
-                "Twilio Account SID",
-                default=env_vars.get("TWILIO_ACCOUNT_SID", ""),
-                required=True,
-            )
-            twilio_token = utils.get_user_input(
-                "Twilio Auth Token",
-                default=env_vars.get("TWILIO_AUTH_TOKEN", ""),
-                required=True,
-            )
-            twilio_from = utils.get_user_input(
-                "Twilio From Number (with country code, e.g. +1234567890)",
-                default=env_vars.get("TWILIO_FROM_NUMBER", ""),
-                required=True,
-            )
-
-            env_vars["TWILIO_ACCOUNT_SID"] = twilio_sid
-            env_vars["TWILIO_AUTH_TOKEN"] = twilio_token
-            env_vars["TWILIO_FROM_NUMBER"] = twilio_from
+        print(colored("\nPhone call notifications - TBD implementation", "yellow"))
+        print("Phone call integration is not yet implemented.")
 
         phone_number = utils.get_user_input(
-            "Your Phone Number for calls (with country code, e.g. +1234567890)",
+            "Your Phone Number for future calls (with country code, e.g. +1234567890)",
             default=env_vars.get("PHONE_TO_NUMBER", ""),
             required=True,
         )

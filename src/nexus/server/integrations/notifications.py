@@ -2,11 +2,10 @@ import dataclasses as dc
 import datetime
 import json
 import typing as tp
+import urllib.parse
 
 import aiohttp
 import pydantic as pyd
-import twilio.base.exceptions
-import twilio.rest
 
 from nexus.server.core import exceptions as exc
 from nexus.server.core import job, logger, schemas
@@ -42,39 +41,31 @@ def _get_discord_secrets(job: schemas.Job) -> tuple[str, str]:
     return webhook_url, user_id
 
 
-def _get_twilio_secrets(job: schemas.Job) -> tuple[str, str, str, str]:
-    account_sid = job.env.get("TWILIO_ACCOUNT_SID")
-    if not account_sid:
-        raise exc.NotificationError("Missing TWILIO_ACCOUNT_SID in job environment")
+def _get_callmebot_secrets(job: schemas.Job) -> tuple[str, str]:
+    phone_number = job.env.get("WHATSAPP_TO_NUMBER")
+    if not phone_number:
+        raise exc.NotificationError("Missing WHATSAPP_TO_NUMBER in job environment")
 
-    auth_token = job.env.get("TWILIO_AUTH_TOKEN")
-    if not auth_token:
-        raise exc.NotificationError("Missing TWILIO_AUTH_TOKEN in job environment")
+    api_key = job.env.get("CALLMEBOT_API_KEY")
+    if not api_key:
+        raise exc.NotificationError("Missing CALLMEBOT_API_KEY in job environment")
 
-    from_number = job.env.get("TWILIO_FROM_NUMBER")
-    if not from_number:
-        raise exc.NotificationError("Missing TWILIO_FROM_NUMBER in job environment")
-
-    # Get the appropriate destination number based on notification type
-    if "whatsapp" in job.notifications:
-        to_number = job.env.get("WHATSAPP_TO_NUMBER")
-        if not to_number:
-            raise exc.NotificationError("Missing WHATSAPP_TO_NUMBER in job environment")
-    elif "phone" in job.notifications:
-        to_number = job.env.get("PHONE_TO_NUMBER")
-        if not to_number:
-            raise exc.NotificationError("Missing PHONE_TO_NUMBER in job environment")
-    else:
-        raise exc.NotificationError("No valid Twilio notification type configured")
-
-    return account_sid, auth_token, from_number, to_number
+    return phone_number, api_key
 
 
 def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction) -> dict:
+    # Color mapping for different job statuses
+    color_mapping = {
+        "started": 0x3498DB,  # Blue
+        "completed": 0x2ECC71,  # Green
+        "failed": 0xE74C3C,  # Red
+        "killed": 0xF39C12,  # Orange/Yellow
+    }
+
     discord_id = _get_discord_secrets(job)[1]
     user_mention = f"<@{discord_id}>"
     gpu_idxs = ", ".join(str(idx) for idx in job.gpu_idxs)
-    message_title = f"{EMOJI_MAPPING[job_action]} - **Job {job.id} {job_action} on GPU {gpu_idxs} - ({job.node_name})** - {user_mention}"
+    message_title = f"{EMOJI_MAPPING[job_action]} **Job {job.id} {job_action} on GPU {gpu_idxs} - ({job.node_name})** - {user_mention}"
     command = job.command
     git_info = f"{job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}"
     wandb_url = "Pending ..." if job_action == "started" and not job.wandb_url else (job.wandb_url or "Not Found")
@@ -91,7 +82,7 @@ def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction
         "embeds": [
             {
                 "fields": fields,
-                "color": 4915310,
+                "color": color_mapping.get(job_action, 0x4915310),  # Default to original purple if action not found
                 "footer": {"text": f"Job Status Update • {job.id}"},
                 "timestamp": datetime.datetime.now().isoformat(),
             }
@@ -163,59 +154,89 @@ async def _upload_logs_to_nullpointer(_logger: logger.NexusServerLogger, _job: s
     return paste_url
 
 
-@exc.handle_exception_async(
-    twilio.base.exceptions.TwilioRestException, exc.NotificationError, message="Twilio WhatsApp message failed"
-)
+@exc.handle_exception_async(aiohttp.ClientError, exc.NotificationError, message="CallMeBot WhatsApp message failed")
+async def _send_callmebot_whatsapp_message(
+    _logger: logger.NexusServerLogger, phone_number: str, api_key: str, message: str
+) -> str:
+    # Ensure proper phone number format
+    phone_number = phone_number.lstrip("+")
+
+    # URL encode the message
+    encoded_message = urllib.parse.quote(message)
+
+    # Construct the API URL
+    url = f"https://api.callmebot.com/whatsapp.php?phone={phone_number}&text={encoded_message}&apikey={api_key}"
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                error_msg = f"Failed to send WhatsApp message: Status {response.status}, Message: {error_text}"
+                _logger.error(error_msg)
+                raise exc.NotificationError(message=error_msg)
+
+            response_text = await response.text()
+            _logger.debug(f"CallMeBot API response: {response_text}")
+            return "sent"
+
+
 async def _send_whatsapp_notification(_logger: logger.NexusServerLogger, job: schemas.Job, message: str) -> None:
-    account_sid, auth_token, from_number, to_number = _get_twilio_secrets(job)
+    phone_number, api_key = _get_callmebot_secrets(job)
 
-    whatsapp_from = f"whatsapp:{from_number}"
-    whatsapp_to = f"whatsapp:{to_number}"
+    result = await _send_callmebot_whatsapp_message(
+        _logger,
+        phone_number=phone_number,
+        api_key=api_key,
+        message=message,
+    )
 
-    client = twilio.rest.Client(account_sid, auth_token)
-
-    result = client.messages.create(body=message, from_=whatsapp_from, to=whatsapp_to)
-
-    _logger.info(f"Sent WhatsApp notification for job {job.id}: {result.sid}")
+    _logger.info(f"Sent WhatsApp notification for job {job.id} via CallMeBot: {result}")
 
 
-@exc.handle_exception_async(
-    twilio.base.exceptions.TwilioRestException, exc.NotificationError, message="Twilio phone call failed"
-)
 async def _send_phone_notification(_logger: logger.NexusServerLogger, job: schemas.Job, message: str) -> None:
-    account_sid, auth_token, from_number, to_number = _get_twilio_secrets(job)
-
-    client = twilio.rest.Client(account_sid, auth_token)
-
-    twiml = f"""
-    <Response>
-        <Say>{message}</Say>
-        <Pause length="1"/>
-        <Say>This call was automated by Nexus. Goodbye.</Say>
-    </Response>
-    """
-
-    result = client.calls.create(twiml=twiml, from_=from_number, to=to_number)
-
-    _logger.info(f"Initiated phone notification for job {job.id}: {result.sid}")
+    _logger.info(f"Phone notification for job {job.id} - TBD implementation")
+    # Phone integration to be implemented
 
 
-def _create_message_for_twilio(job: schemas.Job, action: JobAction) -> str:
-    """Create a plain text message for Twilio notifications (WhatsApp and phone)."""
+def _create_message_for_messaging(
+    job: schemas.Job, action: JobAction, include_wandb: bool = False, use_whatsapp_format: bool = False
+) -> str:
     status_emoji = {"started": "🚀", "completed": "✅", "failed": "❌", "killed": "🛑"}
     emoji = status_emoji.get(action, "")
+    gpu_idxs = ", ".join(str(idx) for idx in job.gpu_idxs)
 
-    message_parts = [
-        f"{emoji} Nexus Job {job.id} {action} on GPUs {job.gpu_idxs}",
-        f"Command: {job.command}",
-        f"User: {job.user}",
-    ]
+    # WhatsApp formatting:
+    # *bold* for bold text
+    # _italic_ for italic text
+    # ~strikethrough~ for strikethrough
+    # ```monospace``` for monospace
 
-    if job.wandb_url:
-        message_parts.append(f"Weights & Biases: {job.wandb_url}")
+    if use_whatsapp_format:
+        message_parts = [
+            f"{emoji} *Nexus Job {job.id} {action}* on GPU {gpu_idxs} - ({job.node_name})",
+            f"*Command:* {job.command}",
+            f"*Git:* {job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}",
+            f"*User:* {job.user}",
+        ]
 
-    if job.error_message and action in ["completed", "failed"]:
-        message_parts.append(f"Error: {job.error_message}")
+        if include_wandb:
+            message_parts.insert(2, f"*W&B:* {job.wandb_url or 'Not Found'}")
+
+        if job.error_message and action in ["completed", "failed"]:
+            message_parts.insert(2, f"*Error:* {job.error_message}")
+    else:
+        message_parts = [
+            f"{emoji} Nexus Job {job.id} {action} on GPU {gpu_idxs} - ({job.node_name})",
+            f"Command: {job.command}",
+            f"Git: {job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}",
+            f"User: {job.user}",
+        ]
+
+        if include_wandb:
+            message_parts.insert(2, f"W&B: {job.wandb_url or 'Not Found'}")
+
+        if job.error_message and action in ["completed", "failed"]:
+            message_parts.insert(2, f"Error: {job.error_message}")
 
     return "\n".join(message_parts)
 
@@ -231,7 +252,7 @@ async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job
         webhook_url = _get_discord_secrets(_job)[0]
 
         if action in ["completed", "failed", "killed"] and _job.dir:
-            # Only show inline logs for failed jobs, not successful ones
+            # Show inline logs for failed and killed jobs
             if action in ["failed", "killed"]:
                 job_logs = await job.async_get_job_logs(_logger, job_dir=_job.dir, last_n_lines=20)
                 if job_logs:
@@ -239,6 +260,7 @@ async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job
                         {"name": "Last few log lines", "value": f"```\n{job_logs}\n```"}
                     )
 
+            # Always upload full logs for completed, failed, and killed jobs
             logs_url = await _upload_logs_to_nullpointer(_logger, _job)
             if logs_url:
                 _logger.info(f"Adding logs URL to Discord message: {logs_url}")
@@ -258,13 +280,26 @@ async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job
             await _send_notification(_logger, webhook_url=webhook_url, message_data=message_data)
 
     if "whatsapp" in _job.notifications:
-        twilio_message = _create_message_for_twilio(_job, action)
-        await _send_whatsapp_notification(_logger, _job, twilio_message)
+        messaging_text = _create_message_for_messaging(_job, action, include_wandb=False, use_whatsapp_format=True)
+
+        if action in ["completed", "failed", "killed"] and _job.dir:
+            # Add error logs for failed and killed jobs
+            if action in ["failed", "killed"]:
+                job_logs = await job.async_get_job_logs(_logger, job_dir=_job.dir, last_n_lines=10)
+                if job_logs:
+                    messaging_text += f"\n\n*Last few log lines:*\n```{job_logs}```"
+
+            # Always add logs URL for completed, failed, and killed jobs
+            logs_url = await _upload_logs_to_nullpointer(_logger, _job)
+            if logs_url:
+                messaging_text += f"\n\n*Full logs:* {logs_url}"
+
+        await _send_whatsapp_notification(_logger, _job, messaging_text)
 
     if "phone" in _job.notifications:
         if action in ["completed", "failed", "killed"]:
-            twilio_message = _create_message_for_twilio(_job, action)
-            await _send_phone_notification(_logger, _job, twilio_message)
+            messaging_text = _create_message_for_messaging(_job, action, include_wandb=False)
+            await _send_phone_notification(_logger, _job, messaging_text)
 
     return updated_job
 
