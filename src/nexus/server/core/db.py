@@ -52,7 +52,8 @@ def _create_tables(_logger: logger.NexusServerLogger, conn: sqlite3.Connection) 
             exit_code INTEGER,
             error_message TEXT,
             user TEXT,
-            ignore_blacklist INTEGER DEFAULT 0
+            ignore_blacklist INTEGER DEFAULT 0,
+            screen_session_name TEXT
         )
     """)
     cur.execute("""
@@ -98,6 +99,7 @@ def _row_to_job(_logger: logger.NexusServerLogger, row: sqlite3.Row) -> schemas.
         search_wandb=bool(row["search_wandb"]) if row["search_wandb"] is not None else False,
         notifications=row["notifications"].split(",") if row["notifications"] else [],
         notification_messages=_parse_json(_logger, json_obj=row["notification_messages"]),
+        screen_session_name=row["screen_session_name"] if "screen_session_name" in row.keys() else None,
     )
 
 
@@ -227,9 +229,10 @@ def add_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: sc
             id, command, git_repo_url, git_tag, git_branch, status, created_at, priority,
             num_gpus, started_at, completed_at, gpu_idxs, exit_code, error_message, 
             wandb_url, user, marked_for_kill, dir, node_name,
-            pid, jobrc, env, search_wandb, notifications, notification_messages, ignore_blacklist
+            pid, jobrc, env, search_wandb, notifications, notification_messages, ignore_blacklist,
+            screen_session_name
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (
             job.id,
@@ -258,6 +261,7 @@ def add_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: sc
             notifications_str,
             notification_messages_json,
             int(job.ignore_blacklist),
+            job.screen_session_name,
         ),
     )
 
@@ -299,7 +303,8 @@ def update_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job:
             search_wandb = ?,
             notifications = ?,
             notification_messages = ?,
-            ignore_blacklist = ?
+            ignore_blacklist = ?,
+            screen_session_name = ?
         WHERE id = ?
     """,
         (
@@ -327,6 +332,7 @@ def update_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job:
             notifications_str,
             notification_messages_json,
             int(job.ignore_blacklist),
+            job.screen_session_name,
             job.id,
         ),
     )

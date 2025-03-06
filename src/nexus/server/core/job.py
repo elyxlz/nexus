@@ -232,6 +232,7 @@ def create_job(
         notification_messages={},
         pid=None,
         dir=None,
+        screen_session_name=None,
         started_at=None,
         gpu_idxs=gpu_idxs or [],
         wandb_url=None,
@@ -278,7 +279,14 @@ async def async_start_job(
     try:
         pid = await _launch_screen_process(_logger, session_name, str(script_path), env)
 
-        return dc.replace(job, started_at=dt.datetime.now().timestamp(), gpu_idxs=gpu_idxs, status="running", pid=pid)
+        return dc.replace(
+            job,
+            started_at=dt.datetime.now().timestamp(),
+            gpu_idxs=gpu_idxs,
+            status="running",
+            pid=pid,
+            screen_session_name=session_name,
+        )
     except exc.JobError:
         raise
     except Exception as e:

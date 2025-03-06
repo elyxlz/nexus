@@ -102,8 +102,11 @@ def get_job(job_id: str) -> dict:
 
 
 @handle_api_errors
-def get_job_logs(job_id: str) -> str:
-    response = requests.get(f"{get_api_base_url()}/jobs/{job_id}/logs")
+def get_job_logs(job_id: str, last_n_lines: int = None) -> str:
+    params = {}
+    if last_n_lines is not None:
+        params["last_n_lines"] = last_n_lines
+    response = requests.get(f"{get_api_base_url()}/jobs/{job_id}/logs", params=params)
     response.raise_for_status()
     return response.json().get("logs", "")
 

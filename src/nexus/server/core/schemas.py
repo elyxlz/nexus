@@ -35,6 +35,7 @@ class Job:
     wandb_url: str | None
     marked_for_kill: bool
     ignore_blacklist: bool
+    screen_session_name: str | None
 
     completed_at: float | None
     exit_code: int | None

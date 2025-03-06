@@ -1,6 +1,8 @@
+import os
 import re
 import subprocess
 import sys
+import time
 
 from termcolor import colored
 
@@ -90,10 +92,37 @@ def run_job(
         }
 
         result = api_client.add_job(job_request)
+        job_id = result["id"]
 
         print(colored("\nJob started:", "green", attrs=["bold"]))
-        print(f"  {colored('•', 'green')} Job {colored(result['id'], 'magenta')}: {result['command']}")
-        print(f"  Run 'nx logs {result['id']}' to follow the job output")
+        print(f"  {colored('•', 'green')} Job {colored(job_id, 'magenta')}: {result['command']}")
+
+        # Wait a moment for the job to actually start and create the screen session
+        print(colored("\nWaiting for job to initialize...", "blue"))
+
+        # Poll for the job to be fully started with a screen session
+        max_attempts = 10
+        for i in range(max_attempts):
+            time.sleep(1)  # Wait 1 second between checks
+            try:
+                job = api_client.get_job(job_id)
+                if job["status"] == "running" and job.get("screen_session_name"):
+                    print(colored(f"Job {job_id} running, attaching to screen session...", "green"))
+                    # Automatically attach to the job
+                    attach_to_job(job_id)
+                    return
+            except Exception:
+                pass  # Continue if there's any error checking the job
+
+            # Show a progress indicator
+            if i < max_attempts - 1:
+                print(".", end="", flush=True)
+
+        # If we couldn't attach, just show the regular message
+        print(colored("\nCouldn't automatically attach to job. You can:", "yellow"))
+        print(f"  - Run 'nx attach {job_id}' to attach to the job's screen session")
+        print(f"  - Run 'nx logs {job_id}' to view the job output")
+        print(f"  - Use 'nx logs -t 20 {job_id}' to see just the last 20 lines")
 
     except Exception as e:
         print(colored(f"\nError: {e}", "red"))
@@ -528,7 +557,7 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
         print(colored(f"Error removing jobs: {e}", "red"))
 
 
-def view_logs(target: str) -> None:
+def view_logs(target: str, tail: int = None) -> None:
     try:
         # Check if target is a GPU index
         if target.isdigit():
@@ -548,8 +577,16 @@ def view_logs(target: str) -> None:
             target = job_id
 
         # Now treat target as a job_id
-        logs = api_client.get_job_logs(target)
-        print(logs)
+        if tail:
+            logs = api_client.get_job_logs(target, last_n_lines=tail)
+            if logs:
+                print(colored(f"Showing last {tail} lines:", "blue"))
+                print(logs)
+            else:
+                print(colored("No logs available", "yellow"))
+        else:
+            logs = api_client.get_job_logs(target)
+            print(logs)
 
     except Exception as e:
         print(colored(f"Error fetching logs: {e}", "red"))
@@ -775,3 +812,57 @@ def print_status() -> None:
 
     except Exception as e:
         print(colored(f"Error: {e}", "red"))
+
+
+def attach_to_job(target: str) -> None:
+    """
+    Attach to a running job's screen session. Can take either a job ID or a GPU index.
+    If GPU index is provided, it will find the job running on that GPU.
+    """
+    try:
+        # Check if target is a GPU index
+        if target.isdigit():
+            gpu_idx = int(target)
+            gpus = api_client.get_gpus()
+
+            gmatch = next((g for g in gpus if g["index"] == gpu_idx), None)
+            if not gmatch:
+                print(colored(f"No GPU found with index {gpu_idx}", "red"))
+                return
+
+            job_id = gmatch.get("running_job_id")
+            if not job_id:
+                print(colored(f"No running job found on GPU {gpu_idx}", "yellow"))
+                return
+
+            target = job_id
+
+        # Now treat target as a job_id
+        job = api_client.get_job(target)
+        if not job:
+            print(colored(f"Job {target} not found", "red"))
+            return
+
+        if job["status"] != "running":
+            print(colored(f"Cannot attach to job with status: {job['status']}. Job must be running.", "red"))
+            return
+
+        # Get the screen session name
+        screen_session_name = job.get("screen_session_name")
+        if not screen_session_name:
+            print(colored(f"No screen session found for job {target}", "red"))
+            return
+
+        print(colored(f"Attaching to job {target} screen session '{screen_session_name}'", "blue"))
+        print(colored("Press Ctrl+A Ctrl+D to detach from the screen session", "blue"))
+
+        # Give user time to read the instructions
+        time.sleep(1)
+
+        # Attach to the screen session
+        os.system(f"screen -r {screen_session_name}")
+
+        print(colored(f"Detached from job {target} screen session", "blue"))
+
+    except Exception as e:
+        print(colored(f"Error attaching to job: {e}", "red"))

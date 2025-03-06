@@ -108,6 +108,11 @@ def create_parser() -> argparse.ArgumentParser:
 
     logs_parser = subparsers.add_parser("logs", help="View logs for job")
     logs_parser.add_argument("id", help="Job ID or GPU index")
+    logs_parser.add_argument("-t", "--tail", type=int, metavar="N", help="Show only the last N lines")
+
+    # Add attach command
+    attach_parser = subparsers.add_parser("attach", help="Attach to a running job's screen session")
+    attach_parser.add_argument("id", help="Job ID or GPU index to attach to")
 
     # Add health command
     subparsers.add_parser("health", help="Show detailed node health information")
@@ -175,7 +180,8 @@ def main() -> None:
         "kill": lambda: jobs.kill_jobs(args.targets, bypass_confirm=args.yes),
         "remove": lambda: jobs.remove_jobs(args.job_ids, bypass_confirm=args.yes),
         "blacklist": lambda: jobs.handle_blacklist(args),
-        "logs": lambda: jobs.view_logs(args.id),
+        "logs": lambda: jobs.view_logs(args.id, tail=args.tail),
+        "attach": lambda: jobs.attach_to_job(args.id),
         "health": lambda: jobs.show_health(),
         "update": lambda: jobs.update_job_command(
             args.job_id,
