@@ -18,6 +18,7 @@ from nexus.server.core import exceptions as exc
 __all__ = [
     "create_job",
     "async_start_job",
+    "prepare_job_environment",
     "is_job_running",
     "async_end_job",
     "async_cleanup_job_repo",
@@ -244,54 +245,28 @@ def create_job(
     )
 
 
+@exc.handle_exception_async(Exception, exc.JobError, message="Failed to start job")
 async def async_start_job(
     _logger: logger.NexusServerLogger, job: schemas.Job, gpu_idxs: list[int], server_dir: pl.Path | None
 ) -> schemas.Job:
-    jobs_dir = pl.Path(tempfile.mkdtemp())
-    if server_dir is not None:
-        jobs_dir = config.get_jobs_dir(server_dir)
-
+    jobs_dir = config.get_jobs_dir(server_dir) if server_dir is not None else pl.Path(tempfile.mkdtemp())
     job = dc.replace(job, dir=jobs_dir)
 
     if job.dir is None:
         raise exc.JobError(message=f"Job directory not set for job {job.id}")
 
-    log_file, job_repo_dir = _create_directories(_logger, dir_path=job.dir)
-
-    env = _build_environment(_logger, gpu_idxs=gpu_idxs, job_env=job.env)
-
-    git_token = job.env.get("GIT_TOKEN")
-    askpass_path = _setup_github_auth(_logger, dir_path=job.dir, git_token=git_token) if git_token else None
-
-    script_path = _create_job_script(
-        _logger,
-        job_dir=job.dir,
-        log_file=log_file,
-        job_repo_dir=job_repo_dir,
-        git_repo_url=job.git_repo_url,
-        git_tag=job.git_tag,
-        command=job.command,
-        askpass_path=askpass_path,
-        jobrc=job.jobrc,
-    )
-
+    log_file, job_repo_dir, env, askpass_path, script_path = await prepare_job_environment(_logger, job, gpu_idxs)
     session_name = _get_job_session_name(job.id)
-    try:
-        pid = await _launch_screen_process(_logger, session_name, str(script_path), env)
 
-        return dc.replace(
-            job,
-            started_at=dt.datetime.now().timestamp(),
-            gpu_idxs=gpu_idxs,
-            status="running",
-            pid=pid,
-            screen_session_name=session_name,
-        )
-    except exc.JobError:
-        raise
-    except Exception as e:
-        _logger.error(f"Failed to start job {job.id}: {e}")
-        return dc.replace(job, status="failed", error_message=str(e), completed_at=dt.datetime.now().timestamp())
+    pid = await _launch_screen_process(_logger, session_name, str(script_path), env)
+    return dc.replace(
+        job,
+        started_at=dt.datetime.now().timestamp(),
+        gpu_idxs=gpu_idxs,
+        status="running",
+        pid=pid,
+        screen_session_name=session_name,
+    )
 
 
 @exc.handle_exception(
@@ -399,3 +374,31 @@ def get_queue(queued_jobs: list[schemas.Job]) -> list[schemas.Job]:
     sorted_jobs = sorted(sorted_jobs, key=lambda x: x.num_gpus, reverse=True)
 
     return sorted_jobs
+
+
+async def prepare_job_environment(
+    _logger: logger.NexusServerLogger, job: schemas.Job, gpu_idxs: list[int]
+) -> tuple[pl.Path, pl.Path, dict[str, str], pl.Path | None, pl.Path]:
+    log_file, job_repo_dir = await asyncio.to_thread(_create_directories, _logger, job.dir)
+    env = await asyncio.to_thread(_build_environment, _logger, gpu_idxs, job.env)
+
+    git_token = job.env.get("GIT_TOKEN")
+    askpass_path = None
+    if git_token:
+        askpass_path = await asyncio.to_thread(_setup_github_auth, _logger, job.dir, git_token)
+
+    script_path = await asyncio.to_thread(
+        _create_job_script,
+        _logger,
+        job.dir,
+        log_file,
+        job_repo_dir,
+        job.git_repo_url,
+        job.git_tag,
+        job.command,
+        askpass_path,
+        job.jobrc,
+    )
+    return log_file, job_repo_dir, env, askpass_path, script_path
+
+
