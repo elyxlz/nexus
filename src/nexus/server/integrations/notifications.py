@@ -41,14 +41,14 @@ def _get_discord_secrets(job: schemas.Job) -> tuple[str, str]:
     return webhook_url, user_id
 
 
-def _get_callmebot_secrets(job: schemas.Job) -> tuple[str, str]:
+def _get_whatsapp_secrets(job: schemas.Job) -> tuple[str, str]:
     phone_number = job.env.get("WHATSAPP_TO_NUMBER")
     if not phone_number:
         raise exc.NotificationError("Missing WHATSAPP_TO_NUMBER in job environment")
 
-    api_key = job.env.get("CALLMEBOT_API_KEY")
+    api_key = job.env.get("TEXTMEBOT_API_KEY")
     if not api_key:
-        raise exc.NotificationError("Missing CALLMEBOT_API_KEY in job environment")
+        raise exc.NotificationError("Missing TEXTMEBOT_API_KEY in job environment")
 
     return phone_number, api_key
 
@@ -90,12 +90,14 @@ def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction
     }
 
 
-@exc.handle_exception_async(pyd.ValidationError, exc.NotificationError, message="Invalid notification message format")
-@exc.handle_exception_async(aiohttp.ClientError, exc.NotificationError, message="Discord notification request failed")
+@exc.handle_exception_async(
+    aiohttp.ClientError, exc.NotificationError, message="Discord notification request failed", reraise=False
+)
 @exc.handle_exception_async(
     json.JSONDecodeError,
     exc.NotificationError,
     message="Invalid JSON response from Discord notification",
+    reraise=False,
 )
 async def _send_notification(
     _logger: logger.NexusServerLogger, webhook_url: str, message_data: dict, wait: bool = False
@@ -116,9 +118,8 @@ async def _send_notification(
                 raise exc.NotificationError(message=error_msg)
 
 
-@exc.handle_exception_async(pyd.ValidationError, exc.NotificationError, message="Invalid notification message format")
 @exc.handle_exception_async(
-    aiohttp.ClientError, exc.NotificationError, message="Discord notification edit request failed"
+    aiohttp.ClientError, exc.NotificationError, message="Discord notification edit request failed", reraise=False
 )
 async def _edit_notification_message(
     _logger: logger.NexusServerLogger, notification_url: str, message_id: str, message_data: dict
@@ -154,8 +155,10 @@ async def _upload_logs_to_nullpointer(_logger: logger.NexusServerLogger, _job: s
     return paste_url
 
 
-@exc.handle_exception_async(aiohttp.ClientError, exc.NotificationError, message="CallMeBot WhatsApp message failed")
-async def _send_callmebot_whatsapp_message(
+@exc.handle_exception_async(
+    aiohttp.ClientError, exc.NotificationError, message="WhatsApp message failed", reraise=False
+)
+async def _send_whatsapp_message(
     _logger: logger.NexusServerLogger, phone_number: str, api_key: str, message: str
 ) -> str:
     # Ensure proper phone number format
@@ -165,7 +168,7 @@ async def _send_callmebot_whatsapp_message(
     encoded_message = urllib.parse.quote(message)
 
     # Construct the API URL
-    url = f"https://api.callmebot.com/whatsapp.php?phone={phone_number}&text={encoded_message}&apikey={api_key}"
+    url = f"https://api.textmebot.com/send.php?recipient={phone_number}&apikey={api_key}&text={encoded_message}"
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
@@ -176,26 +179,16 @@ async def _send_callmebot_whatsapp_message(
                 raise exc.NotificationError(message=error_msg)
 
             response_text = await response.text()
-            _logger.debug(f"CallMeBot API response: {response_text}")
+            _logger.debug(f"TextMeBot API response: {response_text}")
             return "sent"
 
 
 async def _send_whatsapp_notification(_logger: logger.NexusServerLogger, job: schemas.Job, message: str) -> None:
-    phone_number, api_key = _get_callmebot_secrets(job)
+    phone_number, api_key = _get_whatsapp_secrets(job)
 
-    result = await _send_callmebot_whatsapp_message(
-        _logger,
-        phone_number=phone_number,
-        api_key=api_key,
-        message=message,
-    )
+    result = await _send_whatsapp_message(_logger, phone_number=phone_number, api_key=api_key, message=message)
 
-    _logger.info(f"Sent WhatsApp notification for job {job.id} via CallMeBot: {result}")
-
-
-async def _send_phone_notification(_logger: logger.NexusServerLogger, job: schemas.Job, message: str) -> None:
-    _logger.info(f"Phone notification for job {job.id} - TBD implementation")
-    # Phone integration to be implemented
+    _logger.info(f"Sent WhatsApp notification for job {job.id}: {result}")
 
 
 def _create_message_for_messaging(
@@ -295,11 +288,6 @@ async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job
                 messaging_text += f"\n\n*Full logs:* {logs_url}"
 
         await _send_whatsapp_notification(_logger, _job, messaging_text)
-
-    if "phone" in _job.notifications:
-        if action in ["completed", "failed", "killed"]:
-            messaging_text = _create_message_for_messaging(_job, action, include_wandb=False)
-            await _send_phone_notification(_logger, _job, messaging_text)
 
     return updated_job
 

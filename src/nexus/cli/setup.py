@@ -16,7 +16,6 @@ def create_default_env() -> None:
     env_path = get_env_path()
     env_dir = env_path.parent
 
-    # Create nexus directory if it doesn't exist
     env_dir.mkdir(parents=True, exist_ok=True)
 
     if not env_path.exists():
@@ -55,7 +54,6 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
     configured_notifications: list[NotificationType] = []
     env_vars = load_current_env()
 
-    # Discord notifications
     if utils.ask_yes_no("Would you like to set up Discord notifications?"):
         configured_notifications.append("discord")
         print(colored("\nDiscord requires the following configuration:", "cyan"))
@@ -73,14 +71,13 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         env_vars["DISCORD_USER_ID"] = discord_id
         env_vars["DISCORD_WEBHOOK_URL"] = discord_webhook
 
-    # WhatsApp notifications
     if utils.ask_yes_no("Would you like to set up WhatsApp notifications?"):
         configured_notifications.append("whatsapp")
-        print(colored("\nWhatsApp requires CallMeBot integration with the following:", "cyan"))
+        print(colored("\nWhatsApp using TextMeBot requires the following:", "cyan"))
 
-        callmebot_api_key = utils.get_user_input(
-            "CallMeBot API Key",
-            default=env_vars.get("CALLMEBOT_API_KEY", ""),
+        textmebot_api_key = utils.get_user_input(
+            "TextMeBot API Key",
+            default=env_vars.get("TEXTMEBOT_API_KEY", ""),
             required=True,
         )
         whatsapp_to = utils.get_user_input(
@@ -89,24 +86,9 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
             required=True,
         )
 
-        env_vars["CALLMEBOT_API_KEY"] = callmebot_api_key
+        env_vars["TEXTMEBOT_API_KEY"] = textmebot_api_key
         env_vars["WHATSAPP_TO_NUMBER"] = whatsapp_to
 
-    # Phone notifications
-    if utils.ask_yes_no("Would you like to set up Phone call notifications?"):
-        configured_notifications.append("phone")
-        print(colored("\nPhone call notifications - TBD implementation", "yellow"))
-        print("Phone call integration is not yet implemented.")
-
-        phone_number = utils.get_user_input(
-            "Your Phone Number for future calls (with country code, e.g. +1234567890)",
-            default=env_vars.get("PHONE_TO_NUMBER", ""),
-            required=True,
-        )
-
-        env_vars["PHONE_TO_NUMBER"] = phone_number
-
-    # Weights & Biases integration
     if utils.ask_yes_no("Would you like to enable Weights & Biases integration?"):
         config = config.copy(update={"search_wandb": True})
         print(colored("\nWeights & Biases requires the following:", "cyan"))
@@ -125,7 +107,6 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         env_vars["WANDB_API_KEY"] = wandb_api_key
         env_vars["WANDB_ENTITY"] = wandb_entity
 
-    # Set default notification types
     default_notifications: list[NotificationType] = []
     if configured_notifications:
         print(colored("\nDefault Notification Types", "blue", attrs=["bold"]))
@@ -135,8 +116,7 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
             if utils.ask_yes_no(f"Enable {notification_type} notifications by default?"):
                 default_notifications.append(notification_type)
 
-    # Additional environment variables
-    if utils.ask_yes_no("Would you like to add any additional environment variables?"):
+    if utils.ask_yes_no("Would you like to add any additional environment variables?", default=True):
         while True:
             key = utils.get_user_input("Variable name (or press Enter to finish)")
             if not key:
@@ -151,23 +131,17 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
 
 def setup_non_interactive() -> None:
     """Set up Nexus configuration non-interactively using environment variables."""
-    # Load or create default config
     try:
         cfg = config.load_config()
     except Exception:
         config.create_default_config()
         cfg = config.load_config()
 
-    # Environment variables are loaded automatically via pydantic_settings
-
-    # Load current environment variable file if exists
     env_vars = load_current_env()
 
-    # Save the environment variables that are already in the .env file
     create_default_env()
     save_env_vars(env_vars)
 
-    # Save configuration
     config.save_config(cfg)
 
     print(colored("Non-interactive setup complete!", "green", attrs=["bold"]))
@@ -179,14 +153,12 @@ def setup_wizard() -> None:
     print(colored("Nexus CLI Setup Wizard", "blue", attrs=["bold"]))
     print("Let's set up your Nexus CLI configuration.")
 
-    # Load or create default config
     try:
         cfg = config.load_config()
     except Exception:
         config.create_default_config()
         cfg = config.load_config()
 
-    # Basic configuration
     print(colored("\nBasic Configuration", "blue", attrs=["bold"]))
 
     host = utils.get_user_input("Nexus API host", default=cfg.host)
@@ -204,18 +176,14 @@ def setup_wizard() -> None:
         ),
     )
 
-    # Notification setup
     cfg, env_vars = setup_notifications(cfg)
 
-    # Debug config values
     print("\nDebug - Config values before saving:")
     print(f"search_wandb: {cfg.search_wandb}")
     print(f"default_notifications: {cfg.default_notifications}")
 
-    # Save configuration
     config.save_config(cfg)
 
-    # Save environment variables
     create_default_env()
     save_env_vars(env_vars)
 
