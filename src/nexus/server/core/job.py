@@ -199,7 +199,6 @@ async def _launch_screen_process(
 
 def create_job(
     command: str,
-    status: schemas.JobStatus,
     git_repo_url: str,
     git_tag: str,
     git_branch: str,
@@ -217,7 +216,7 @@ def create_job(
     return schemas.Job(
         id=_generate_job_id(),
         command=command.strip(),
-        status=status,
+        status="queued",
         created_at=dt.datetime.now().timestamp(),
         user=user,
         git_repo_url=git_repo_url,

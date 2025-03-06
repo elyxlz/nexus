@@ -22,7 +22,6 @@ __all__ = [
 REQUIRED_ENV_VARS = {
     "wandb": ["WANDB_API_KEY", "WANDB_ENTITY"],
     "discord": ["DISCORD_USER_ID", "DISCORD_WEBHOOK_URL"],
-    "whatsapp": ["CALLMEBOT_API_KEY", "WHATSAPP_TO_NUMBER"],
     "phone": ["PHONE_TO_NUMBER"],
 }
 
@@ -38,13 +37,13 @@ class JobRequest(FrozenBaseModel):
     git_tag: str
     git_branch: str
     num_gpus: int = 1
+    gpu_idxs: list[int] = []
     priority: int = 0
     search_wandb: bool = False
     notifications: list[schemas.NotificationType] = []
     env: dict[str, str] = {}
     jobrc: str | None = None
-    gpu_idxs: list[int] | None = None
-    ignore_blacklist: bool = False
+    run_immedietly: bool
 
     @pyd.model_validator(mode="after")
     def check_requirements(self) -> tpe.Self:
@@ -59,10 +58,6 @@ class JobRequest(FrozenBaseModel):
                     raise ValueError(
                         f"Missing required environment variable {key} for {notification_type} notifications"
                     )
-
-        # Validate that gpu_idxs, if provided, has the correct length
-        if self.gpu_idxs is not None and len(self.gpu_idxs) != self.num_gpus:
-            raise ValueError(f"gpu_idxs must have exactly {self.num_gpus} elements if specified")
 
         return self
 

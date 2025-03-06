@@ -98,20 +98,19 @@ async def add_job_endpoint(job_request: models.JobRequest, ctx: context.NexusSer
 
     j = job.create_job(
         command=job_request.command,
-        status="queued",
         git_repo_url=norm_url,
         git_tag=job_request.git_tag,
         git_branch=job_request.git_branch,
         user=job_request.user,
         num_gpus=job_request.num_gpus,
-        priority=job_request.priority,
+        priority=job_request.priority if not job_request.run_immedietly else 9999,
+        gpu_idxs=job_request.gpu_idxs,
         env=job_request.env,
         jobrc=job_request.jobrc,
         search_wandb=job_request.search_wandb,
         notifications=job_request.notifications,
         node_name=ctx.config.node_name,
-        gpu_idxs=job_request.gpu_idxs,
-        ignore_blacklist=job_request.ignore_blacklist,
+        ignore_blacklist=job_request.run_immedietly,
     )
 
     db.add_job(ctx.logger, conn=ctx.db, job=j)
