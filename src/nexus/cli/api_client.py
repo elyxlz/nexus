@@ -141,7 +141,7 @@ def add_job(job_request: dict) -> dict:
 def kill_running_jobs(job_ids: list[str]) -> dict:
     # In the new API, we need to make individual kill requests per job
     results = {"killed": [], "failed": []}
-    
+
     for job_id in job_ids:
         try:
             response = requests.post(f"{get_api_base_url()}/jobs/{job_id}/kill")
@@ -151,7 +151,7 @@ def kill_running_jobs(job_ids: list[str]) -> dict:
                 response.raise_for_status()  # Will raise an exception for other errors
         except Exception as e:
             results["failed"].append({"id": job_id, "error": str(e)})
-    
+
     return results
 
 
@@ -159,7 +159,7 @@ def kill_running_jobs(job_ids: list[str]) -> dict:
 def remove_queued_jobs(job_ids: list[str]) -> dict:
     # In the new API, we need to make individual delete requests per job
     results = {"removed": [], "failed": []}
-    
+
     for job_id in job_ids:
         try:
             response = requests.delete(f"{get_api_base_url()}/jobs/{job_id}")
@@ -169,7 +169,7 @@ def remove_queued_jobs(job_ids: list[str]) -> dict:
                 response.raise_for_status()  # Will raise an exception for other errors
         except Exception as e:
             results["failed"].append({"id": job_id, "error": str(e)})
-    
+
     return results
 
 
@@ -180,7 +180,7 @@ def update_job(job_id: str, command: str | None = None, priority: int | None = N
         update_data["command"] = command
     if priority is not None:
         update_data["priority"] = priority
-        
+
     response = requests.patch(f"{get_api_base_url()}/jobs/{job_id}", json=update_data)
     response.raise_for_status()
     return response.json()
@@ -190,7 +190,7 @@ def update_job(job_id: str, command: str | None = None, priority: int | None = N
 def manage_blacklist(gpu_indices: list[int], action: tp.Literal["add", "remove"]) -> dict:
     # In the new API, we need to make individual blacklist requests per GPU
     results = {"blacklisted": [], "removed": [], "failed": []}
-    
+
     for gpu_idx in gpu_indices:
         try:
             if action == "add":
@@ -201,9 +201,9 @@ def manage_blacklist(gpu_indices: list[int], action: tp.Literal["add", "remove"]
                 response = requests.delete(f"{get_api_base_url()}/gpus/{gpu_idx}/blacklist")
                 if response.ok:
                     results["removed"].append(gpu_idx)
-                    
+
             response.raise_for_status()
         except Exception as e:
             results["failed"].append({"index": gpu_idx, "error": str(e)})
-    
+
     return results

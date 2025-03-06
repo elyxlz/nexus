@@ -5,7 +5,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nexus.server.api.app import create_app
-from nexus.server.core import exceptions as exc
 from nexus.server.core.config import NexusServerConfig
 from nexus.server.core.context import NexusServerContext
 from nexus.server.core.db import create_connection
@@ -474,25 +473,22 @@ def test_remove_nonexistent_queued_job(app_client: TestClient) -> None:
 
 def test_update_queued_job(app_client: TestClient, created_job: dict) -> None:
     job_id = created_job["id"]
-    
+
     # Verify job is queued
     job_response = app_client.get(f"/v1/jobs/{job_id}")
     assert job_response.json()["status"] == "queued"
-    
+
     # Update job command and priority
-    update_data = {
-        "command": "echo 'Updated command'",
-        "priority": 100
-    }
-    
+    update_data = {"command": "echo 'Updated command'", "priority": 100}
+
     update_response = app_client.patch(f"/v1/jobs/{job_id}", json=update_data)
     assert update_response.status_code == 200
     updated_job = update_response.json()
-    
+
     # Verify updates were applied
     assert updated_job["command"] == "echo 'Updated command'"
     assert updated_job["priority"] == 100
-    
+
     # Fetch the job again to confirm changes persisted
     verify_response = app_client.get(f"/v1/jobs/{job_id}")
     assert verify_response.status_code == 200
@@ -514,13 +510,13 @@ def test_update_nonqueued_job(app_client: TestClient, git_tag: str) -> None:
         "priority": 0,
         "search_wandb": False,
         "notifications": [],
-        "run_immediately": True
+        "run_immediately": True,
     }
-    
+
     submit_response = app_client.post("/v1/jobs", json=job_payload)
     assert submit_response.status_code == 201
     job_id = submit_response.json()["id"]
-    
+
     # Wait for job to start running or complete
     max_attempts = 20
     for attempt in range(max_attempts):
@@ -529,13 +525,10 @@ def test_update_nonqueued_job(app_client: TestClient, git_tag: str) -> None:
         if job_data["status"] != "queued":
             break
         time.sleep(0.5)
-    
+
     # Try to update a non-queued job
-    update_data = {
-        "command": "echo 'Cannot update'",
-        "priority": 999
-    }
-    
+    update_data = {"command": "echo 'Cannot update'", "priority": 999}
+
     update_response = app_client.patch(f"/v1/jobs/{job_id}", json=update_data)
     assert update_response.status_code == 400
     assert "Cannot update job" in update_response.text

@@ -179,32 +179,30 @@ async def kill_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.De
 @db.safe_transaction
 @router.patch("/v1/jobs/{job_id}", response_model=schemas.Job)
 async def update_job_endpoint(
-    job_id: str, 
-    job_update: models.JobUpdateRequest, 
-    ctx: context.NexusServerContext = fa.Depends(_get_context)
+    job_id: str, job_update: models.JobUpdateRequest, ctx: context.NexusServerContext = fa.Depends(_get_context)
 ):
     _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
-    
+
     if _job.status != "queued":
         raise exc.InvalidJobStateError(
             message=f"Cannot update job {job_id} with status '{_job.status}'. Only queued jobs can be updated."
         )
-    
+
     update_fields = {}
-    
+
     if job_update.command is not None:
         update_fields["command"] = job_update.command
-        
+
     if job_update.priority is not None:
         update_fields["priority"] = job_update.priority
-    
+
     if not update_fields:
         return _job
-        
+
     updated = dc.replace(_job, **update_fields)
     db.update_job(ctx.logger, conn=ctx.db, job=updated)
     ctx.logger.info(format.format_job_action(updated, action="updated"))
-    
+
     return updated
 
 

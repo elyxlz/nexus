@@ -5,7 +5,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nexus.server.api.app import create_app
-from nexus.server.core import exceptions as exc
 from nexus.server.core.config import NexusServerConfig
 from nexus.server.core.context import NexusServerContext
 from nexus.server.core.db import create_connection

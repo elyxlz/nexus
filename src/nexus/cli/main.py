@@ -50,11 +50,13 @@ def create_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("help", help="Show help information")
     subparsers.add_parser("queue", help="Show pending jobs (queued)")
-    
+
     # Run command for immediate execution
     run_parser = subparsers.add_parser("run", help="Run a job immediately")
     run_parser.add_argument("command", help='Command to run, e.g., "python train.py"')
-    run_parser.add_argument("-i", "--gpu-idxs", dest="gpu_idxs", help="Specific GPU indices to run on (e.g., '0' or '0,1' for multi-GPU)")
+    run_parser.add_argument(
+        "-i", "--gpu-idxs", dest="gpu_idxs", help="Specific GPU indices to run on (e.g., '0' or '0,1' for multi-GPU)"
+    )
     run_parser.add_argument("-g", "--gpus", type=int, help="Number of GPUs to use (ignored if --gpu-idxs is specified)")
     run_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
@@ -106,10 +108,10 @@ def create_parser() -> argparse.ArgumentParser:
 
     logs_parser = subparsers.add_parser("logs", help="View logs for job")
     logs_parser.add_argument("id", help="Job ID or GPU index")
-    
+
     # Add health command
     subparsers.add_parser("health", help="Show detailed node health information")
-    
+
     # Add update command
     update_parser = subparsers.add_parser("update", help="Update a queued job's command or priority")
     update_parser.add_argument("job_id", help="Job ID to update")
