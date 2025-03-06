@@ -139,7 +139,7 @@ async def get_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Dep
 
 @router.get("/v1/jobs/{job_id}/logs", response_model=models.JobLogsResponse)
 async def get_job_logs_endpoint(
-    job_id: str, last_n_lines: int = None, ctx: context.NexusServerContext = fa.Depends(_get_context)
+    job_id: str, last_n_lines: int | None = None, ctx: context.NexusServerContext = fa.Depends(_get_context)
 ):
     _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
     logs = await job.async_get_job_logs(ctx.logger, job_dir=_job.dir, last_n_lines=last_n_lines) or ""

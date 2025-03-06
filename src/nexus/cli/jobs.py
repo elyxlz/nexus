@@ -557,7 +557,7 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
         print(colored(f"Error removing jobs: {e}", "red"))
 
 
-def view_logs(target: str, tail: int = None) -> None:
+def view_logs(target: str, tail: int | None = None) -> None:
     try:
         # Check if target is a GPU index
         if target.isdigit():

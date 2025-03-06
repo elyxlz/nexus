@@ -102,7 +102,7 @@ def get_job(job_id: str) -> dict:
 
 
 @handle_api_errors
-def get_job_logs(job_id: str, last_n_lines: int = None) -> str:
+def get_job_logs(job_id: str, last_n_lines: int | None = None) -> str:
     params = {}
     if last_n_lines is not None:
         params["last_n_lines"] = last_n_lines
