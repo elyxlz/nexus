@@ -400,5 +400,3 @@ async def prepare_job_environment(
         job.jobrc,
     )
     return log_file, job_repo_dir, env, askpass_path, script_path
-
-
