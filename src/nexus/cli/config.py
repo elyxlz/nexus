@@ -5,13 +5,13 @@ import pydantic as pyd
 import pydantic_settings as pyds
 import toml
 
-NotificationType = tp.Literal["discord", "whatsapp"]
+NotificationType = tp.Literal["discord", "phone"]
 
 
 REQUIRED_ENV_VARS = {
     "wandb": ["WANDB_API_KEY", "WANDB_ENTITY"],
     "discord": ["DISCORD_USER_ID", "DISCORD_WEBHOOK_URL"],
-    "whatsapp": ["TEXTMEBOT_API_KEY", "WHATSAPP_TO_NUMBER"],
+    "phone": ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "PHONE_TO_NUMBER"],
 }
 
 

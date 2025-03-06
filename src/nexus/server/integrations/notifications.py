@@ -2,7 +2,6 @@ import dataclasses as dc
 import datetime
 import json
 import typing as tp
-import urllib.parse
 
 import aiohttp
 import pydantic as pyd
@@ -41,20 +40,27 @@ def _get_discord_secrets(job: schemas.Job) -> tuple[str, str]:
     return webhook_url, user_id
 
 
-def _get_whatsapp_secrets(job: schemas.Job) -> tuple[str, str]:
-    phone_number = job.env.get("WHATSAPP_TO_NUMBER")
+def _get_phone_secrets(job: schemas.Job) -> tuple[str, str, str, str]:
+    phone_number = job.env.get("PHONE_TO_NUMBER")
     if not phone_number:
-        raise exc.NotificationError("Missing WHATSAPP_TO_NUMBER in job environment")
+        raise exc.NotificationError("Missing PHONE_TO_NUMBER in job environment")
 
-    api_key = job.env.get("TEXTMEBOT_API_KEY")
-    if not api_key:
-        raise exc.NotificationError("Missing TEXTMEBOT_API_KEY in job environment")
+    twilio_account_sid = job.env.get("TWILIO_ACCOUNT_SID")
+    if not twilio_account_sid:
+        raise exc.NotificationError("Missing TWILIO_ACCOUNT_SID in job environment")
 
-    return phone_number, api_key
+    twilio_auth_token = job.env.get("TWILIO_AUTH_TOKEN")
+    if not twilio_auth_token:
+        raise exc.NotificationError("Missing TWILIO_AUTH_TOKEN in job environment")
+
+    twilio_from_number = job.env.get("TWILIO_FROM_NUMBER")
+    if not twilio_from_number:
+        raise exc.NotificationError("Missing TWILIO_FROM_NUMBER in job environment")
+
+    return phone_number, twilio_account_sid, twilio_auth_token, twilio_from_number
 
 
 def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction) -> dict:
-    # Color mapping for different job statuses
     color_mapping = {
         "started": 0x3498DB,  # Blue
         "completed": 0x2ECC71,  # Green
@@ -146,7 +152,6 @@ async def _upload_logs_to_nullpointer(_logger: logger.NexusServerLogger, _job: s
 
     instance_url = _job.env.get("NULLPOINTER_URL", "https://0x0.st/")
 
-    # Use our new nullpointer implementation - just upload the raw logs
     paste_url = await nullpointer.upload_text_to_nullpointer(_logger, job_logs, instance_url)
 
     if paste_url:
@@ -156,80 +161,73 @@ async def _upload_logs_to_nullpointer(_logger: logger.NexusServerLogger, _job: s
 
 
 @exc.handle_exception_async(
-    aiohttp.ClientError, exc.NotificationError, message="WhatsApp message failed", reraise=False
+    aiohttp.ClientError, exc.NotificationError, message="Phone call notification failed", reraise=False
 )
-async def _send_whatsapp_message(
-    _logger: logger.NexusServerLogger, phone_number: str, api_key: str, message: str
+async def _make_phone_call(
+    _logger: logger.NexusServerLogger, to_number: str, from_number: str, account_sid: str, auth_token: str, message: str
 ) -> str:
-    # Ensure proper phone number format
-    phone_number = phone_number.lstrip("+")
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="alice">{message}</Say>
+    <Pause length="1"/>
+    <Say voice="alice">This was a notification from Nexus. Goodbye.</Say>
+</Response>"""
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Calls.json"
 
-    # URL encode the message
-    encoded_message = urllib.parse.quote(message)
-
-    # Construct the API URL
-    url = f"https://api.textmebot.com/send.php?recipient={phone_number}&apikey={api_key}&text={encoded_message}"
+    auth = aiohttp.BasicAuth(account_sid, auth_token)
+    data = {"To": to_number, "From": from_number, "Twiml": twiml}
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            if response.status != 200:
-                error_text = await response.text()
-                error_msg = f"Failed to send WhatsApp message: Status {response.status}, Message: {error_text}"
+        async with session.post(url, auth=auth, data=data) as response:
+            response_text = await response.text()
+
+            if response.status not in [200, 201]:
+                error_msg = f"Failed to make phone call: Status {response.status}, Message: {response_text}"
                 _logger.error(error_msg)
                 raise exc.NotificationError(message=error_msg)
 
-            response_text = await response.text()
-            _logger.debug(f"TextMeBot API response: {response_text}")
-            return "sent"
+            _logger.debug(f"Twilio API response: {response_text}")
+            return "call_initiated"
 
 
-async def _send_whatsapp_notification(_logger: logger.NexusServerLogger, job: schemas.Job, message: str) -> None:
-    phone_number, api_key = _get_whatsapp_secrets(job)
+async def _send_phone_notification(_logger: logger.NexusServerLogger, job: schemas.Job, job_action: JobAction) -> None:
+    if job_action not in ["completed", "failed", "killed"]:
+        return
 
-    result = await _send_whatsapp_message(_logger, phone_number=phone_number, api_key=api_key, message=message)
+    to_number, account_sid, auth_token, from_number = _get_phone_secrets(job)
 
-    _logger.info(f"Sent WhatsApp notification for job {job.id}: {result}")
+    status = "completed successfully" if job_action == "completed" else "failed"
+    message = f"Your Nexus job {job.id} has {status}. The command was: {job.command}."
+
+    result = await _make_phone_call(
+        _logger,
+        to_number=to_number,
+        from_number=from_number,
+        account_sid=account_sid,
+        auth_token=auth_token,
+        message=message,
+    )
+
+    _logger.info(f"Initiated phone call notification for job {job.id}: {result}")
 
 
-def _create_message_for_messaging(
-    job: schemas.Job, action: JobAction, include_wandb: bool = False, use_whatsapp_format: bool = False
-) -> str:
+def _create_message_for_messaging(job: schemas.Job, action: JobAction, include_wandb: bool = False) -> str:
     status_emoji = {"started": "🚀", "completed": "✅", "failed": "❌", "killed": "🛑"}
     emoji = status_emoji.get(action, "")
     gpu_idxs = ", ".join(str(idx) for idx in job.gpu_idxs)
 
-    # WhatsApp formatting:
-    # *bold* for bold text
-    # _italic_ for italic text
-    # ~strikethrough~ for strikethrough
-    # ```monospace``` for monospace
+    message_parts = [
+        f"{emoji} Nexus Job {job.id} {action} on GPU {gpu_idxs} - ({job.node_name})",
+        f"Command: {job.command}",
+        f"Git: {job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}",
+        f"User: {job.user}",
+    ]
 
-    if use_whatsapp_format:
-        message_parts = [
-            f"{emoji} *Nexus Job {job.id} {action}* on GPU {gpu_idxs} - ({job.node_name})",
-            f"*Command:* {job.command}",
-            f"*Git:* {job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}",
-            f"*User:* {job.user}",
-        ]
+    if include_wandb:
+        message_parts.insert(2, f"W&B: {job.wandb_url or 'Not Found'}")
 
-        if include_wandb:
-            message_parts.insert(2, f"*W&B:* {job.wandb_url or 'Not Found'}")
-
-        if job.error_message and action in ["completed", "failed"]:
-            message_parts.insert(2, f"*Error:* {job.error_message}")
-    else:
-        message_parts = [
-            f"{emoji} Nexus Job {job.id} {action} on GPU {gpu_idxs} - ({job.node_name})",
-            f"Command: {job.command}",
-            f"Git: {job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}",
-            f"User: {job.user}",
-        ]
-
-        if include_wandb:
-            message_parts.insert(2, f"W&B: {job.wandb_url or 'Not Found'}")
-
-        if job.error_message and action in ["completed", "failed"]:
-            message_parts.insert(2, f"Error: {job.error_message}")
+    if job.error_message and action in ["completed", "failed"]:
+        message_parts.insert(2, f"Error: {job.error_message}")
 
     return "\n".join(message_parts)
 
@@ -245,7 +243,6 @@ async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job
         webhook_url = _get_discord_secrets(_job)[0]
 
         if action in ["completed", "failed", "killed"] and _job.dir:
-            # Show inline logs for failed and killed jobs
             if action in ["failed", "killed"]:
                 job_logs = await job.async_get_job_logs(_logger, job_dir=_job.dir, last_n_lines=20)
                 if job_logs:
@@ -253,7 +250,6 @@ async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job
                         {"name": "Last few log lines", "value": f"```\n{job_logs}\n```"}
                     )
 
-            # Always upload full logs for completed, failed, and killed jobs
             logs_url = await _upload_logs_to_nullpointer(_logger, _job)
             if logs_url:
                 _logger.info(f"Adding logs URL to Discord message: {logs_url}")
@@ -272,22 +268,8 @@ async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job
         else:
             await _send_notification(_logger, webhook_url=webhook_url, message_data=message_data)
 
-    if "whatsapp" in _job.notifications:
-        messaging_text = _create_message_for_messaging(_job, action, include_wandb=False, use_whatsapp_format=True)
-
-        if action in ["completed", "failed", "killed"] and _job.dir:
-            # Add error logs for failed and killed jobs
-            if action in ["failed", "killed"]:
-                job_logs = await job.async_get_job_logs(_logger, job_dir=_job.dir, last_n_lines=10)
-                if job_logs:
-                    messaging_text += f"\n\n*Last few log lines:*\n```{job_logs}```"
-
-            # Always add logs URL for completed, failed, and killed jobs
-            logs_url = await _upload_logs_to_nullpointer(_logger, _job)
-            if logs_url:
-                messaging_text += f"\n\n*Full logs:* {logs_url}"
-
-        await _send_whatsapp_notification(_logger, _job, messaging_text)
+    if "phone" in _job.notifications:
+        await _send_phone_notification(_logger, _job, action)
 
     return updated_job
 

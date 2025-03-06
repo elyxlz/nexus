@@ -71,23 +71,35 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         env_vars["DISCORD_USER_ID"] = discord_id
         env_vars["DISCORD_WEBHOOK_URL"] = discord_webhook
 
-    if utils.ask_yes_no("Would you like to set up WhatsApp notifications?"):
-        configured_notifications.append("whatsapp")
-        print(colored("\nWhatsApp using TextMeBot requires the following:", "cyan"))
+    if utils.ask_yes_no("Would you like to set up Phone Call notifications?"):
+        configured_notifications.append("phone")
+        print(colored("\nPhone Calls using Twilio require the following:", "cyan"))
 
-        textmebot_api_key = utils.get_user_input(
-            "TextMeBot API Key",
-            default=env_vars.get("TEXTMEBOT_API_KEY", ""),
+        twilio_account_sid = utils.get_user_input(
+            "Twilio Account SID",
+            default=env_vars.get("TWILIO_ACCOUNT_SID", ""),
             required=True,
         )
-        whatsapp_to = utils.get_user_input(
-            "Your WhatsApp Number (with country code, e.g. +1234567890)",
-            default=env_vars.get("WHATSAPP_TO_NUMBER", ""),
+        twilio_auth_token = utils.get_user_input(
+            "Twilio Auth Token",
+            default=env_vars.get("TWILIO_AUTH_TOKEN", ""),
+            required=True,
+        )
+        twilio_from_number = utils.get_user_input(
+            "Twilio Phone Number (with country code, e.g. +1234567890)",
+            default=env_vars.get("TWILIO_FROM_NUMBER", ""),
+            required=True,
+        )
+        phone_to = utils.get_user_input(
+            "Your Phone Number to receive calls (with country code, e.g. +1234567890)",
+            default=env_vars.get("PHONE_TO_NUMBER", ""),
             required=True,
         )
 
-        env_vars["TEXTMEBOT_API_KEY"] = textmebot_api_key
-        env_vars["WHATSAPP_TO_NUMBER"] = whatsapp_to
+        env_vars["TWILIO_ACCOUNT_SID"] = twilio_account_sid
+        env_vars["TWILIO_AUTH_TOKEN"] = twilio_auth_token
+        env_vars["TWILIO_FROM_NUMBER"] = twilio_from_number
+        env_vars["PHONE_TO_NUMBER"] = phone_to
 
     if utils.ask_yes_no("Would you like to enable Weights & Biases integration?"):
         config = config.copy(update={"search_wandb": True})
