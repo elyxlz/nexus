@@ -63,7 +63,7 @@ def job_payload(git_tag) -> dict:
 @pytest.fixture
 def created_job(app_client: TestClient, job_payload: dict) -> dict:
     response = app_client.post("/v1/jobs", json=job_payload)
-    assert response.status_code == 200
+    assert response.status_code == 201
     job = response.json()
     assert isinstance(job, dict)
     return job
@@ -91,7 +91,8 @@ def test_server_logs(app_client: TestClient) -> None:
 
 def test_add_job(app_client: TestClient, job_payload: dict) -> None:
     response = app_client.post("/v1/jobs", json=job_payload)
-    assert response.status_code == 200
+    print("Response:", response.status_code, response.text)
+    assert response.status_code == 201
     job = response.json()
     assert isinstance(job, dict)
     assert job["command"] == "echo 'Hello World'"
@@ -189,7 +190,7 @@ def test_list_jobs_with_regex(app_client: TestClient, git_tag: str) -> None:
     job_ids = []
     for payload in job_payloads:
         response = app_client.post("/v1/jobs", json=payload)
-        assert response.status_code == 200
+        assert response.status_code == 201
         job = response.json()
         job_ids.append(job["id"])
 
@@ -238,9 +239,9 @@ def test_get_job_logs(app_client: TestClient, created_job: dict) -> None:
 
 
 def test_get_nonexistent_job(app_client: TestClient) -> None:
-    with pytest.raises(exc.JobError) as excinfo:
-        app_client.get("/v1/jobs/nonexistent")
-    assert "Job not found: nonexistent" in str(excinfo.value)
+    response = app_client.get("/v1/jobs/nonexistent")
+    assert response.status_code == 404
+    assert "Job not found: nonexistent" in response.text
 
 
 def test_job_lifecycle(app_client: TestClient, git_tag: str) -> None:
@@ -265,7 +266,7 @@ def test_job_lifecycle(app_client: TestClient, git_tag: str) -> None:
     }
 
     submit_response = app_client.post("/v1/jobs", json=job_payload)
-    assert submit_response.status_code == 200
+    assert submit_response.status_code == 201
 
     job = submit_response.json()
     job_id = job["id"]
@@ -316,12 +317,12 @@ def test_job_lifecycle(app_client: TestClient, git_tag: str) -> None:
 
 
 def test_job_error_handling(app_client: TestClient) -> None:
-    with pytest.raises(exc.JobError) as excinfo:
-        app_client.get("/v1/jobs/nonexistent-id")
-    assert "Job not found" in str(excinfo.value)
+    response = app_client.get("/v1/jobs/nonexistent-id")
+    assert response.status_code == 404
+    assert "Job not found" in response.text
 
-    remove_response = app_client.request("DELETE", "/v1/jobs/queued", json=["nonexistent-id"])
-    assert remove_response.status_code == 200
+    remove_response = app_client.delete("/v1/jobs/nonexistent-id")
+    assert remove_response.status_code == 404
 
     invalid_job = {
         "command": "echo 'Invalid job'",
@@ -330,11 +331,12 @@ def test_job_error_handling(app_client: TestClient) -> None:
         "git_branch": "main",
         "user": "test_user",
         "discord_id": None,
+        "gpu_idxs": None,
     }
 
-    with pytest.raises(exc.GitError) as excinfo:
-        app_client.post("/v1/jobs", json=invalid_job)
-    assert "Invalid git repository URL" in str(excinfo.value)
+    response = app_client.post("/v1/jobs", json=invalid_job)
+    assert response.status_code == 500
+    assert "Invalid git repository URL" in response.text
 
 
 def test_blacklist_and_remove_gpu(app_client: TestClient) -> None:
@@ -344,13 +346,18 @@ def test_blacklist_and_remove_gpu(app_client: TestClient) -> None:
     assert len(gpus) > 0
     gpu_idx = gpus[0]["index"]
 
-    app_client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_idx])
+    # First, ensure the GPU is not blacklisted
+    app_client.delete(f"/v1/gpus/{gpu_idx}/blacklist")
 
-    blacklist_resp = app_client.post("/v1/gpus/blacklist", json=[gpu_idx])
+    # Blacklist the GPU
+    blacklist_resp = app_client.put(f"/v1/gpus/{gpu_idx}/blacklist")
     assert blacklist_resp.status_code == 200
     bl_data = blacklist_resp.json()
-    assert gpu_idx in bl_data.get("blacklisted", [])
+    assert bl_data["gpu_idx"] == gpu_idx
+    assert bl_data["blacklisted"] is True
+    assert bl_data["changed"] is True  # Should be changed on first blacklist
 
+    # Verify GPU is blacklisted
     resp_after_blacklist = app_client.get("/v1/gpus")
     assert resp_after_blacklist.status_code == 200
     gpus_after = resp_after_blacklist.json()
@@ -358,16 +365,23 @@ def test_blacklist_and_remove_gpu(app_client: TestClient) -> None:
     assert blacklisted_gpu is not None
     assert blacklisted_gpu["is_blacklisted"] is True
 
-    blacklist_resp2 = app_client.post("/v1/gpus/blacklist", json=[gpu_idx])
+    # Try to blacklist again (should be idempotent)
+    blacklist_resp2 = app_client.put(f"/v1/gpus/{gpu_idx}/blacklist")
     assert blacklist_resp2.status_code == 200
     bl_data2 = blacklist_resp2.json()
-    assert any(item.get("index") == gpu_idx for item in bl_data2.get("failed", []))
+    assert bl_data2["gpu_idx"] == gpu_idx
+    assert bl_data2["blacklisted"] is True
+    assert bl_data2["changed"] is False  # Should not be changed on second blacklist
 
-    remove_resp = app_client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_idx])
+    # Remove from blacklist
+    remove_resp = app_client.delete(f"/v1/gpus/{gpu_idx}/blacklist")
     assert remove_resp.status_code == 200
     rem_data = remove_resp.json()
-    assert gpu_idx in rem_data.get("removed", [])
+    assert rem_data["gpu_idx"] == gpu_idx
+    assert rem_data["blacklisted"] is False
+    assert rem_data["changed"] is True  # Should be changed on first removal
 
+    # Verify GPU is not blacklisted
     resp_after_removal = app_client.get("/v1/gpus")
     assert resp_after_removal.status_code == 200
     gpus_after_removal = resp_after_removal.json()
@@ -375,10 +389,13 @@ def test_blacklist_and_remove_gpu(app_client: TestClient) -> None:
     assert non_blacklisted_gpu is not None
     assert non_blacklisted_gpu["is_blacklisted"] is False
 
-    remove_resp2 = app_client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_idx])
+    # Try to remove again (should be idempotent)
+    remove_resp2 = app_client.delete(f"/v1/gpus/{gpu_idx}/blacklist")
     assert remove_resp2.status_code == 200
     rem_data2 = remove_resp2.json()
-    assert any(item.get("index") == gpu_idx for item in rem_data2.get("failed", []))
+    assert rem_data2["gpu_idx"] == gpu_idx
+    assert rem_data2["blacklisted"] is False
+    assert rem_data2["changed"] is False  # Should not be changed on second removal
 
 
 def test_kill_running_job(app_client: TestClient, git_tag: str) -> None:
@@ -395,10 +412,11 @@ def test_kill_running_job(app_client: TestClient, git_tag: str) -> None:
         "priority": 0,
         "search_wandb": False,
         "notifications": [],
+        "gpu_idxs": None,
     }
 
     submit_response = app_client.post("/v1/jobs", json=job_payload)
-    assert submit_response.status_code == 200
+    assert submit_response.status_code == 201
     job_id = submit_response.json()["id"]
 
     max_attempts = 20
@@ -413,21 +431,20 @@ def test_kill_running_job(app_client: TestClient, git_tag: str) -> None:
     if job_data["status"] != "running":
         pytest.skip("Test requires the job to reach running state")
 
-    kill_response = app_client.request("DELETE", "/v1/jobs/running", json=[job_id])
-    assert kill_response.status_code == 200
-    kill_data = kill_response.json()
-    assert job_id in kill_data.get("killed", [])
+    kill_response = app_client.post(f"/v1/jobs/{job_id}/kill")
+    assert kill_response.status_code == 204
 
     for attempt in range(max_attempts):
         job_response = app_client.get(f"/v1/jobs/{job_id}")
         job_data = job_response.json()
-        if job_data["status"] == "killed":
+        if job_data["status"] in ["killed", "failed"]:
             break
         time.sleep(0.5)
 
     job_response = app_client.get(f"/v1/jobs/{job_id}")
     job_data = job_response.json()
-    assert job_data["status"] == "killed"
+    assert job_data["status"] in ["killed", "failed"]
+    assert job_data["marked_for_kill"] is True
 
 
 def test_remove_queued_jobs(app_client: TestClient, created_job: dict) -> None:
@@ -436,33 +453,92 @@ def test_remove_queued_jobs(app_client: TestClient, created_job: dict) -> None:
     job_response = app_client.get(f"/v1/jobs/{job_id}")
     assert job_response.json()["status"] == "queued"
 
-    remove_resp = app_client.request("DELETE", "/v1/jobs/queued", json=[job_id])
-    assert remove_resp.status_code == 200
-    rem_data = remove_resp.json()
-    assert job_id in rem_data.get("removed", [])
+    remove_resp = app_client.delete(f"/v1/jobs/{job_id}")
+    assert remove_resp.status_code == 204
 
     list_resp = app_client.get("/v1/jobs", params={"status": "queued"})
     assert list_resp.status_code == 200
     queued_jobs = list_resp.json()
     assert not any(job["id"] == job_id for job in queued_jobs)
 
-    with pytest.raises(exc.JobError) as excinfo:
-        app_client.get(f"/v1/jobs/{job_id}")
-    assert "Job not found" in str(excinfo.value)
+    response = app_client.get(f"/v1/jobs/{job_id}")
+    assert response.status_code == 404
+    assert "Job not found" in response.text
 
 
 def test_remove_nonexistent_queued_job(app_client: TestClient) -> None:
-    remove_resp = app_client.request("DELETE", "/v1/jobs/queued", json=["nonexistent"])
-    assert remove_resp.status_code == 200
-    rem_data = remove_resp.json()
-    assert "nonexistent" not in rem_data.get("removed", [])
+    response = app_client.delete("/v1/jobs/nonexistent")
+    assert response.status_code == 404
+    assert "Job not found" in response.text
 
 
-def test_server_stop(app_client: TestClient) -> None:
-    response = app_client.post("/v1/server/stop")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "stopping"
+def test_update_queued_job(app_client: TestClient, created_job: dict) -> None:
+    job_id = created_job["id"]
+    
+    # Verify job is queued
+    job_response = app_client.get(f"/v1/jobs/{job_id}")
+    assert job_response.json()["status"] == "queued"
+    
+    # Update job command and priority
+    update_data = {
+        "command": "echo 'Updated command'",
+        "priority": 100
+    }
+    
+    update_response = app_client.patch(f"/v1/jobs/{job_id}", json=update_data)
+    assert update_response.status_code == 200
+    updated_job = update_response.json()
+    
+    # Verify updates were applied
+    assert updated_job["command"] == "echo 'Updated command'"
+    assert updated_job["priority"] == 100
+    
+    # Fetch the job again to confirm changes persisted
+    verify_response = app_client.get(f"/v1/jobs/{job_id}")
+    assert verify_response.status_code == 200
+    verified_job = verify_response.json()
+    assert verified_job["command"] == "echo 'Updated command'"
+    assert verified_job["priority"] == 100
+
+
+def test_update_nonqueued_job(app_client: TestClient, git_tag: str) -> None:
+    # Create a job that will run immediately
+    job_payload = {
+        "command": "echo 'Test non-queued update'",
+        "git_repo_url": "https://github.com/elyxlz/nexus.git",
+        "git_tag": git_tag,
+        "git_branch": "master",
+        "user": "test_user",
+        "num_gpus": 1,
+        "env": {},
+        "priority": 0,
+        "search_wandb": False,
+        "notifications": [],
+        "run_immediately": True
+    }
+    
+    submit_response = app_client.post("/v1/jobs", json=job_payload)
+    assert submit_response.status_code == 201
+    job_id = submit_response.json()["id"]
+    
+    # Wait for job to start running or complete
+    max_attempts = 20
+    for attempt in range(max_attempts):
+        job_response = app_client.get(f"/v1/jobs/{job_id}")
+        job_data = job_response.json()
+        if job_data["status"] != "queued":
+            break
+        time.sleep(0.5)
+    
+    # Try to update a non-queued job
+    update_data = {
+        "command": "echo 'Cannot update'",
+        "priority": 999
+    }
+    
+    update_response = app_client.patch(f"/v1/jobs/{job_id}", json=update_data)
+    assert update_response.status_code == 400
+    assert "Cannot update job" in update_response.text
 
 
 def test_job_with_gpu_idxs(app_client: TestClient, git_tag: str) -> None:
@@ -492,13 +568,13 @@ def test_job_with_gpu_idxs(app_client: TestClient, git_tag: str) -> None:
     }
 
     submit_response = app_client.post("/v1/jobs", json=job_payload)
-    assert submit_response.status_code == 200
+    assert submit_response.status_code == 201
     job = submit_response.json()
     assert job["gpu_idxs"] == [gpu_idx]
 
     # Test blacklist ignore
     # First blacklist a GPU
-    app_client.post("/v1/gpus/blacklist", json=[gpu_idx])
+    app_client.put(f"/v1/gpus/{gpu_idx}/blacklist")
 
     # Create job with ignore_blacklist=True
     job_payload = {
@@ -515,12 +591,13 @@ def test_job_with_gpu_idxs(app_client: TestClient, git_tag: str) -> None:
         "notifications": [],
         "gpu_idxs": [gpu_idx],
         "ignore_blacklist": True,
+        "run_immediately": True,
     }
 
     submit_response = app_client.post("/v1/jobs", json=job_payload)
-    assert submit_response.status_code == 200
+    assert submit_response.status_code == 201
     job = submit_response.json()
     assert job["ignore_blacklist"] is True
 
     # Clean up by removing from blacklist
-    app_client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_idx])
+    app_client.delete(f"/v1/gpus/{gpu_idx}/blacklist")

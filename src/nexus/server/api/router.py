@@ -1,9 +1,7 @@
-import asyncio
 import dataclasses as dc
 import getpass
 import importlib.metadata
 import logging.handlers
-import os
 import pathlib as pl
 
 import fastapi as fa
@@ -54,7 +52,6 @@ async def get_status_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_
 @router.get("/v1/server/logs", response_model=models.ServerLogsResponse)
 async def get_server_logs_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
     logs: str = ""
-
     for handler in ctx.logger.handlers:
         if isinstance(handler, logging.handlers.RotatingFileHandler):
             log_path = pl.Path(handler.baseFilename)
@@ -71,30 +68,44 @@ async def get_server_logs_endpoint(ctx: context.NexusServerContext = fa.Depends(
 
 @router.get("/v1/jobs", response_model=list[schemas.Job])
 async def list_jobs_endpoint(
-    status: str | None = None,
-    gpu_idx: int | None = None,
-    command_regex: str | None = None,
+    request: models.JobListRequest = fa.Depends(),
     ctx: context.NexusServerContext = fa.Depends(_get_context),
 ):
-    jobs = db.list_jobs(ctx.logger, conn=ctx.db, status=status, command_regex=command_regex)
-    if gpu_idx is not None:
-        jobs = [j for j in jobs if gpu_idx in j.gpu_idxs]
-    ctx.logger.info(f"Found {len(jobs)} jobs matching criteria")
-    return jobs
+    jobs = db.list_jobs(ctx.logger, conn=ctx.db, status=request.status, command_regex=request.command_regex)
+    if request.gpu_index is not None:
+        jobs = [j for j in jobs if request.gpu_index in j.gpu_idxs]
+    paginated_jobs = jobs[request.offset : request.offset + request.limit]
+    ctx.logger.info(f"Found {len(paginated_jobs)} jobs matching criteria")
 
+    if request.status == "queued":
+        paginated_jobs = job.get_queue(paginated_jobs)
 
-@router.get("/v1/queue", response_model=list[schemas.Job])
-async def get_queue_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    queued_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="queued")
-    queue = job.get_queue(queued_jobs)
-    ctx.logger.info(f"Returning sorted queue with {len(queue)} jobs")
-    return queue
+    return paginated_jobs
 
 
 @db.safe_transaction
-@router.post("/v1/jobs", response_model=schemas.Job)
-async def add_job_endpoint(job_request: models.JobRequest, ctx: context.NexusServerContext = fa.Depends(_get_context)):
+@router.post("/v1/jobs", response_model=schemas.Job, status_code=201)
+async def create_job_endpoint(
+    job_request: models.JobRequest, ctx: context.NexusServerContext = fa.Depends(_get_context)
+):
     norm_url = git.normalize_git_url(job_request.git_repo_url)
+
+    priority = job_request.priority if not job_request.run_immediately else 9999
+    ignore_blacklist = job_request.run_immediately
+
+    gpu_idxs_list = job_request.gpu_idxs or []
+    if job_request.run_immediately and gpu_idxs_list:
+        running_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
+        blacklisted = db.list_blacklisted_gpus(ctx.logger, conn=ctx.db)
+        all_gpus = gpu.get_gpus(
+            ctx.logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
+        )
+        requested_gpus = [g for g in all_gpus if g.index in gpu_idxs_list]
+        if len(requested_gpus) != len(gpu_idxs_list):
+            missing = set(gpu_idxs_list) - {g.index for g in requested_gpus}
+            raise exc.GPUError(message=f"Requested GPUs not found: {missing}")
+        if any(g.running_job_id for g in requested_gpus):
+            raise exc.GPUError(message="Requested GPUs are in use")
 
     j = job.create_job(
         command=job_request.command,
@@ -103,19 +114,18 @@ async def add_job_endpoint(job_request: models.JobRequest, ctx: context.NexusSer
         git_branch=job_request.git_branch,
         user=job_request.user,
         num_gpus=job_request.num_gpus,
-        priority=job_request.priority if not job_request.run_immedietly else 9999,
+        priority=priority,
         gpu_idxs=job_request.gpu_idxs,
         env=job_request.env,
         jobrc=job_request.jobrc,
         search_wandb=job_request.search_wandb,
         notifications=job_request.notifications,
         node_name=ctx.config.node_name,
-        ignore_blacklist=job_request.run_immedietly,
+        ignore_blacklist=ignore_blacklist,
     )
 
     db.add_job(ctx.logger, conn=ctx.db, job=j)
     ctx.logger.info(format.format_job_action(j, action="added"))
-
     ctx.logger.info(f"Added new job: {j.id}")
     return j
 
@@ -123,9 +133,6 @@ async def add_job_endpoint(job_request: models.JobRequest, ctx: context.NexusSer
 @router.get("/v1/jobs/{job_id}", response_model=schemas.Job)
 async def get_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Depends(_get_context)):
     job_instance = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
-    if not job_instance:
-        ctx.logger.warning(f"Job not found: {job_id}")
-        raise exc.JobNotFoundError(message=f"Job not found: {job_id}")
     ctx.logger.info(f"Job found: {job_instance}")
     return job_instance
 
@@ -133,163 +140,115 @@ async def get_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Dep
 @router.get("/v1/jobs/{job_id}/logs", response_model=models.JobLogsResponse)
 async def get_job_logs_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Depends(_get_context)):
     _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
-    if not _job:
-        ctx.logger.warning(f"Job not found: {job_id}")
-        raise exc.JobNotFoundError(message=f"Job not found: {job_id}")
-
-    logs = await job.async_get_job_logs(ctx.logger, job_dir=_job.dir)
-    logs = logs or ""
+    logs = await job.async_get_job_logs(ctx.logger, job_dir=_job.dir) or ""
     ctx.logger.info(f"Retrieved logs for job {job_id}, size: {len(logs)} characters")
     return models.JobLogsResponse(logs=logs)
 
 
 @db.safe_transaction
-@router.delete("/v1/jobs/running", response_model=models.JobActionResponse)
-async def kill_running_jobs_endpoint(job_ids: list[str], ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    if not job_ids:
-        raise exc.JobError(message="No job IDs provided")
+@router.delete("/v1/jobs/{job_id}", status_code=204)
+async def delete_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Depends(_get_context)):
+    """Delete a job if queued. For running jobs, use the /kill endpoint."""
+    _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
 
-    killed: list[str] = []
-    failed: list[models.JobActionError] = []
+    if _job.status != "queued":
+        raise exc.InvalidJobStateError(
+            message=f"Cannot delete job {job_id} with status '{_job.status}'. Only queued jobs can be deleted."
+        )
 
-    for job_id in job_ids:
-        try:
-            _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
-            if not _job:
-                # We don't raise here to collect multiple errors
-                failed.append(models.JobActionError(id=job_id, error="Job not found"))
-                continue
-
-            if _job.status != "running":
-                error_msg = f"Job is not running (current status: {_job.status})"
-                failed.append(models.JobActionError(id=_job.id, error=error_msg))
-                continue
-
-            updated = dc.replace(_job, marked_for_kill=True)
-            db.update_job(ctx.logger, conn=ctx.db, job=updated)
-            killed.append(_job.id)
-            ctx.logger.info(f"Marked job {_job.id} for termination")
-
-        except exc.JobNotFoundError as e:
-            failed.append(models.JobActionError(id=job_id, error=e.message))
-        except exc.InvalidJobStateError as e:
-            failed.append(models.JobActionError(id=job_id, error=e.message))
-        except exc.JobError as e:
-            failed.append(models.JobActionError(id=job_id, error=e.message))
-        except Exception as e:
-            ctx.logger.error(f"Unexpected error killing job {job_id}: {e}")
-            failed.append(models.JobActionError(id=job_id, error=f"Internal error: {str(e)}"))
-
-    return models.JobActionResponse(killed=killed, failed=failed)
+    db.delete_queued_job(ctx.logger, conn=ctx.db, job_id=job_id)
+    ctx.logger.info(f"Removed queued job {job_id}")
 
 
 @db.safe_transaction
-@router.delete("/v1/jobs/queued", response_model=models.JobQueueActionResponse)
-async def remove_queued_jobs_endpoint(job_ids: list[str], ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    if not job_ids:
-        raise exc.JobError(message="No job IDs provided")
+@router.post("/v1/jobs/{job_id}/kill", status_code=204)
+async def kill_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Depends(_get_context)):
+    """Kill a running job. Cannot be used for queued jobs."""
+    _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
 
-    removed: list[str] = []
-    failed: list[models.JobQueueActionError] = []
+    if _job.status != "running":
+        raise exc.InvalidJobStateError(
+            message=f"Cannot kill job {job_id} with status '{_job.status}'. Only running jobs can be killed."
+        )
 
-    for job_id in job_ids:
-        try:
-            db.delete_queued_job(ctx.logger, conn=ctx.db, job_id=job_id)
-            removed.append(job_id)
-            ctx.logger.info(f"Removed queued job {job_id}")
-        except exc.JobNotFoundError as e:
-            failed.append(models.JobQueueActionError(id=job_id, error=e.message))
-        except exc.InvalidJobStateError as e:
-            failed.append(models.JobQueueActionError(id=job_id, error=e.message))
-        except exc.JobError as e:
-            failed.append(models.JobQueueActionError(id=job_id, error=e.message))
-        except Exception as e:
-            ctx.logger.error(f"Unexpected error removing job {job_id}: {e}")
-            failed.append(models.JobQueueActionError(id=job_id, error=f"Internal error: {str(e)}"))
-
-    return models.JobQueueActionResponse(removed=removed, failed=failed)
+    updated = dc.replace(_job, marked_for_kill=True)
+    db.update_job(ctx.logger, conn=ctx.db, job=updated)
+    ctx.logger.info(f"Marked running job {job_id} for termination")
 
 
 @db.safe_transaction
-@router.post("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
-async def blacklist_gpus_endpoint(gpu_idxs: list[int], ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    if not gpu_idxs:
-        raise exc.GPUError(message="No GPU idxs provided")
-
-    successful: list[int] = []
-    failed: list[models.GpuActionError] = []
-
-    for _gpu in gpu_idxs:
-        try:
-            added = db.add_blacklisted_gpu(ctx.logger, conn=ctx.db, gpu_idx=_gpu)
-            if added:
-                successful.append(_gpu)
-                ctx.logger.info(f"Blacklisted GPU {_gpu}")
-            else:
-                failed.append(models.GpuActionError(index=_gpu, error="GPU already blacklisted"))
-        except exc.GPUError as e:
-            failed.append(models.GpuActionError(index=_gpu, error=e.message))
-
-    return models.GpuActionResponse(blacklisted=successful, failed=failed, removed=None)
-
-
-@db.safe_transaction
-@router.delete("/v1/gpus/blacklist", response_model=models.GpuActionResponse)
-async def remove_gpu_blacklist_endpoint(
-    gpu_idxs: list[int], ctx: context.NexusServerContext = fa.Depends(_get_context)
+@router.patch("/v1/jobs/{job_id}", response_model=schemas.Job)
+async def update_job_endpoint(
+    job_id: str, 
+    job_update: models.JobUpdateRequest, 
+    ctx: context.NexusServerContext = fa.Depends(_get_context)
 ):
-    if not gpu_idxs:
-        raise exc.GPUError(message="No GPU idxs provided")
+    _job = db.get_job(ctx.logger, conn=ctx.db, job_id=job_id)
+    
+    if _job.status != "queued":
+        raise exc.InvalidJobStateError(
+            message=f"Cannot update job {job_id} with status '{_job.status}'. Only queued jobs can be updated."
+        )
+    
+    update_fields = {}
+    
+    if job_update.command is not None:
+        update_fields["command"] = job_update.command
+        
+    if job_update.priority is not None:
+        update_fields["priority"] = job_update.priority
+    
+    if not update_fields:
+        return _job
+        
+    updated = dc.replace(_job, **update_fields)
+    db.update_job(ctx.logger, conn=ctx.db, job=updated)
+    ctx.logger.info(format.format_job_action(updated, action="updated"))
+    
+    return updated
 
-    removed: list[int] = []
-    failed: list[models.GpuActionError] = []
 
-    for _gpu in gpu_idxs:
-        try:
-            removed_flag = db.remove_blacklisted_gpu(ctx.logger, conn=ctx.db, gpu_idx=_gpu)
-            if removed_flag:
-                removed.append(_gpu)
-                ctx.logger.info(f"Removed GPU {_gpu} from blacklist")
-            else:
-                failed.append(models.GpuActionError(index=_gpu, error="GPU not in blacklist"))
-        except exc.GPUError as e:
-            failed.append(models.GpuActionError(index=_gpu, error=e.message))
-        except Exception as e:
-            ctx.logger.error(f"Unexpected error removing GPU {_gpu} from blacklist: {e}")
-            failed.append(models.GpuActionError(index=_gpu, error=f"Internal error: {str(e)}"))
+@db.safe_transaction
+@router.put("/v1/gpus/{gpu_idx}/blacklist", response_model=models.GpuStatusResponse)
+async def blacklist_gpu_endpoint(gpu_idx: int, ctx: context.NexusServerContext = fa.Depends(_get_context)):
+    changed = db.add_blacklisted_gpu(ctx.logger, conn=ctx.db, gpu_idx=gpu_idx)
+    if changed:
+        ctx.logger.info(f"Blacklisted GPU {gpu_idx}")
+    else:
+        ctx.logger.info(f"GPU {gpu_idx} already blacklisted")
+    return models.GpuStatusResponse(gpu_idx=gpu_idx, blacklisted=True, changed=changed)
 
-    return models.GpuActionResponse(removed=removed, failed=failed, blacklisted=None)
+
+@db.safe_transaction
+@router.delete("/v1/gpus/{gpu_idx}/blacklist", response_model=models.GpuStatusResponse)
+async def remove_gpu_blacklist_endpoint(gpu_idx: int, ctx: context.NexusServerContext = fa.Depends(_get_context)):
+    changed = db.remove_blacklisted_gpu(ctx.logger, conn=ctx.db, gpu_idx=gpu_idx)
+    if changed:
+        ctx.logger.info(f"Removed GPU {gpu_idx} from blacklist")
+    else:
+        ctx.logger.info(f"GPU {gpu_idx} already not blacklisted")
+    return models.GpuStatusResponse(gpu_idx=gpu_idx, blacklisted=False, changed=changed)
 
 
 @router.get("/v1/gpus", response_model=list[gpu.GpuInfo])
 async def list_gpus_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
     running_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
     blacklisted = db.list_blacklisted_gpus(ctx.logger, conn=ctx.db)
-
     gpus = gpu.get_gpus(
         ctx.logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
     )
-
     ctx.logger.info(f"Found {len(gpus)} GPUs")
     return gpus
 
 
-@router.post("/v1/server/stop", response_model=models.ServerActionResponse)
-async def stop_server_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    async def shutdown_server():
-        await asyncio.sleep(1)
-        os._exit(0)
-
-    ctx.logger.info("Server shutdown initiated by API request")
-    asyncio.create_task(shutdown_server())
-    return models.ServerActionResponse(status="stopping")
-
-
 @router.get("/v1/health", response_model=models.HealthResponse)
-async def health_check_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    health_result = system.check_health()
+async def health_check_endpoint(detailed: bool = False, ctx: context.NexusServerContext = fa.Depends(_get_context)):
+    if not detailed:
+        return models.HealthResponse()
 
+    health_result = system.check_health()
     return models.HealthResponse(
+        alive=True,
         status=health_result.status,
         score=health_result.score,
         disk=models.DiskStatsResponse(
@@ -310,9 +269,3 @@ async def health_check_endpoint(ctx: context.NexusServerContext = fa.Depends(_ge
             load_avg=health_result.system.load_avg,
         ),
     )
-
-
-@router.get("/v1/heartbeat", response_model=models.HeartbeatResponse)
-async def heartbeat_endpoint() -> models.HeartbeatResponse:
-    """Simple heartbeat endpoint that responds with {alive: true} when server is running."""
-    return models.HeartbeatResponse()

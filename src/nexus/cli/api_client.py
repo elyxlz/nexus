@@ -70,7 +70,7 @@ def get_api_base_url() -> str:
 def check_api_connection() -> bool:
     cfg = config.load_config()
     try:
-        response = requests.get(f"http://{cfg.host}:{cfg.port}/v1/heartbeat", timeout=2)
+        response = requests.get(f"http://{cfg.host}:{cfg.port}/v1/health", timeout=2)
         return response.status_code == 200
     except requests.RequestException:
         return False
@@ -91,9 +91,12 @@ def get_jobs(status: str | None = None) -> list[dict]:
     return response.json()
 
 
+# We'll now use get_jobs("queued") instead of a separate get_queue function
+
+
 @handle_api_errors
-def get_queue() -> list[dict]:
-    response = requests.get(f"{get_api_base_url()}/queue")
+def get_job(job_id: str) -> dict:
+    response = requests.get(f"{get_api_base_url()}/jobs/{job_id}")
     response.raise_for_status()
     return response.json()
 
@@ -112,9 +115,16 @@ def get_server_status() -> dict:
     return response.json()
 
 
+@handle_api_errors
+def get_detailed_health() -> dict:
+    response = requests.get(f"{get_api_base_url()}/health", params={"detailed": True})
+    response.raise_for_status()
+    return response.json()
+
+
 def check_heartbeat() -> bool:
     try:
-        response = requests.get(f"{get_api_base_url()}/heartbeat", timeout=1)
+        response = requests.get(f"{get_api_base_url()}/health", timeout=1)
         return response.status_code == 200
     except requests.RequestException:
         return False
@@ -129,24 +139,71 @@ def add_job(job_request: dict) -> dict:
 
 @handle_api_errors
 def kill_running_jobs(job_ids: list[str]) -> dict:
-    response = requests.delete(f"{get_api_base_url()}/jobs/running", json=job_ids)
-    response.raise_for_status()
-    return response.json()
+    # In the new API, we need to make individual kill requests per job
+    results = {"killed": [], "failed": []}
+    
+    for job_id in job_ids:
+        try:
+            response = requests.post(f"{get_api_base_url()}/jobs/{job_id}/kill")
+            if response.status_code == 204:
+                results["killed"].append(job_id)
+            else:
+                response.raise_for_status()  # Will raise an exception for other errors
+        except Exception as e:
+            results["failed"].append({"id": job_id, "error": str(e)})
+    
+    return results
 
 
 @handle_api_errors
 def remove_queued_jobs(job_ids: list[str]) -> dict:
-    response = requests.delete(f"{get_api_base_url()}/jobs/queued", json=job_ids)
+    # In the new API, we need to make individual delete requests per job
+    results = {"removed": [], "failed": []}
+    
+    for job_id in job_ids:
+        try:
+            response = requests.delete(f"{get_api_base_url()}/jobs/{job_id}")
+            if response.status_code == 204:
+                results["removed"].append(job_id)
+            else:
+                response.raise_for_status()  # Will raise an exception for other errors
+        except Exception as e:
+            results["failed"].append({"id": job_id, "error": str(e)})
+    
+    return results
+
+
+@handle_api_errors
+def update_job(job_id: str, command: str | None = None, priority: int | None = None) -> dict:
+    update_data = {}
+    if command is not None:
+        update_data["command"] = command
+    if priority is not None:
+        update_data["priority"] = priority
+        
+    response = requests.patch(f"{get_api_base_url()}/jobs/{job_id}", json=update_data)
     response.raise_for_status()
     return response.json()
 
 
 @handle_api_errors
 def manage_blacklist(gpu_indices: list[int], action: tp.Literal["add", "remove"]) -> dict:
-    if action == "add":
-        response = requests.post(f"{get_api_base_url()}/gpus/blacklist", json=gpu_indices)
-    else:
-        response = requests.delete(f"{get_api_base_url()}/gpus/blacklist", json=gpu_indices)
-
-    response.raise_for_status()
-    return response.json()
+    # In the new API, we need to make individual blacklist requests per GPU
+    results = {"blacklisted": [], "removed": [], "failed": []}
+    
+    for gpu_idx in gpu_indices:
+        try:
+            if action == "add":
+                response = requests.put(f"{get_api_base_url()}/gpus/{gpu_idx}/blacklist")
+                if response.ok:
+                    results["blacklisted"].append(gpu_idx)
+            else:
+                response = requests.delete(f"{get_api_base_url()}/gpus/{gpu_idx}/blacklist")
+                if response.ok:
+                    results["removed"].append(gpu_idx)
+                    
+            response.raise_for_status()
+        except Exception as e:
+            results["failed"].append({"index": gpu_idx, "error": str(e)})
+    
+    return results

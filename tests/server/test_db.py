@@ -29,11 +29,10 @@ def test_add_and_get_job(tmp_path: pl.Path, mock_logger: NexusServerLogger):
     conn = create_connection(mock_logger, db_path=str(db_path))
 
     job = create_job(
-        "echo 'Hello World'",
+        command="echo 'Hello World'",
         git_repo_url="https://github.com/elyxlz/nexus",
         git_tag="main",
         git_branch="blah",
-        status="queued",
         user="testuser",
         num_gpus=1,
         node_name="xx",
@@ -57,12 +56,11 @@ def test_update_job(tmp_path: pl.Path, mock_logger: NexusServerLogger):
     conn = create_connection(mock_logger, db_path=str(db_path))
 
     job = create_job(
-        "echo 'Initial Command'",
+        command="echo 'Initial Command'",
         git_repo_url="https://github.com/elyxlz/nexus",
         git_tag="main",
         git_branch="blah",
         user="testuser",
-        status="queued",
         node_name="xx",
         num_gpus=1,
         env={},
@@ -89,10 +87,9 @@ def test_list_and_delete_jobs(tmp_path: pl.Path, mock_logger: NexusServerLogger)
     conn = create_connection(mock_logger, db_path=str(db_path))
 
     job1 = create_job(
-        "echo 'Job1'",
+        command="echo 'Job1'",
         git_repo_url="https://github.com/elyxlz/nexus",
         git_tag="main",
-        status="queued",
         git_branch="test",
         user="user1",
         node_name="test",
@@ -104,12 +101,11 @@ def test_list_and_delete_jobs(tmp_path: pl.Path, mock_logger: NexusServerLogger)
         notifications=[],
     )
     job2 = create_job(
-        "echo 'Job2'",
+        command="echo 'Job2'",
         git_repo_url="https://github.com/elyxlz/nexus",
         git_tag="main",
         git_branch="test",
         user="user1",
-        status="queued",
         node_name="test",
         num_gpus=1,
         env={},
@@ -132,14 +128,13 @@ def test_list_and_delete_jobs(tmp_path: pl.Path, mock_logger: NexusServerLogger)
     assert any(j.id == job2.id for j in running_jobs)
     assert completed_jobs == []
 
-    success = delete_queued_job(mock_logger, conn=conn, job_id=job1.id)
-    assert success is True
+    delete_queued_job(mock_logger, conn=conn, job_id=job1.id)
     conn.commit()
 
-    retrieved = get_job(mock_logger, conn=conn, job_id=job1.id)
-    assert retrieved is None
+    with pytest.raises(exc.JobNotFoundError):
+        get_job(mock_logger, conn=conn, job_id=job1.id)
 
-    with pytest.raises(exc.JobError):
+    with pytest.raises(exc.InvalidJobStateError):
         delete_queued_job(mock_logger, conn=conn, job_id=job2.id)
     conn.close()
 

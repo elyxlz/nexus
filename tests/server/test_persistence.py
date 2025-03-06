@@ -83,7 +83,7 @@ def test_api_with_persistent_database(
 
     # Submit a job
     submit_response = client.post("/v1/jobs", json=job_payload)
-    assert submit_response.status_code == 200
+    assert submit_response.status_code == 201
     job_data = submit_response.json()
     job_id = job_data["id"]
 
@@ -98,7 +98,7 @@ def test_api_with_persistent_database(
     job_payload2 = dict(job_payload)
     job_payload2["command"] = "echo 'Second job'"
     submit_response2 = client.post("/v1/jobs", json=job_payload2)
-    assert submit_response2.status_code == 200
+    assert submit_response2.status_code == 201
     job_id2 = submit_response2.json()["id"]
 
     # Check both jobs exist
@@ -107,8 +107,7 @@ def test_api_with_persistent_database(
     assert any(j["id"] == job_id for j in jobs)
     assert any(j["id"] == job_id2 for j in jobs)
 
-    # Clean up by shutting down server
-    client.post("/v1/server/stop")
+    # No need to stop server
 
 
 def test_gpu_blacklisting(create_test_client: Callable[[], TestClient], db_path: str) -> None:
@@ -124,10 +123,11 @@ def test_gpu_blacklisting(create_test_client: Callable[[], TestClient], db_path:
     gpu_idx = gpus[0]["index"]
 
     # Blacklist a GPU
-    blacklist_response = client.post("/v1/gpus/blacklist", json=[gpu_idx])
+    blacklist_response = client.put(f"/v1/gpus/{gpu_idx}/blacklist")
     assert blacklist_response.status_code == 200
     blacklist_data = blacklist_response.json()
-    assert gpu_idx in blacklist_data.get("blacklisted", [])
+    assert blacklist_data["gpu_idx"] == gpu_idx
+    assert blacklist_data["blacklisted"] is True
 
     # Verify GPU is now blacklisted
     gpus_after = client.get("/v1/gpus").json()
@@ -136,10 +136,11 @@ def test_gpu_blacklisting(create_test_client: Callable[[], TestClient], db_path:
     assert blacklisted_gpu["is_blacklisted"] is True
 
     # Remove from blacklist
-    remove_response = client.request("DELETE", "/v1/gpus/blacklist", json=[gpu_idx])
+    remove_response = client.delete(f"/v1/gpus/{gpu_idx}/blacklist")
     assert remove_response.status_code == 200
     remove_data = remove_response.json()
-    assert gpu_idx in remove_data.get("removed", [])
+    assert remove_data["gpu_idx"] == gpu_idx
+    assert remove_data["blacklisted"] is False
 
     # Verify GPU is no longer blacklisted
     gpus_after_removal = client.get("/v1/gpus").json()
@@ -147,8 +148,7 @@ def test_gpu_blacklisting(create_test_client: Callable[[], TestClient], db_path:
     assert non_blacklisted_gpu is not None
     assert non_blacklisted_gpu["is_blacklisted"] is False
 
-    # Clean up
-    client.post("/v1/server/stop")
+    # No need to stop server
 
 
 def test_job_lifecycle(create_test_client: Callable[[], TestClient], job_payload: dict, db_path: str) -> None:
@@ -158,7 +158,7 @@ def test_job_lifecycle(create_test_client: Callable[[], TestClient], job_payload
 
     # Submit a job
     submit_response = client.post("/v1/jobs", json=job_payload)
-    assert submit_response.status_code == 200
+    assert submit_response.status_code == 201
     job_id = submit_response.json()["id"]
 
     # Check job status - should be queued
@@ -173,14 +173,11 @@ def test_job_lifecycle(create_test_client: Callable[[], TestClient], job_payload
     assert not any(j["id"] == job_id for j in running_jobs)
 
     # Try to delete the job
-    response = client.request("DELETE", "/v1/jobs/queued", json=[job_id])
-    assert response.status_code == 200
-    deleted = response.json()
-    assert job_id in deleted.get("removed", [])
+    response = client.delete(f"/v1/jobs/{job_id}")
+    assert response.status_code == 204
 
     # Verify job is gone
-    with pytest.raises(exc.JobError):
-        client.get(f"/v1/jobs/{job_id}")
+    job_response = client.get(f"/v1/jobs/{job_id}")
+    assert job_response.status_code == 404
 
-    # Clean up
-    client.post("/v1/server/stop")
+    # No need to stop server

@@ -5,18 +5,15 @@ from nexus.server.core import schemas
 
 __all__ = [
     "JobRequest",
+    "JobUpdateRequest",
+    "JobListRequest",
     "ServerLogsResponse",
-    "ServerActionResponse",
     "JobLogsResponse",
-    "JobActionError",
-    "JobActionResponse",
-    "JobQueueActionError",
-    "JobQueueActionResponse",
-    "GpuActionError",
     "GpuActionResponse",
+    "GpuStatusResponse",
     "ServerStatusResponse",
+    "ServerActionResponse",
     "HealthResponse",
-    "HeartbeatResponse",
 ]
 
 REQUIRED_ENV_VARS = {
@@ -37,13 +34,13 @@ class JobRequest(FrozenBaseModel):
     git_tag: str
     git_branch: str
     num_gpus: int = 1
-    gpu_idxs: list[int] = []
+    gpu_idxs: list[int] | None = None
     priority: int = 0
     search_wandb: bool = False
     notifications: list[schemas.NotificationType] = []
     env: dict[str, str] = {}
     jobrc: str | None = None
-    run_immedietly: bool
+    run_immediately: bool = False
 
     @pyd.model_validator(mode="after")
     def check_requirements(self) -> tpe.Self:
@@ -66,32 +63,8 @@ class ServerLogsResponse(FrozenBaseModel):
     logs: str
 
 
-class ServerActionResponse(FrozenBaseModel):
-    status: str
-
-
 class JobLogsResponse(FrozenBaseModel):
     logs: str
-
-
-class JobActionError(FrozenBaseModel):
-    id: str
-    error: str
-
-
-class JobActionResponse(FrozenBaseModel):
-    killed: list[str]
-    failed: list[JobActionError]
-
-
-class JobQueueActionError(FrozenBaseModel):
-    id: str
-    error: str
-
-
-class JobQueueActionResponse(FrozenBaseModel):
-    removed: list[str]
-    failed: list[JobQueueActionError]
 
 
 class GpuActionError(FrozenBaseModel):
@@ -103,6 +76,12 @@ class GpuActionResponse(FrozenBaseModel):
     blacklisted: list[int] | None = None
     removed: list[int] | None = None
     failed: list[GpuActionError]
+
+
+class GpuStatusResponse(FrozenBaseModel):
+    gpu_idx: int
+    blacklisted: bool
+    changed: bool
 
 
 class ServerStatusResponse(FrozenBaseModel):
@@ -135,12 +114,26 @@ class SystemStatsResponse(FrozenBaseModel):
 
 
 class HealthResponse(FrozenBaseModel):
-    status: str
-    score: float
-    disk: DiskStatsResponse
-    network: NetworkStatsResponse
-    system: SystemStatsResponse
-
-
-class HeartbeatResponse(FrozenBaseModel):
     alive: bool = True
+    status: str | None = None
+    score: float | None = None
+    disk: DiskStatsResponse | None = None
+    network: NetworkStatsResponse | None = None
+    system: SystemStatsResponse | None = None
+
+
+class ServerActionResponse(FrozenBaseModel):
+    status: str
+
+
+class JobUpdateRequest(FrozenBaseModel):
+    command: str | None = None
+    priority: int | None = None
+
+
+class JobListRequest(FrozenBaseModel):
+    status: schemas.JobStatus | None = None
+    gpu_index: int | None = None
+    command_regex: str | None = None
+    limit: int = 100
+    offset: int = 0

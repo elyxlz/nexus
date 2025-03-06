@@ -107,13 +107,13 @@ def _validate_job_id(job_id: str) -> None:
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job")
-def _query_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job | None:
+def _query_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job:
     cur = conn.cursor()
     cur.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
     row = cur.fetchone()
-    if row:
-        return _row_to_job(_logger, row=row)
-    return None
+    if not row:
+        raise exc.JobNotFoundError(message=f"Job not found: {job_id}")
+    return _row_to_job(_logger, row=row)
 
 
 def _validate_job_status(status: str | None) -> None:
@@ -169,10 +169,9 @@ def _verify_job_is_queued(job_id: str, status: str) -> None:
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to delete job")
-def _delete_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> bool:
+def _delete_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> None:
     cur = conn.cursor()
     cur.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
-    return True
 
 
 def _validate_gpu_idx(gpu_idx: int) -> None:
@@ -182,6 +181,7 @@ def _validate_gpu_idx(gpu_idx: int) -> None:
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to blacklist GPU")
 def _add_gpu_to_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_idx: int) -> bool:
+    """Add GPU to blacklist. Returns True if added, False if already blacklisted."""
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
     if cur.fetchone():
@@ -192,6 +192,7 @@ def _add_gpu_to_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.Conne
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to remove GPU from blacklist")
 def _remove_gpu_from_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_idx: int) -> bool:
+    """Remove GPU from blacklist. Returns True if removed, False if not blacklisted."""
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
     if not cur.fetchone():
@@ -334,7 +335,7 @@ def update_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job:
         raise exc.JobNotFoundError(message="Job not found")
 
 
-def get_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job | None:
+def get_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job:
     _validate_job_id(job_id)
     return _query_job(_logger, conn=conn, job_id=job_id)
 
@@ -349,7 +350,7 @@ def list_jobs(
     return _query_jobs(_logger, conn=conn, status=status, command_regex=command_regex)
 
 
-def delete_queued_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> bool:
+def delete_queued_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> None:
     _validate_job_id(job_id)
     status = _check_job_status(_logger, conn=conn, job_id=job_id)
     _verify_job_is_queued(job_id, status)

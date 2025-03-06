@@ -8,11 +8,104 @@ from nexus.cli import api_client, config, setup, utils
 from nexus.cli.config import NotificationType
 
 
+def run_job(
+    command: str,
+    gpu_idxs_str: str | None = None,
+    num_gpus: int | None = None,
+    bypass_confirm: bool = False,
+) -> None:
+    """Run a job immediately on the server"""
+    try:
+        print(f"\n{colored('Running job immediately:', 'blue', attrs=['bold'])}")
+        
+        # Parse GPU indices if provided
+        gpu_idxs = None
+        gpu_info = ""
+        
+        if gpu_idxs_str:
+            # If specific GPU indices are provided, use those
+            gpu_idxs = utils.parse_gpu_list(gpu_idxs_str)
+            gpu_info = f" on GPU(s): {colored(','.join(map(str, gpu_idxs)), 'cyan')}"
+        elif num_gpus:
+            # If number of GPUs is specified, note that in the message
+            gpu_info = f" using {colored(str(num_gpus), 'cyan')} GPU(s)"
+            
+        print(f"  {colored('•', 'blue')} {command}{gpu_info}")
+
+        if not utils.confirm_action(
+            f"Run this job immediately?",
+            bypass=bypass_confirm,
+        ):
+            print(colored("Operation cancelled.", "yellow"))
+            return
+
+        # Prepare shared info
+        cli_config = config.load_config()
+        user = cli_config.user or "anonymous"
+
+        # Set up notifications
+        notifications = list(cli_config.default_notifications)
+
+        # Generate a short random tag
+        git_tag_id = utils.generate_git_tag_id()
+        # Determine the current branch
+        branch_name = utils.get_current_git_branch()
+
+        # Attempt to create/push a git tag
+        tag_name = f"nexus-{git_tag_id}"
+        try:
+            subprocess.run(["git", "tag", tag_name], check=True)
+            # Mute push output
+            subprocess.run(["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL)
+        except subprocess.CalledProcessError as e:
+            # Roll back the tag if push fails
+            subprocess.run(["git", "tag", "-d", tag_name], check=False)
+            raise RuntimeError(f"Failed to create/push git tag: {e}")
+
+        # Derive remote URL
+        result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
+        git_repo_url = result.stdout.strip() or "unknown-url"
+
+        # Load environment variables
+        env_vars = setup.load_current_env()
+
+        # Determine number of GPUs needed
+        gpus_count = len(gpu_idxs) if gpu_idxs else (num_gpus if num_gpus else 1)
+
+        # Build the request payload with run_immediately=True
+        job_request = {
+            "command": command,
+            "user": user,
+            "git_repo_url": git_repo_url,
+            "git_tag": tag_name,
+            "git_branch": branch_name,
+            "num_gpus": gpus_count,
+            "priority": 0,  # Default priority
+            "search_wandb": cli_config.search_wandb,
+            "notifications": notifications,
+            "env": env_vars,
+            "jobrc": None,
+            "gpu_idxs": gpu_idxs,
+            "run_immediately": True,  # Key difference from add_jobs
+        }
+
+        result = api_client.add_job(job_request)
+
+        print(colored("\nJob started:", "green", attrs=["bold"]))
+        print(f"  {colored('•', 'green')} Job {colored(result['id'], 'magenta')}: {result['command']}")
+        print(f"  Run 'nx logs {result['id']}' to follow the job output")
+
+    except Exception as e:
+        print(colored(f"\nError: {e}", "red"))
+        sys.exit(1)
+
+
 def add_jobs(
     commands: list[str],
     repeat: int,
     user: str | None,
     priority: int = 0,
+    num_gpus: int = 1,
     notification_types: list[NotificationType] | None = None,
     bypass_confirm: bool = False,
 ) -> None:
@@ -26,7 +119,8 @@ def add_jobs(
         print(f"\n{colored('Adding the following jobs:', 'blue', attrs=['bold'])}")
         for cmd in expanded_commands:
             priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
-            print(f"  {colored('•', 'blue')} {cmd}{priority_str}")
+            gpus_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})" if num_gpus > 1 else ""
+            print(f"  {colored('•', 'blue')} {cmd}{priority_str}{gpus_str}")
 
         if not utils.confirm_action(
             f"Add {colored(str(len(expanded_commands)), 'cyan')} jobs to the queue?",
@@ -98,15 +192,15 @@ def add_jobs(
                 "user": final_user,
                 "git_repo_url": git_repo_url,
                 "git_tag": tag_name,
-                "git_branch": branch_name,  # new field required by new API
-                "num_gpus": 1,
+                "git_branch": branch_name,
+                "num_gpus": num_gpus,
                 "priority": priority,
                 "search_wandb": cli_config.search_wandb,
                 "notifications": notifications,
                 "env": env_vars,
                 "jobrc": None,
                 "gpu_idxs": None,
-                "ignore_blacklist": False,
+                "run_immediately": False,  # New parameter in the API
             }
 
             result = api_client.add_job(job_request)
@@ -116,7 +210,8 @@ def add_jobs(
         print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
         for job in created_jobs:
             priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
-            print(f"  {colored('•', 'green')} Job {colored(job['id'], 'magenta')}: {job['command']}{priority_str}")
+            gpus_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})" if num_gpus > 1 else ""
+            print(f"  {colored('•', 'green')} Job {colored(job['id'], 'magenta')}: {job['command']}{priority_str}{gpus_str}")
 
     except Exception as e:
         print(colored(f"\nError: {e}", "red"))
@@ -125,7 +220,8 @@ def add_jobs(
 
 def show_queue() -> None:
     try:
-        jobs = api_client.get_queue()
+        # Use get_jobs with "queued" status instead of get_queue
+        jobs = api_client.get_jobs("queued")
 
         if not jobs:
             print(colored("No pending jobs.", "green"))
@@ -457,6 +553,123 @@ def view_logs(target: str) -> None:
         print(colored(f"Error fetching logs: {e}", "red"))
 
 
+def show_health() -> None:
+    try:
+        health = api_client.get_detailed_health()
+        
+        print(colored("Node Health Status:", "blue", attrs=["bold"]))
+        status = health.get("status", "unknown")
+        status_color = "green" if status == "healthy" else "yellow" if status == "degraded" else "red"
+        print(f"  {colored('•', 'blue')} Status: {colored(status, status_color)}")
+        
+        if health.get("score") is not None:
+            score = health.get("score", 0)
+            score_color = "green" if score > 0.8 else "yellow" if score > 0.5 else "red"
+            print(f"  {colored('•', 'blue')} Health Score: {colored(f'{score:.2f}', score_color)}")
+        
+        # System stats
+        if health.get("system"):
+            system = health["system"]
+            print(colored("\nSystem Statistics:", "blue", attrs=["bold"]))
+            
+            cpu_percent = system.get("cpu_percent", 0)
+            cpu_color = "green" if cpu_percent < 70 else "yellow" if cpu_percent < 90 else "red"
+            print(f"  {colored('•', 'blue')} CPU Usage: {colored(f'{cpu_percent:.1f}%', cpu_color)}")
+            
+            memory_percent = system.get("memory_percent", 0)
+            memory_color = "green" if memory_percent < 70 else "yellow" if memory_percent < 90 else "red"
+            print(f"  {colored('•', 'blue')} Memory Usage: {colored(f'{memory_percent:.1f}%', memory_color)}")
+            
+            uptime = system.get("uptime", 0)
+            days = uptime // (24 * 3600)
+            hours = (uptime % (24 * 3600)) // 3600
+            minutes = (uptime % 3600) // 60
+            uptime_str = f"{days}d {hours}h {minutes}m"
+            print(f"  {colored('•', 'blue')} System Uptime: {colored(uptime_str, 'cyan')}")
+            
+            if system.get("load_avg"):
+                load_avg = system["load_avg"]
+                load_str = ', '.join([f"{x:.2f}" for x in load_avg])
+                print(f"  {colored('•', 'blue')} Load Average: {colored(load_str, 'cyan')}")
+        
+        # Disk stats
+        if health.get("disk"):
+            disk = health["disk"]
+            print(colored("\nDisk Statistics:", "blue", attrs=["bold"]))
+            
+            # Convert to GB for better readability
+            total_gb = disk.get("total", 0) / (1024**3)
+            used_gb = disk.get("used", 0) / (1024**3)
+            free_gb = disk.get("free", 0) / (1024**3)
+            percent_used = disk.get("percent_used", 0)
+            
+            disk_color = "green" if percent_used < 70 else "yellow" if percent_used < 90 else "red"
+            print(f"  {colored('•', 'blue')} Disk Usage: {colored(f'{percent_used:.1f}%', disk_color)} " 
+                  f"({colored(f'{used_gb:.1f}GB', 'cyan')} / {colored(f'{total_gb:.1f}GB', 'cyan')})")
+            print(f"  {colored('•', 'blue')} Free Space: {colored(f'{free_gb:.1f}GB', 'cyan')}")
+        
+        # Network stats
+        if health.get("network"):
+            network = health["network"]
+            print(colored("\nNetwork Statistics:", "blue", attrs=["bold"]))
+            
+            download_speed = network.get("download_speed", 0)
+            download_mb = download_speed / (1024**2)
+            print(f"  {colored('•', 'blue')} Download Speed: {colored(f'{download_mb:.2f} MB/s', 'cyan')}")
+            
+            upload_speed = network.get("upload_speed", 0)
+            upload_mb = upload_speed / (1024**2)
+            print(f"  {colored('•', 'blue')} Upload Speed: {colored(f'{upload_mb:.2f} MB/s', 'cyan')}")
+            
+            ping = network.get("ping", 0)
+            ping_color = "green" if ping < 50 else "yellow" if ping < 100 else "red"
+            print(f"  {colored('•', 'blue')} Ping: {colored(f'{ping:.1f} ms', ping_color)}")
+            
+    except Exception as e:
+        print(colored(f"Error fetching health information: {e}", "red"))
+
+
+def update_job_command(job_id: str, command: str | None = None, priority: int | None = None, bypass_confirm: bool = False) -> None:
+    try:
+        # Fetch the job first to show before/after
+        job = api_client.get_job(job_id)
+        
+        if not job:
+            print(colored(f"Job {job_id} not found", "red"))
+            return
+            
+        # Only queued jobs can be updated
+        if job["status"] != "queued":
+            print(colored(f"Only queued jobs can be updated. Job {job_id} has status: {job['status']}", "red"))
+            return
+            
+        print(f"\n{colored('Current job details:', 'blue', attrs=['bold'])}")
+        print(f"  {colored('•', 'blue')} ID: {colored(job_id, 'magenta')}")
+        print(f"  {colored('•', 'blue')} Command: {colored(job['command'], 'white')}")
+        print(f"  {colored('•', 'blue')} Priority: {colored(str(job['priority']), 'cyan')}")
+        
+        # Show what will be updated
+        print(f"\n{colored('Will update to:', 'blue', attrs=['bold'])}")
+        print(f"  {colored('•', 'blue')} Command: {colored(command if command is not None else 'unchanged', 'white')}")
+        print(f"  {colored('•', 'blue')} Priority: {colored(str(priority) if priority is not None else 'unchanged', 'cyan')}")
+        
+        if not utils.confirm_action("Update this job?", bypass=bypass_confirm):
+            print(colored("Operation cancelled.", "yellow"))
+            return
+            
+        # Make the API call to update the job
+        result = api_client.update_job(job_id, command, priority)
+        
+        print(colored("\nJob updated successfully:", "green", attrs=["bold"]))
+        print(f"  {colored('•', 'green')} ID: {colored(result['id'], 'magenta')}")
+        print(f"  {colored('•', 'green')} Command: {colored(result['command'], 'white')}")
+        print(f"  {colored('•', 'green')} Priority: {colored(str(result['priority']), 'cyan')}")
+        
+    except Exception as e:
+        print(colored(f"\nError updating job: {e}", "red"))
+        sys.exit(1)
+
+
 def handle_blacklist(args) -> None:
     try:
         gpu_idxs = utils.parse_gpu_list(args.gpus)
@@ -531,18 +744,16 @@ def print_status() -> None:
 
             if gpu.get("running_job_id"):
                 job_id = gpu["running_job_id"]
-                import requests
-
-                jr = requests.get(f"{api_client.get_api_base_url()}/jobs/{job_id}")
-                jr.raise_for_status()
-                job = jr.json()
-
+                
+                # Get specific job details directly with the new function
+                job = api_client.get_job(job_id)
+                
                 runtime = utils.calculate_runtime(job)
                 runtime_str = utils.format_runtime(runtime)
                 start_time = utils.format_timestamp(job.get("started_at"))
 
                 print(f"{gpu_info}{colored(job_id, 'magenta')}")
-                print(f"  Command: {colored(job.get('command', 'white'), 'white', attrs=['bold'])}")
+                print(f"  Command: {colored(job.get('command', ''), 'white', attrs=['bold'])}")
                 print(f"  Time: {colored(runtime_str, 'cyan')} (Started: {colored(start_time, 'cyan')})")
                 if job.get("wandb_url"):
                     print(f"  W&B: {colored(job['wandb_url'], 'yellow')}")

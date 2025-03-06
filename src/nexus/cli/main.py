@@ -50,6 +50,13 @@ def create_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("help", help="Show help information")
     subparsers.add_parser("queue", help="Show pending jobs (queued)")
+    
+    # Run command for immediate execution
+    run_parser = subparsers.add_parser("run", help="Run a job immediately")
+    run_parser.add_argument("command", help='Command to run, e.g., "python train.py"')
+    run_parser.add_argument("-i", "--gpu-idxs", dest="gpu_idxs", help="Specific GPU indices to run on (e.g., '0' or '0,1' for multi-GPU)")
+    run_parser.add_argument("-g", "--gpus", type=int, help="Number of GPUs to use (ignored if --gpu-idxs is specified)")
+    run_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     # Config command with subcommands
     config_parser = subparsers.add_parser("config", help="Display or edit configuration")
@@ -72,6 +79,7 @@ def create_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("-p", "--priority", type=int, default=0, help="Set job priority (higher values run first)")
     add_parser.add_argument("-u", "--user", help="Override default username")
     add_parser.add_argument("-n", "--notify", nargs="+", help="Additional notification types for this job")
+    add_parser.add_argument("-g", "--gpus", type=int, default=1, help="Number of GPUs to use for the job")
     add_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     kill_parser = subparsers.add_parser("kill", help="Kill running job(s) by GPU index, job ID, or regex")
@@ -98,6 +106,16 @@ def create_parser() -> argparse.ArgumentParser:
 
     logs_parser = subparsers.add_parser("logs", help="View logs for job")
     logs_parser.add_argument("id", help="Job ID or GPU index")
+    
+    # Add health command
+    subparsers.add_parser("health", help="Show detailed node health information")
+    
+    # Add update command
+    update_parser = subparsers.add_parser("update", help="Update a queued job's command or priority")
+    update_parser.add_argument("job_id", help="Job ID to update")
+    update_parser.add_argument("-c", "--command", help="New command to run")
+    update_parser.add_argument("-p", "--priority", type=int, help="New priority value")
+    update_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     return parser
 
@@ -140,7 +158,14 @@ def main() -> None:
             repeat=args.repeat,
             user=args.user,
             priority=args.priority,
+            num_gpus=args.gpus,
             notification_types=args.notify,
+            bypass_confirm=args.yes,
+        ),
+        "run": lambda: jobs.run_job(
+            args.command,
+            gpu_idxs_str=args.gpu_idxs,
+            num_gpus=args.gpus,
             bypass_confirm=args.yes,
         ),
         "queue": lambda: jobs.show_queue(),
@@ -149,6 +174,13 @@ def main() -> None:
         "remove": lambda: jobs.remove_jobs(args.job_ids, bypass_confirm=args.yes),
         "blacklist": lambda: jobs.handle_blacklist(args),
         "logs": lambda: jobs.view_logs(args.id),
+        "health": lambda: jobs.show_health(),
+        "update": lambda: jobs.update_job_command(
+            args.job_id,
+            command=args.command,
+            priority=args.priority,
+            bypass_confirm=args.yes,
+        ),
     }
     handler = command_handlers.get(args.command, parser.print_help)
     handler()

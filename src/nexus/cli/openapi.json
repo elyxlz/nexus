@@ -54,6 +54,13 @@
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "queued",
+                    "running",
+                    "completed",
+                    "failed",
+                    "killed"
+                  ],
                   "type": "string"
                 },
                 {
@@ -64,7 +71,7 @@
             }
           },
           {
-            "name": "gpu_idx",
+            "name": "gpu_index",
             "in": "query",
             "required": false,
             "schema": {
@@ -76,7 +83,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Gpu Idx"
+              "title": "Gpu Index"
             }
           },
           {
@@ -93,6 +100,26 @@
                 }
               ],
               "title": "Command Regex"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
             }
           }
         ],
@@ -124,8 +151,8 @@
         }
       },
       "post": {
-        "summary": "Add Job Endpoint",
-        "operationId": "add_job_endpoint_v1_jobs_post",
+        "summary": "Create Job Endpoint",
+        "operationId": "create_job_endpoint_v1_jobs_post",
         "requestBody": {
           "required": true,
           "content": {
@@ -137,7 +164,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -160,28 +187,6 @@
         }
       }
     },
-    "/v1/queue": {
-      "get": {
-        "summary": "Get Queue Endpoint",
-        "operationId": "get_queue_endpoint_v1_queue_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Job"
-                  },
-                  "type": "array",
-                  "title": "Response Get Queue Endpoint V1 Queue Get"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/jobs/{job_id}": {
       "get": {
         "summary": "Get Job Endpoint",
@@ -197,6 +202,84 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Job Endpoint",
+        "description": "Delete a job if queued. For running jobs, use the /kill endpoint.",
+        "operationId": "delete_job_endpoint_v1_jobs__job_id__delete",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update Job Endpoint",
+        "operationId": "update_job_endpoint_v1_jobs__job_id__patch",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobUpdateRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -260,115 +343,61 @@
         }
       }
     },
-    "/v1/jobs/running": {
-      "delete": {
-        "summary": "Kill Running Jobs Endpoint",
-        "operationId": "kill_running_jobs_endpoint_v1_jobs_running_delete",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array",
-                "title": "Job Ids"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobActionResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/jobs/queued": {
-      "delete": {
-        "summary": "Remove Queued Jobs Endpoint",
-        "operationId": "remove_queued_jobs_endpoint_v1_jobs_queued_delete",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array",
-                "title": "Job Ids"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JobQueueActionResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/gpus/blacklist": {
+    "/v1/jobs/{job_id}/kill": {
       "post": {
-        "summary": "Blacklist Gpus Endpoint",
-        "operationId": "blacklist_gpus_endpoint_v1_gpus_blacklist_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "items": {
-                  "type": "integer"
-                },
-                "type": "array",
-                "title": "Gpu Idxs"
+        "summary": "Kill Job Endpoint",
+        "description": "Kill a running job. Cannot be used for queued jobs.",
+        "operationId": "kill_job_endpoint_v1_jobs__job_id__kill_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
-          },
-          "required": true
-        },
+          }
+        }
+      }
+    },
+    "/v1/gpus/{gpu_idx}/blacklist": {
+      "put": {
+        "summary": "Blacklist Gpu Endpoint",
+        "operationId": "blacklist_gpu_endpoint_v1_gpus__gpu_idx__blacklist_put",
+        "parameters": [
+          {
+            "name": "gpu_idx",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Gpu Idx"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GpuActionResponse"
+                  "$ref": "#/components/schemas/GpuStatusResponse"
                 }
               }
             }
@@ -387,28 +416,25 @@
       },
       "delete": {
         "summary": "Remove Gpu Blacklist Endpoint",
-        "operationId": "remove_gpu_blacklist_endpoint_v1_gpus_blacklist_delete",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "items": {
-                  "type": "integer"
-                },
-                "type": "array",
-                "title": "Gpu Idxs"
-              }
+        "operationId": "remove_gpu_blacklist_endpoint_v1_gpus__gpu_idx__blacklist_delete",
+        "parameters": [
+          {
+            "name": "gpu_idx",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Gpu Idx"
             }
-          },
-          "required": true
-        },
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GpuActionResponse"
+                  "$ref": "#/components/schemas/GpuStatusResponse"
                 }
               }
             }
@@ -448,28 +474,22 @@
         }
       }
     },
-    "/v1/server/stop": {
-      "post": {
-        "summary": "Stop Server Endpoint",
-        "operationId": "stop_server_endpoint_v1_server_stop_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ServerActionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/health": {
       "get": {
         "summary": "Health Check Endpoint",
         "operationId": "health_check_endpoint_v1_health_get",
+        "parameters": [
+          {
+            "name": "detailed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Detailed"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -480,22 +500,13 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/v1/heartbeat": {
-      "get": {
-        "summary": "Heartbeat Endpoint",
-        "description": "Simple heartbeat endpoint that responds with {alive: true} when server is running.",
-        "operationId": "heartbeat_endpoint_v1_heartbeat_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
+          },
+          "422": {
+            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HeartbeatResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -533,68 +544,6 @@
           "percent_used"
         ],
         "title": "DiskStatsResponse"
-      },
-      "GpuActionError": {
-        "properties": {
-          "index": {
-            "type": "integer",
-            "title": "Index"
-          },
-          "error": {
-            "type": "string",
-            "title": "Error"
-          }
-        },
-        "type": "object",
-        "required": [
-          "index",
-          "error"
-        ],
-        "title": "GpuActionError"
-      },
-      "GpuActionResponse": {
-        "properties": {
-          "blacklisted": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "integer"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Blacklisted"
-          },
-          "removed": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "integer"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Removed"
-          },
-          "failed": {
-            "items": {
-              "$ref": "#/components/schemas/GpuActionError"
-            },
-            "type": "array",
-            "title": "Failed"
-          }
-        },
-        "type": "object",
-        "required": [
-          "failed"
-        ],
-        "title": "GpuActionResponse"
       },
       "GpuInfo": {
         "properties": {
@@ -646,6 +595,29 @@
         ],
         "title": "GpuInfo"
       },
+      "GpuStatusResponse": {
+        "properties": {
+          "gpu_idx": {
+            "type": "integer",
+            "title": "Gpu Idx"
+          },
+          "blacklisted": {
+            "type": "boolean",
+            "title": "Blacklisted"
+          },
+          "changed": {
+            "type": "boolean",
+            "title": "Changed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gpu_idx",
+          "blacklisted",
+          "changed"
+        ],
+        "title": "GpuStatusResponse"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -661,44 +633,66 @@
       },
       "HealthResponse": {
         "properties": {
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "score": {
-            "type": "number",
-            "title": "Score"
-          },
-          "disk": {
-            "$ref": "#/components/schemas/DiskStatsResponse"
-          },
-          "network": {
-            "$ref": "#/components/schemas/NetworkStatsResponse"
-          },
-          "system": {
-            "$ref": "#/components/schemas/SystemStatsResponse"
-          }
-        },
-        "type": "object",
-        "required": [
-          "status",
-          "score",
-          "disk",
-          "network",
-          "system"
-        ],
-        "title": "HealthResponse"
-      },
-      "HeartbeatResponse": {
-        "properties": {
           "alive": {
             "type": "boolean",
             "title": "Alive",
             "default": true
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "disk": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiskStatsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "network": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetworkStatsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "system": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SystemStatsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
-        "title": "HeartbeatResponse"
+        "title": "HealthResponse"
       },
       "Job": {
         "properties": {
@@ -761,7 +755,6 @@
               "type": "string",
               "enum": [
                 "discord",
-                "whatsapp",
                 "phone"
               ]
             },
@@ -919,48 +912,6 @@
         ],
         "title": "Job"
       },
-      "JobActionError": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "error": {
-            "type": "string",
-            "title": "Error"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "error"
-        ],
-        "title": "JobActionError"
-      },
-      "JobActionResponse": {
-        "properties": {
-          "killed": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Killed"
-          },
-          "failed": {
-            "items": {
-              "$ref": "#/components/schemas/JobActionError"
-            },
-            "type": "array",
-            "title": "Failed"
-          }
-        },
-        "type": "object",
-        "required": [
-          "killed",
-          "failed"
-        ],
-        "title": "JobActionResponse"
-      },
       "JobLogsResponse": {
         "properties": {
           "logs": {
@@ -973,48 +924,6 @@
           "logs"
         ],
         "title": "JobLogsResponse"
-      },
-      "JobQueueActionError": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "error": {
-            "type": "string",
-            "title": "Error"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "error"
-        ],
-        "title": "JobQueueActionError"
-      },
-      "JobQueueActionResponse": {
-        "properties": {
-          "removed": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Removed"
-          },
-          "failed": {
-            "items": {
-              "$ref": "#/components/schemas/JobQueueActionError"
-            },
-            "type": "array",
-            "title": "Failed"
-          }
-        },
-        "type": "object",
-        "required": [
-          "removed",
-          "failed"
-        ],
-        "title": "JobQueueActionResponse"
       },
       "JobRequest": {
         "properties": {
@@ -1043,6 +952,20 @@
             "title": "Num Gpus",
             "default": 1
           },
+          "gpu_idxs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Idxs"
+          },
           "priority": {
             "type": "integer",
             "title": "Priority",
@@ -1058,7 +981,6 @@
               "type": "string",
               "enum": [
                 "discord",
-                "whatsapp",
                 "phone"
               ]
             },
@@ -1085,23 +1007,9 @@
             ],
             "title": "Jobrc"
           },
-          "gpu_idxs": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "integer"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gpu Idxs"
-          },
-          "ignore_blacklist": {
+          "run_immediately": {
             "type": "boolean",
-            "title": "Ignore Blacklist",
+            "title": "Run Immediately",
             "default": false
           }
         },
@@ -1114,6 +1022,34 @@
           "git_branch"
         ],
         "title": "JobRequest"
+      },
+      "JobUpdateRequest": {
+        "properties": {
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          }
+        },
+        "type": "object",
+        "title": "JobUpdateRequest"
       },
       "NetworkStatsResponse": {
         "properties": {
@@ -1137,19 +1073,6 @@
           "ping"
         ],
         "title": "NetworkStatsResponse"
-      },
-      "ServerActionResponse": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "title": "Status"
-          }
-        },
-        "type": "object",
-        "required": [
-          "status"
-        ],
-        "title": "ServerActionResponse"
       },
       "ServerLogsResponse": {
         "properties": {
