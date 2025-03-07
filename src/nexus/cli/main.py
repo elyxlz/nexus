@@ -18,7 +18,7 @@ def show_config() -> None:
         print(colored("Current Configuration:", "blue", attrs=["bold"]))
         for key, value in cfg.model_dump().items():
             print(f"{colored(key, 'cyan')}: {value}")
-        print(f"\nTo edit configuration: {colored('nexus config edit', 'green')}")
+        print(f"\nTo edit configuration: {colored('nx config edit', 'green')}")
     except Exception as e:
         print(colored(f"Error displaying config: {e}", "red"))
 
@@ -31,7 +31,7 @@ def show_env() -> None:
             if any(sensitive in key.lower() for sensitive in ["key", "token", "secret", "password", "sid", "number"]):
                 value = "********"
             print(f"{colored(key, 'cyan')}: {value}")
-        print(f"\nTo edit environment variables: {colored('nexus env edit', 'green')}")
+        print(f"\nTo edit environment variables: {colored('nx nv edit', 'green')}")
     except Exception as e:
         print(colored(f"Error displaying environment variables: {e}", "red"))
 
@@ -40,14 +40,14 @@ def show_jobrc() -> None:
     try:
         jobrc_path = setup.get_jobrc_path()
         if not jobrc_path.exists():
-            print(colored("No job runtime configuration file found. Create one with 'nexus jobrc edit'", "yellow"))
+            print(colored("No job runtime configuration file found. Create one with 'nx jobrc edit'", "yellow"))
             return
 
         print(colored("Current Job Runtime Configuration:", "blue", attrs=["bold"]))
         with open(jobrc_path) as f:
             content = f.read()
             print(content)
-        print(f"\nTo edit job runtime configuration: {colored('nexus jobrc edit', 'green')}")
+        print(f"\nTo edit job runtime configuration: {colored('nx jobrc edit', 'green')}")
     except Exception as e:
         print(colored(f"Error displaying job runtime configuration: {e}", "red"))
 
@@ -99,7 +99,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     edit_parser = subparsers.add_parser("edit", help="Edit a queued job's command or priority")
     edit_parser.add_argument("job_id", help="Job ID to edit")
-    edit_parser.add_argument("-c", "--command", help="New command to run")
+    edit_parser.add_argument("-c", "--command", dest="new_command", help="New command to run")
     edit_parser.add_argument("-p", "--priority", type=int, help="New priority value")
     edit_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
@@ -211,7 +211,7 @@ def main() -> None:
         "health": lambda: jobs.show_health(refresh=args.refresh),
         "edit": lambda: jobs.edit_job_command(
             args.job_id,
-            command=" ".join(args.command) if hasattr(args, "command") and args.command else None,
+            command=args.new_command,
             priority=args.priority,
             bypass_confirm=args.yes,
         ),

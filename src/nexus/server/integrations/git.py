@@ -1,3 +1,4 @@
+import asyncio
 import re
 import subprocess
 
@@ -33,7 +34,15 @@ def _validate_git_url(url: str) -> None:
     subprocess.CalledProcessError, exc.GitError, message="Failed to clean up git tag", reraise=False
 )
 async def async_cleanup_git_tag(_logger: logger.NexusServerLogger, git_tag: str, git_repo_url: str) -> None:
-    subprocess.run(["git", "push", git_repo_url, "--delete", git_tag], check=True, capture_output=True, text=True)
+    process = await asyncio.create_subprocess_exec(
+        "git", "push", git_repo_url, "--delete", git_tag, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout_bytes, stderr_bytes = await process.communicate()
+
+    returncode = process.returncode or 1  # Default to 1 if returncode is None
+    if returncode != 0:
+        raise subprocess.CalledProcessError(returncode, ["git", "push", git_repo_url, "--delete", git_tag])
+
     _logger.info(f"Cleaned up git tag {git_tag} from {git_repo_url}")
     return None
 

@@ -43,7 +43,7 @@ def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
 
     @app.exception_handler(exc.NotFoundError)
     async def not_found_exception_handler(request: fa.Request, error: exc.NotFoundError):
-        ctx.logger.warn(f"Not found error: {error.code} - {error.message}")
+        ctx.logger.warning(f"Not found error: {error.code} - {error.message}")
         return JSONResponse(
             status_code=404,
             content={"error": error.code, "message": error.message, "status_code": 404},
@@ -51,7 +51,7 @@ def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
 
     @app.exception_handler(exc.InvalidRequestError)
     async def invalid_request_exception_handler(request: fa.Request, error: exc.InvalidRequestError):
-        ctx.logger.warn(f"Invalid request error: {error.code} - {error.message}")
+        ctx.logger.warning(f"Invalid request error: {error.code} - {error.message}")
         return JSONResponse(
             status_code=400,
             content={"error": error.code, "message": error.message, "status_code": 400},
@@ -61,7 +61,7 @@ def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
     async def validation_exception_handler(request: fa.Request, error: ValidationError):
         errors = error.errors()
         error_details = ", ".join([f"{e['loc'][-1]}: {e['msg']}" for e in errors])
-        ctx.logger.warn(f"Validation error: {error_details}")
+        ctx.logger.warning(f"Validation error: {error_details}")
         return JSONResponse(
             status_code=422,
             content={

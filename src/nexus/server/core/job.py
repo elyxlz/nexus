@@ -100,6 +100,7 @@ def _build_script_content(
     script_lines.append(f"cd '{job_repo_dir}'")
 
     script_lines.append(f"script -f -q -c \"{jobrc + '; ' if jobrc else ''}{command}\" \"{log_file}\"")
+    script_lines.append(f"echo \"COMMAND_EXIT_CODE=$?\" >> \"{log_file}\"")
 
     return "\n".join(script_lines)
 
@@ -170,7 +171,7 @@ def _parse_exit_code(_logger: logger.NexusServerLogger, last_line: str) -> int:
     if "COMMAND_EXIT_CODE=" not in last_line:
         raise exc.JobError(message="Could not find exit code in log")
 
-    exit_code_str = last_line.split('COMMAND_EXIT_CODE="')[1].split('"')[0]
+    exit_code_str = last_line.split('COMMAND_EXIT_CODE=')[1].split()[0] if ' ' in last_line else last_line.split('COMMAND_EXIT_CODE=')[1]
     return int(exit_code_str)
 
 
@@ -359,33 +360,72 @@ async def async_get_job_logs(
 
 @exc.handle_exception_async(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
 async def kill_job(_logger: logger.NexusServerLogger, job: schemas.Job) -> None:
+    killed = False
+
+    # 1. Try to kill by PID if we have it
     if job.pid is not None:
         try:
+            # Send SIGTERM first for graceful termination
+            _logger.debug(f"Sending SIGTERM to PID {job.pid}")
             os.kill(job.pid, signal.SIGTERM)
 
+            # Wait for up to 1 second for process to terminate
             for _ in range(10):
                 try:
                     os.kill(job.pid, 0)
                     await asyncio.sleep(0.1)
                 except ProcessLookupError:
-                    return
+                    killed = True
+                    _logger.debug(f"Process {job.pid} terminated with SIGTERM")
+                    break
 
-            os.kill(job.pid, signal.SIGKILL)
+            # If process didn't terminate, use SIGKILL
+            if not killed:
+                _logger.debug(f"Process {job.pid} didn't respond to SIGTERM, sending SIGKILL")
+                os.kill(job.pid, signal.SIGKILL)
+                killed = True
         except ProcessLookupError:
+            _logger.debug(f"Process {job.pid} not found")
             pass
 
+    # 2. Terminate the screen session
     session_name = _get_job_session_name(job.id)
-    await asyncio.create_subprocess_exec("screen", "-S", session_name, "-X", "quit")
+    _logger.debug(f"Terminating screen session {session_name}")
+    screen_proc = await asyncio.create_subprocess_exec(
+        "screen", "-S", session_name, "-X", "quit", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    await screen_proc.wait()
 
-    await asyncio.create_subprocess_shell(f"pkill -f {job.id}")
+    # 3. Try more aggressive termination methods for any remaining processes
+    # First, get all processes in the screen session
+    _logger.debug(f"Killing any processes containing session name {session_name}")
+    await asyncio.create_subprocess_shell(f"pkill -9 -f {session_name}")
+
+    # Try killing by job id as fallback
+    _logger.debug(f"Killing any processes containing job id {job.id}")
+    await asyncio.create_subprocess_shell(f"pkill -9 -f {job.id}")
+
+    # Extra fallback for persistent shell loops that might not have job id in command
+    if job.pid is not None:
+        _logger.debug(f"Killing any child processes of {job.pid}")
+        pgid_proc = await asyncio.create_subprocess_shell(
+            f"ps -o pgid= -p {job.pid} 2>/dev/null", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await pgid_proc.communicate()
+        pgid = stdout.decode().strip()
+        if pgid:
+            _logger.debug(f"Killing process group {pgid}")
+            # Kill the entire process group
+            await asyncio.create_subprocess_shell(f"kill -9 -{pgid}")
 
 
 def get_queue(queued_jobs: list[schemas.Job]) -> list[schemas.Job]:
     if not queued_jobs:
         return []
 
-    sorted_jobs = sorted(queued_jobs, key=lambda x: x.priority, reverse=True)
-    sorted_jobs = sorted(sorted_jobs, key=lambda x: x.num_gpus, reverse=True)
+    # Sort with num_gpus as the primary key (for multi-gpu priority) 
+    # and priority as the secondary key to break ties
+    sorted_jobs = sorted(queued_jobs, key=lambda x: (x.num_gpus, x.priority), reverse=True)
 
     return sorted_jobs
 

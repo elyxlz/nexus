@@ -387,18 +387,25 @@ def kill_jobs(targets: list[str], bypass_confirm: bool = False) -> None:
 
         if gpu_indices:
             gpus = api_client.get_gpus()
+            running_jobs = api_client.get_jobs("running")
 
             for gpu_idx in gpu_indices:
                 gmatch = next((g for g in gpus if g["index"] == gpu_idx), None)
                 if gmatch and gmatch.get("running_job_id"):
-                    jobs_to_kill.add(gmatch["running_job_id"])
+                    job_id = gmatch["running_job_id"]
+                    jobs_to_kill.add(job_id)
+
+                    # Get the job details from running_jobs
+                    job_match = next((j for j in running_jobs if j["id"] == job_id), None)
+                    runtime = utils.calculate_runtime(job_match) if job_match else ""
+
                     jobs_info.append(
                         {
-                            "id": gmatch["running_job_id"],
+                            "id": job_id,
                             "gpu_idx": gpu_idx,
-                            "command": gmatch.get("command", ""),
-                            "runtime": gmatch.get("runtime", ""),
-                            "user": gmatch.get("user", ""),
+                            "command": job_match.get("command", "") if job_match else "",
+                            "runtime": utils.format_runtime(runtime) if runtime else "",
+                            "user": job_match.get("user", "") if job_match else "",
                         }
                     )
 
@@ -446,8 +453,10 @@ def kill_jobs(targets: list[str], bypass_confirm: bool = False) -> None:
         for info in jobs_info:
             job_details = [
                 f"Job {colored(info['id'], 'magenta')}",
-                f"Command: {info['command'][:50]}{'...' if len(info['command']) > 50 else ''}",
             ]
+
+            if info["command"]:
+                job_details.append(f"Command: {info['command'][:50]}{'...' if len(info['command']) > 50 else ''}")
 
             if info["runtime"]:
                 job_details.append(f"Runtime: {colored(info['runtime'], 'cyan')}")
