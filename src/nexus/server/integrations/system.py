@@ -3,8 +3,10 @@ import shutil
 import socket
 import time
 import typing as tp
+from datetime import datetime, timedelta
 
 import psutil
+import speedtest
 
 HealthStatus = tp.Literal["healthy", "degraded", "unhealthy"]
 
@@ -33,6 +35,16 @@ class SystemStats:
 
 
 @dc.dataclass(frozen=True)
+class CachedValue:
+    value: tp.Any
+    timestamp: datetime
+    ttl: timedelta
+
+    def is_expired(self) -> bool:
+        return datetime.now() - self.timestamp > self.ttl
+
+
+@dc.dataclass(frozen=True)
 class HealthCheckResult:
     status: HealthStatus
     score: float
@@ -41,35 +53,83 @@ class HealthCheckResult:
     system: SystemStats
 
 
-def check_disk_space(path: str = "/") -> DiskStats:
+def measure_disk_space(path: str = "/") -> DiskStats:
     disk = shutil.disk_usage(path)
     percent_used = (disk.used / disk.total) * 100
 
     return DiskStats(total=disk.total, used=disk.used, free=disk.free, percent_used=percent_used)
 
 
-def check_network_speed() -> NetworkStats:
-    host = "8.8.8.8"
-    start_time = time.time()
+def check_disk_space(path: str = "/", force_refresh: bool = False) -> DiskStats:
+    if force_refresh and "disk_space" in _cache:
+        del _cache["disk_space"]
+
+    return _get_cached(key="disk_space", default_factory=lambda: measure_disk_space(path), ttl=timedelta(minutes=15))
+
+
+def measure_network_speed() -> NetworkStats:
     try:
-        socket.create_connection((host, 53), timeout=2)
-        ping_time = (time.time() - start_time) * 1000
-    except (TimeoutError, OSError):
-        ping_time = float("inf")
+        st = speedtest.Speedtest()
+        st.get_best_server()
+        st.download()
+        st.upload()
 
-    download_speed = 100.0 if ping_time < 100 else 50.0
-    upload_speed = 50.0 if ping_time < 100 else 25.0
+        ping = st.results.ping
+        download = st.results.download / 1_000_000
+        upload = st.results.upload / 1_000_000
 
-    return NetworkStats(download_speed=download_speed, upload_speed=upload_speed, ping=ping_time)
+        return NetworkStats(download_speed=download, upload_speed=upload, ping=ping)
+    except Exception:
+        host = "8.8.8.8"
+        start_time = time.time()
+        try:
+            socket.create_connection((host, 53), timeout=2)
+            ping_time = (time.time() - start_time) * 1000
+        except (TimeoutError, OSError):
+            ping_time = float("inf")
+
+        download_speed = 100.0 if ping_time < 100 else 50.0
+        upload_speed = 50.0 if ping_time < 100 else 25.0
+
+        return NetworkStats(download_speed=download_speed, upload_speed=upload_speed, ping=ping_time)
 
 
-def check_system_stats() -> SystemStats:
+_cache: dict[str, CachedValue] = {}
+
+
+def _get_cached(key: str, default_factory: tp.Callable[[], tp.Any], ttl: timedelta) -> tp.Any:
+    now = datetime.now()
+    cache_entry = _cache.get(key)
+
+    if cache_entry is None or cache_entry.is_expired():
+        value = default_factory()
+        _cache[key] = CachedValue(value=value, timestamp=now, ttl=ttl)
+        return value
+
+    return cache_entry.value
+
+
+def check_network_speed(force_refresh: bool = False) -> NetworkStats:
+    if force_refresh and "network_speed" in _cache:
+        del _cache["network_speed"]
+
+    return _get_cached(key="network_speed", default_factory=measure_network_speed, ttl=timedelta(minutes=30))
+
+
+def measure_system_stats() -> SystemStats:
     return SystemStats(
         cpu_percent=psutil.cpu_percent(interval=0.5),
         memory_percent=psutil.virtual_memory().percent,
         uptime=time.time() - psutil.boot_time(),
         load_avg=psutil.getloadavg(),  # type: ignore
     )
+
+
+def check_system_stats(force_refresh: bool = False) -> SystemStats:
+    if force_refresh and "system_stats" in _cache:
+        del _cache["system_stats"]
+
+    return _get_cached(key="system_stats", default_factory=measure_system_stats, ttl=timedelta(minutes=2))
 
 
 def calculate_health_score(
@@ -116,10 +176,10 @@ def get_health_status(score: float) -> HealthStatus:
         return "unhealthy"
 
 
-def check_health() -> HealthCheckResult:
-    disk_stats = check_disk_space()
-    network_stats = check_network_speed()
-    system_stats = check_system_stats()
+def check_health(force_refresh: bool = False) -> HealthCheckResult:
+    disk_stats = check_disk_space(force_refresh=force_refresh)
+    network_stats = check_network_speed(force_refresh=force_refresh)
+    system_stats = check_system_stats(force_refresh=force_refresh)
 
     score = calculate_health_score(disk_stats, network_stats, system_stats)
     status = get_health_status(score)

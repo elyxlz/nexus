@@ -54,12 +54,18 @@ def run_job(
         git_tag_id = utils.generate_git_tag_id()
         branch_name = utils.get_current_git_branch()
         tag_name = f"nexus-{git_tag_id}"
-        
+        git_repo_url = None
+
         # Check if we're in a git repository
         is_git_repo = True
         try:
             # Check if we're in a git repository
-            subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
         except subprocess.CalledProcessError:
             is_git_repo = False
             print(colored("Warning: Not in a git repository. Using default values.", "yellow"))
@@ -67,7 +73,7 @@ def run_job(
             branch_name = "unknown-branch"
             print(colored("Note: If you need to access private repositories, make sure to set up GIT_TOKEN", "yellow"))
             print(colored("      Run 'nx setup' to configure this.", "yellow"))
-        
+
         if is_git_repo:
             try:
                 subprocess.run(["git", "tag", tag_name], check=True)
@@ -207,12 +213,18 @@ def add_jobs(
         git_tag_id = utils.generate_git_tag_id()
         branch_name = utils.get_current_git_branch()
         tag_name = f"nexus-{git_tag_id}"
-        
+        git_repo_url = None
+
         # Check if we're in a git repository
         is_git_repo = True
         try:
             # Check if we're in a git repository
-            subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
         except subprocess.CalledProcessError:
             is_git_repo = False
             print(colored("Warning: Not in a git repository. Using default values.", "yellow"))
@@ -220,7 +232,7 @@ def add_jobs(
             branch_name = "unknown-branch"
             print(colored("Note: If you need to access private repositories, make sure to set up GIT_TOKEN", "yellow"))
             print(colored("      Run 'nx setup' to configure this.", "yellow"))
-        
+
         if is_git_repo:
             try:
                 subprocess.run(["git", "tag", tag_name], check=True)
@@ -278,7 +290,9 @@ def show_queue() -> None:
         total_jobs = len(jobs)
         for idx, job in enumerate(reversed(jobs), 1):
             created_time = utils.format_timestamp(job.get("created_at"))
-            priority_str = f" (Priority: {colored(str(job.get('priority', 0)), 'cyan')})" if job.get('priority', 0) != 0 else ""
+            priority_str = (
+                f" (Priority: {colored(str(job.get('priority', 0)), 'cyan')})" if job.get("priority", 0) != 0 else ""
+            )
             print(
                 f"{total_jobs - idx + 1}. {colored(job['id'], 'magenta')} - "
                 f"{colored(job['command'], 'white')} "
@@ -596,9 +610,9 @@ def view_logs(target: str, tail: int | None = None) -> None:
         print(colored(f"Error fetching logs: {e}", "red"))
 
 
-def show_health() -> None:
+def show_health(refresh: bool = False) -> None:
     try:
-        health = api_client.get_detailed_health()
+        health = api_client.get_detailed_health(refresh=refresh)
 
         print(colored("Node Health Status:", "blue", attrs=["bold"]))
         status = health.get("status", "unknown")
@@ -655,14 +669,11 @@ def show_health() -> None:
             print(colored("\nNetwork Statistics:", "blue", attrs=["bold"]))
 
             download_speed = network.get("download_speed", 0)
-            download_mb = download_speed / (1024**2)
-            print(f"  {colored('•', 'blue')} Download Speed: {colored(f'{download_mb:.2f} MB/s', 'cyan')}")
-
             upload_speed = network.get("upload_speed", 0)
-            upload_mb = upload_speed / (1024**2)
-            print(f"  {colored('•', 'blue')} Upload Speed: {colored(f'{upload_mb:.2f} MB/s', 'cyan')}")
-
             ping = network.get("ping", 0)
+
+            print(f"  {colored('•', 'blue')} Download Speed: {colored(f'{download_speed:.1f} Mbps', 'cyan')}")
+            print(f"  {colored('•', 'blue')} Upload Speed: {colored(f'{upload_speed:.1f} Mbps', 'cyan')}")
             ping_color = "green" if ping < 50 else "yellow" if ping < 100 else "red"
             print(f"  {colored('•', 'blue')} Ping: {colored(f'{ping:.1f} ms', ping_color)}")
 
@@ -670,7 +681,7 @@ def show_health() -> None:
         print(colored(f"Error fetching health information: {e}", "red"))
 
 
-def update_job_command(
+def edit_job_command(
     job_id: str, command: str | None = None, priority: int | None = None, bypass_confirm: bool = False
 ) -> None:
     try:
@@ -681,7 +692,7 @@ def update_job_command(
             return
 
         if job["status"] != "queued":
-            print(colored(f"Only queued jobs can be updated. Job {job_id} has status: {job['status']}", "red"))
+            print(colored(f"Only queued jobs can be edited. Job {job_id} has status: {job['status']}", "red"))
             return
 
         print(f"\n{colored('Current job details:', 'blue', attrs=['bold'])}")
@@ -689,25 +700,25 @@ def update_job_command(
         print(f"  {colored('•', 'blue')} Command: {colored(job['command'], 'white')}")
         print(f"  {colored('•', 'blue')} Priority: {colored(str(job['priority']), 'cyan')}")
 
-        print(f"\n{colored('Will update to:', 'blue', attrs=['bold'])}")
+        print(f"\n{colored('Will edit to:', 'blue', attrs=['bold'])}")
         print(f"  {colored('•', 'blue')} Command: {colored(command if command is not None else 'unchanged', 'white')}")
         print(
             f"  {colored('•', 'blue')} Priority: {colored(str(priority) if priority is not None else 'unchanged', 'cyan')}"
         )
 
-        if not utils.confirm_action("Update this job?", bypass=bypass_confirm):
+        if not utils.confirm_action("Edit this job?", bypass=bypass_confirm):
             print(colored("Operation cancelled.", "yellow"))
             return
 
-        result = api_client.update_job(job_id, command, priority)
+        result = api_client.edit_job(job_id, command, priority)
 
-        print(colored("\nJob updated successfully:", "green", attrs=["bold"]))
+        print(colored("\nJob edited successfully:", "green", attrs=["bold"]))
         print(f"  {colored('•', 'green')} ID: {colored(result['id'], 'magenta')}")
         print(f"  {colored('•', 'green')} Command: {colored(result['command'], 'white')}")
         print(f"  {colored('•', 'green')} Priority: {colored(str(result['priority']), 'cyan')}")
 
     except Exception as e:
-        print(colored(f"\nError updating job: {e}", "red"))
+        print(colored(f"\nError editing job: {e}", "red"))
         sys.exit(1)
 
 

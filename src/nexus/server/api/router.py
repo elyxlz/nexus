@@ -242,11 +242,13 @@ async def list_gpus_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_c
 
 
 @router.get("/v1/health", response_model=models.HealthResponse)
-async def health_check_endpoint(detailed: bool = False, ctx: context.NexusServerContext = fa.Depends(_get_context)):
+async def health_check_endpoint(
+    detailed: bool = False, refresh: bool = False, ctx: context.NexusServerContext = fa.Depends(_get_context)
+):
     if not detailed:
         return models.HealthResponse()
 
-    health_result = system.check_health()
+    health_result = system.check_health(force_refresh=refresh)
     return models.HealthResponse(
         alive=True,
         status=health_result.status,

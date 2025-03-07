@@ -133,14 +133,14 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         print(colored("\nNexus needs a Git token to clone private repositories:", "cyan"))
         print("You can create a Personal Access Token at: https://github.com/settings/tokens")
         print("The token needs 'repo' scope to access private repositories")
-        
+
         git_token = utils.get_user_input(
             "Git Personal Access Token",
             default=env_vars.get("GIT_TOKEN", ""),
             required=True,
         )
         env_vars["GIT_TOKEN"] = git_token
-        
+
     if utils.ask_yes_no("Would you like to add any additional environment variables?", default=True):
         # Save current env vars before opening editor
         create_default_env()
@@ -202,7 +202,7 @@ def setup_wizard() -> None:
     )
 
     cfg, env_vars = setup_notifications(cfg)
-    
+
     # Initialize jobrc file if requested
     if utils.ask_yes_no("Would you like to set up a job runtime configuration (.jobrc)?"):
         jobrc_path = get_jobrc_path()
@@ -255,12 +255,7 @@ def create_default_jobrc() -> None:
 
     if not jobrc_path.exists():
         with open(jobrc_path, "w") as f:
-            f.write("# Nexus Job Configuration\n\n")
-            f.write("# This file contains environment setup commands that run before each job\n")
-            f.write("# Examples:\n")
-            f.write("# export PATH=$HOME/.local/bin:$PATH\n")
-            f.write("# conda activate myenv\n")
-            f.write("# pip install -e .\n")
+            f.write("# Environment setup commands that run before each job\n")
 
 
 def open_jobrc_editor() -> None:

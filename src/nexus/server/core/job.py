@@ -393,6 +393,9 @@ def get_queue(queued_jobs: list[schemas.Job]) -> list[schemas.Job]:
 async def prepare_job_environment(
     _logger: logger.NexusServerLogger, job: schemas.Job, gpu_idxs: list[int]
 ) -> tuple[pl.Path, pl.Path, dict[str, str], pl.Path | None, pl.Path]:
+    if job.dir is None:
+        raise exc.JobError(message="Job directory not set")
+
     log_file, job_repo_dir = await asyncio.to_thread(_create_directories, _logger, job.dir)
     env = await asyncio.to_thread(_build_environment, _logger, gpu_idxs, job.env)
 

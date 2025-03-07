@@ -119,8 +119,11 @@ def get_server_status() -> dict:
 
 
 @handle_api_errors
-def get_detailed_health() -> dict:
-    response = requests.get(f"{get_api_base_url()}/health", params={"detailed": True})
+def get_detailed_health(refresh: bool = False) -> dict:
+    params = {"detailed": True}
+    if refresh:
+        params["refresh"] = True
+    response = requests.get(f"{get_api_base_url()}/health", params=params)
     response.raise_for_status()
     return response.json()
 
@@ -177,7 +180,7 @@ def remove_queued_jobs(job_ids: list[str]) -> dict:
 
 
 @handle_api_errors
-def update_job(job_id: str, command: str | None = None, priority: int | None = None) -> dict:
+def edit_job(job_id: str, command: str | None = None, priority: int | None = None) -> dict:
     update_data = {}
     if command is not None:
         update_data["command"] = command
