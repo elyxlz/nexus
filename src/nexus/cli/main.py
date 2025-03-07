@@ -35,6 +35,21 @@ def show_env() -> None:
         print(colored(f"Error displaying environment variables: {e}", "red"))
 
 
+def show_jobrc() -> None:
+    try:
+        jobrc_path = setup.get_jobrc_path()
+        if not jobrc_path.exists():
+            print(colored("No job runtime configuration file found. Create one with 'nexus jobrc edit'", "yellow"))
+            return
+
+        print(colored("Current Job Runtime Configuration:", "blue", attrs=["bold"]))
+        with open(jobrc_path) as f:
+            content = f.read()
+            print(content)
+    except Exception as e:
+        print(colored(f"Error displaying job runtime configuration: {e}", "red"))
+
+
 def show_version() -> None:
     print(f"Nexus CLI version: {colored(VERSION, 'cyan')}")
 
@@ -53,12 +68,23 @@ def create_parser() -> argparse.ArgumentParser:
 
     # Run command for immediate execution
     run_parser = subparsers.add_parser("run", help="Run a job immediately")
-    run_parser.add_argument("command", help='Command to run, e.g., "python train.py"')
+    run_parser.add_argument("commands", nargs="+", help='Command to run, e.g., "python train.py"')
     run_parser.add_argument(
         "-i", "--gpu-idxs", dest="gpu_idxs", help="Specific GPU indices to run on (e.g., '0' or '0,1' for multi-GPU)"
     )
-    run_parser.add_argument("-g", "--gpus", type=int, help="Number of GPUs to use (ignored if --gpu-idxs is specified)")
+    run_parser.add_argument("-g", "--gpus", type=int, default=1, help="Number of GPUs to use (ignored if --gpu-idxs is specified)")
+    # User parameter removed
+    run_parser.add_argument("-n", "--notify", nargs="+", help="Additional notification types for this job")
     run_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+
+    add_parser = subparsers.add_parser("add", help="Add job(s) to queue")
+    add_parser.add_argument("commands", nargs="+", help='Command(s) to add, e.g., "python train.py"')
+    add_parser.add_argument("-r", "--repeat", type=int, default=1, help="Repeat the command multiple times")
+    add_parser.add_argument("-p", "--priority", type=int, default=0, help="Set job priority (higher values run first)")
+    # User parameter removed
+    add_parser.add_argument("-n", "--notify", nargs="+", help="Additional notification types for this job")
+    add_parser.add_argument("-g", "--gpus", type=int, default=1, help="Number of GPUs to use for the job")
+    add_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     # Config command with subcommands
     config_parser = subparsers.add_parser("config", help="Display or edit configuration")
@@ -69,20 +95,16 @@ def create_parser() -> argparse.ArgumentParser:
     env_parser = subparsers.add_parser("env", help="Display or edit environment variables")
     env_subparsers = env_parser.add_subparsers(dest="env_action", help="Environment actions")
     env_subparsers.add_parser("edit", help="Edit environment variables in editor")
+
+    # Jobrc command with subcommands
+    jobrc_parser = subparsers.add_parser("jobrc", help="Manage job runtime configuration (.jobrc)")
+    jobrc_subparsers = jobrc_parser.add_subparsers(dest="jobrc_action", help="Jobrc actions")
+    jobrc_subparsers.add_parser("edit", help="Edit job runtime configuration in editor")
     setup_parser = subparsers.add_parser("setup", help="Run setup wizard")
     setup_parser.add_argument(
         "--non-interactive", action="store_true", help="Set up non-interactively using environment variables"
     )
     subparsers.add_parser("version", help="Show version information")
-
-    add_parser = subparsers.add_parser("add", help="Add job(s) to queue")
-    add_parser.add_argument("commands", nargs="+", help='Command(s) to add, e.g., "python train.py"')
-    add_parser.add_argument("-r", "--repeat", type=int, default=1, help="Repeat the command multiple times")
-    add_parser.add_argument("-p", "--priority", type=int, default=0, help="Set job priority (higher values run first)")
-    add_parser.add_argument("-u", "--user", help="Override default username")
-    add_parser.add_argument("-n", "--notify", nargs="+", help="Additional notification types for this job")
-    add_parser.add_argument("-g", "--gpus", type=int, default=1, help="Number of GPUs to use for the job")
-    add_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     kill_parser = subparsers.add_parser("kill", help="Kill running job(s) by GPU index, job ID, or regex")
     kill_parser.add_argument("targets", nargs="+", help="List of GPU indices, job IDs, or command regex patterns")
@@ -130,29 +152,33 @@ def create_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = create_parser()
     args = parser.parse_args()
+    
+    # No longer needed as we're using the consistent approach for both run and add commands
 
     # First time setup handling
-    if not setup.check_config_exists() and args.command != "setup":
+    if not setup.check_config_exists() and (not isinstance(args.command, list) and args.command != "setup"):
         print(colored("Welcome to Nexus! Running first-time setup wizard...", "blue"))
         setup.setup_wizard()
-        if not args.command:
+        if not hasattr(args, 'command') or not args.command:
             jobs.print_status()
             return
 
-    if not args.command:
+    if not hasattr(args, 'command') or not args.command:
         jobs.print_status()
         return
 
     no_api_commands = {
         "config": lambda: handle_config(args),
         "env": lambda: handle_env(args),
+        "jobrc": lambda: handle_jobrc(args),
         "setup": lambda: handle_setup(args),
         "version": lambda: show_version(),
         "help": lambda: parser.print_help(),
     }
 
-    if args.command in no_api_commands:
-        no_api_commands[args.command]()
+    command_name = args.command[0] if isinstance(args.command, list) else args.command
+    if command_name in no_api_commands:
+        no_api_commands[command_name]()
         return
 
     if not api_client.check_api_connection():
@@ -163,16 +189,16 @@ def main() -> None:
         "add": lambda: jobs.add_jobs(
             args.commands,
             repeat=args.repeat,
-            user=args.user,
             priority=args.priority,
             num_gpus=args.gpus,
             notification_types=args.notify,
             bypass_confirm=args.yes,
         ),
         "run": lambda: jobs.run_job(
-            args.command,
+            args.commands,
             gpu_idxs_str=args.gpu_idxs,
             num_gpus=args.gpus,
+            notification_types=args.notify,
             bypass_confirm=args.yes,
         ),
         "queue": lambda: jobs.show_queue(),
@@ -185,7 +211,7 @@ def main() -> None:
         "health": lambda: jobs.show_health(),
         "update": lambda: jobs.update_job_command(
             args.job_id,
-            command=args.command,
+            command=" ".join(args.command) if hasattr(args, "command") and args.command else None,
             priority=args.priority,
             bypass_confirm=args.yes,
         ),
@@ -206,6 +232,13 @@ def handle_env(args) -> None:
         setup.open_env_editor()
     else:
         show_env()
+
+
+def handle_jobrc(args) -> None:
+    if hasattr(args, "jobrc_action") and args.jobrc_action == "edit":
+        setup.open_jobrc_editor()
+    else:
+        show_jobrc()
 
 
 def handle_setup(args) -> None:

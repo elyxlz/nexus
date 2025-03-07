@@ -77,6 +77,7 @@ def _build_script_content(
     git_tag: str,
     command: str,
     askpass_path: pl.Path | None,
+    git_token: str | None = None,
     jobrc: str | None = None,
 ) -> str:
     script_lines = [
@@ -85,11 +86,16 @@ def _build_script_content(
         "export GIT_TERMINAL_PROMPT=0",
     ]
 
+    clone_url = git_repo_url
+
+    if git_token and git_repo_url.startswith("https://"):
+        clone_url = git_repo_url.replace("https://", f"https://{git_token}@")
+
     if askpass_path:
         script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
 
     script_lines.append(
-        f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet '{git_repo_url}' '{job_repo_dir}'"
+        f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet '{clone_url}' '{job_repo_dir}'"
     )
     script_lines.append(f"cd '{job_repo_dir}'")
 
@@ -117,8 +123,11 @@ def _create_job_script(
     command: str,
     askpass_path: pl.Path | None,
     jobrc: str | None = None,
+    git_token: str | None = None,
 ) -> pl.Path:
-    script_content = _build_script_content(log_file, job_repo_dir, git_repo_url, git_tag, command, askpass_path, jobrc)
+    script_content = _build_script_content(
+        log_file, job_repo_dir, git_repo_url, git_tag, command, askpass_path, git_token=git_token, jobrc=jobrc
+    )
     return _write_job_script(_logger, job_dir, script_content)
 
 
@@ -126,7 +135,10 @@ def _create_job_script(
 def _build_environment(
     _logger: logger.NexusServerLogger, gpu_idxs: list[int], job_env: dict[str, str]
 ) -> dict[str, str]:
-    return {"CUDA_VISIBLE_DEVICES": ",".join([str(i) for i in gpu_idxs]), **job_env}
+    env = os.environ.copy()
+    env["CUDA_VISIBLE_DEVICES"] = ",".join([str(i) for i in gpu_idxs])
+    env.update(job_env)
+    return env
 
 
 @exc.handle_exception_async(Exception, message="Error determining exit code", reraise=False, default_return=None)
@@ -167,11 +179,14 @@ def _parse_exit_code(_logger: logger.NexusServerLogger, last_line: str) -> int:
 async def _launch_screen_process(
     _logger: logger.NexusServerLogger, session_name: str, script_path: str, env: dict[str, str]
 ) -> int:
+    # Convert to absolute path to ensure consistent path representation
+    abs_script_path = pl.Path(script_path).absolute()
+
     process = await asyncio.create_subprocess_exec(
         "screen",
         "-dmS",
         session_name,
-        script_path,
+        str(abs_script_path),
         env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -183,9 +198,8 @@ async def _launch_screen_process(
 
     await asyncio.sleep(0.2)
 
-    proc = await asyncio.create_subprocess_exec(
-        "pgrep", "-f", f"{session_name}.*{script_path}", stdout=asyncio.subprocess.PIPE
-    )
+    # Search by session name only, which is more reliable
+    proc = await asyncio.create_subprocess_exec("pgrep", "-f", f"{session_name}", stdout=asyncio.subprocess.PIPE)
     stdout, _ = await proc.communicate()
     pids = stdout.decode().strip().split("\n")
     if not pids or not pids[0]:
@@ -398,5 +412,6 @@ async def prepare_job_environment(
         job.command,
         askpass_path,
         job.jobrc,
+        git_token,
     )
     return log_file, job_repo_dir, env, askpass_path, script_path

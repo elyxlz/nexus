@@ -18,7 +18,7 @@ SYSTEM_SERVER_DIR = pl.Path("/etc/nexus_server")
 USER_SERVER_DIR = pl.Path.home() / ".nexus_server"
 SERVER_USER = "nexus"
 SYSTEMD_DIR = pl.Path("/etc/systemd/system")
-SYSTEMD_SERVICE_FILENAME = "nexus.service"
+SYSTEMD_SERVICE_FILENAME = "nexus_server.service"
 
 MARKER_SYSTEM = SYSTEM_SERVER_DIR / "nexus_server.json"
 MARKER_USER = USER_SERVER_DIR / "nexus_server.json"
@@ -476,10 +476,14 @@ def command_status() -> None:
 
     if info.install_mode == "system":
         try:
-            result = subprocess.run(["systemctl", "is-active", "nexus.server"], capture_output=True, text=True)
+            result = subprocess.run(
+                ["systemctl", "is-active", SYSTEMD_SERVICE_FILENAME], capture_output=True, text=True
+            )
             is_active = result.stdout.strip() == "active"
 
-            result = subprocess.run(["systemctl", "is-enabled", "nexus.server"], capture_output=True, text=True)
+            result = subprocess.run(
+                ["systemctl", "is-enabled", SYSTEMD_SERVICE_FILENAME], capture_output=True, text=True
+            )
             is_enabled = result.stdout.strip() == "enabled"
 
             print(f"Server active: {'Yes' if is_active else 'No'}")

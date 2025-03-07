@@ -11,25 +11,25 @@ from nexus.cli.config import NotificationType
 
 
 def run_job(
-    command: str,
+    commands: list[str],
     gpu_idxs_str: str | None = None,
-    num_gpus: int | None = None,
+    num_gpus: int = 1,
+    notification_types: list[NotificationType] | None = None,
     bypass_confirm: bool = False,
 ) -> None:
     """Run a job immediately on the server"""
     try:
+        command = " ".join(commands)
+
         print(f"\n{colored('Running job immediately:', 'blue', attrs=['bold'])}")
 
-        # Parse GPU indices if provided
         gpu_idxs = None
         gpu_info = ""
 
         if gpu_idxs_str:
-            # If specific GPU indices are provided, use those
             gpu_idxs = utils.parse_gpu_list(gpu_idxs_str)
             gpu_info = f" on GPU(s): {colored(','.join(map(str, gpu_idxs)), 'cyan')}"
         elif num_gpus:
-            # If number of GPUs is specified, note that in the message
             gpu_info = f" using {colored(str(num_gpus), 'cyan')} GPU(s)"
 
         print(f"  {colored('•', 'blue')} {command}{gpu_info}")
@@ -41,137 +41,44 @@ def run_job(
             print(colored("Operation cancelled.", "yellow"))
             return
 
-        # Prepare shared info
         cli_config = config.load_config()
         user = cli_config.user or "anonymous"
 
-        # Set up notifications
         notifications = list(cli_config.default_notifications)
 
-        # Generate a short random tag
-        git_tag_id = utils.generate_git_tag_id()
-        # Determine the current branch
-        branch_name = utils.get_current_git_branch()
-
-        # Attempt to create/push a git tag
-        tag_name = f"nexus-{git_tag_id}"
-        try:
-            subprocess.run(["git", "tag", tag_name], check=True)
-            # Mute push output
-            subprocess.run(["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL)
-        except subprocess.CalledProcessError as e:
-            # Roll back the tag if push fails
-            subprocess.run(["git", "tag", "-d", tag_name], check=False)
-            raise RuntimeError(f"Failed to create/push git tag: {e}")
-
-        # Derive remote URL
-        result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
-        git_repo_url = result.stdout.strip() or "unknown-url"
-
-        # Load environment variables
-        env_vars = setup.load_current_env()
-
-        # Determine number of GPUs needed
-        gpus_count = len(gpu_idxs) if gpu_idxs else (num_gpus if num_gpus else 1)
-
-        # Build the request payload with run_immediately=True
-        job_request = {
-            "command": command,
-            "user": user,
-            "git_repo_url": git_repo_url,
-            "git_tag": tag_name,
-            "git_branch": branch_name,
-            "num_gpus": gpus_count,
-            "priority": 0,  # Default priority
-            "search_wandb": cli_config.search_wandb,
-            "notifications": notifications,
-            "env": env_vars,
-            "jobrc": None,
-            "gpu_idxs": gpu_idxs,
-            "run_immediately": True,  # Key difference from add_jobs
-        }
-
-        result = api_client.add_job(job_request)
-        job_id = result["id"]
-
-        print(colored("\nJob started:", "green", attrs=["bold"]))
-        print(f"  {colored('•', 'green')} Job {colored(job_id, 'magenta')}: {result['command']}")
-
-        # Wait a moment for the job to actually start and create the screen session
-        print(colored("\nWaiting for job to initialize...", "blue"))
-
-        # Poll for the job to be fully started with a screen session
-        max_attempts = 10
-        for i in range(max_attempts):
-            time.sleep(1)  # Wait 1 second between checks
-            try:
-                job = api_client.get_job(job_id)
-                if job["status"] == "running" and job.get("screen_session_name"):
-                    print(colored(f"Job {job_id} running, attaching to screen session...", "green"))
-                    # Automatically attach to the job
-                    attach_to_job(job_id)
-                    return
-            except Exception:
-                pass  # Continue if there's any error checking the job
-
-            # Show a progress indicator
-            if i < max_attempts - 1:
-                print(".", end="", flush=True)
-
-        # If we couldn't attach, just show the regular message
-        print(colored("\nCouldn't automatically attach to job. You can:", "yellow"))
-        print(f"  - Run 'nx attach {job_id}' to attach to the job's screen session")
-        print(f"  - Run 'nx logs {job_id}' to view the job output")
-        print(f"  - Use 'nx logs -t 20 {job_id}' to see just the last 20 lines")
-
-    except Exception as e:
-        print(colored(f"\nError: {e}", "red"))
-        sys.exit(1)
-
-
-def add_jobs(
-    commands: list[str],
-    repeat: int,
-    user: str | None,
-    priority: int = 0,
-    num_gpus: int = 1,
-    notification_types: list[NotificationType] | None = None,
-    bypass_confirm: bool = False,
-) -> None:
-    try:
-        # Expand commands
-        expanded_commands = utils.expand_job_commands(commands, repeat=repeat)
-        if not expanded_commands:
-            return
-
-        # Show what will be added
-        print(f"\n{colored('Adding the following jobs:', 'blue', attrs=['bold'])}")
-        for cmd in expanded_commands:
-            priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
-            gpus_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})" if num_gpus > 1 else ""
-            print(f"  {colored('•', 'blue')} {cmd}{priority_str}{gpus_str}")
-
-        if not utils.confirm_action(
-            f"Add {colored(str(len(expanded_commands)), 'cyan')} jobs to the queue?",
-            bypass=bypass_confirm,
-        ):
-            print(colored("Operation cancelled.", "yellow"))
-            return
-
-        # Prepare shared info
-        cli_config = config.load_config()
-        final_user = user or cli_config.user or "anonymous"
-
-        # Set up notifications - use default_notifications from config plus any additional ones specified
-        notifications = list(cli_config.default_notifications)
-
-        # Add any additional notification types if specified
         if notification_types:
             for notification_type in notification_types:
                 if notification_type not in notifications:
                     notifications.append(notification_type)
 
-        # Check if the user has configured the required environment variables for the notifications
+        git_tag_id = utils.generate_git_tag_id()
+        branch_name = utils.get_current_git_branch()
+        tag_name = f"nexus-{git_tag_id}"
+        
+        # Check if we're in a git repository
+        is_git_repo = True
+        try:
+            # Check if we're in a git repository
+            subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            is_git_repo = False
+            print(colored("Warning: Not in a git repository. Using default values.", "yellow"))
+            git_repo_url = "https://github.com/user/default-repo"
+            branch_name = "unknown-branch"
+            print(colored("Note: If you need to access private repositories, make sure to set up GIT_TOKEN", "yellow"))
+            print(colored("      Run 'nx setup' to configure this.", "yellow"))
+        
+        if is_git_repo:
+            try:
+                subprocess.run(["git", "tag", tag_name], check=True)
+                subprocess.run(["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL)
+            except subprocess.CalledProcessError as e:
+                subprocess.run(["git", "tag", "-d", tag_name], check=False)
+                raise RuntimeError(f"Failed to create/push git tag: {e}")
+
+            result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
+            git_repo_url = result.stdout.strip() or "unknown-url"
+
         env_vars = setup.load_current_env()
         invalid_notifications = []
 
@@ -189,36 +96,147 @@ def add_jobs(
                 print(colored("Operation cancelled.", "yellow"))
                 return
 
-            # Remove invalid notification types
             notifications = [n for n in notifications if n not in invalid_notifications]
 
-        # Generate a short random tag
+        gpus_count = len(gpu_idxs) if gpu_idxs else num_gpus
+
+        job_request = {
+            "command": command,
+            "user": user,
+            "git_repo_url": git_repo_url,
+            "git_tag": tag_name,
+            "git_branch": branch_name,
+            "num_gpus": gpus_count,
+            "priority": 0,
+            "search_wandb": cli_config.search_wandb,
+            "notifications": notifications,
+            "env": env_vars,
+            "jobrc": None,
+            "gpu_idxs": gpu_idxs,
+            "run_immediately": True,
+        }
+
+        result = api_client.add_job(job_request)
+        job_id = result["id"]
+
+        print(colored("\nJob started:", "green", attrs=["bold"]))
+        print(f"  {colored('•', 'green')} Job {colored(job_id, 'magenta')}: {result['command']}")
+
+        print(colored("\nWaiting for job to initialize...", "blue"))
+
+        max_attempts = 10
+        for i in range(max_attempts):
+            time.sleep(1)
+            try:
+                job = api_client.get_job(job_id)
+                if job["status"] == "running" and job.get("screen_session_name"):
+                    print(colored(f"Job {job_id} running, attaching to screen session...", "green"))
+                    attach_to_job(job_id)
+                    return
+            except Exception:
+                pass
+
+            if i < max_attempts - 1:
+                print(".", end="", flush=True)
+
+        print(colored("\nCouldn't automatically attach to job. You can:", "yellow"))
+        print(f"  - Run 'nx attach {job_id}' to attach to the job's screen session")
+        print(f"  - Run 'nx logs {job_id}' to view the job output")
+        print(f"  - Use 'nx logs -t 20 {job_id}' to see just the last 20 lines")
+
+    except Exception as e:
+        print(colored(f"\nError: {e}", "red"))
+        sys.exit(1)
+
+
+def add_jobs(
+    commands: list[str],
+    repeat: int,
+    priority: int = 0,
+    num_gpus: int = 1,
+    notification_types: list[NotificationType] | None = None,
+    bypass_confirm: bool = False,
+) -> None:
+    try:
+        expanded_commands = utils.expand_job_commands(commands, repeat=repeat)
+        if not expanded_commands:
+            return
+
+        print(f"\n{colored('Adding the following jobs:', 'blue', attrs=['bold'])}")
+        for cmd in expanded_commands:
+            priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
+            gpus_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})" if num_gpus > 1 else ""
+            print(f"  {colored('•', 'blue')} {cmd}{priority_str}{gpus_str}")
+
+        if not utils.confirm_action(
+            f"Add {colored(str(len(expanded_commands)), 'cyan')} jobs to the queue?",
+            bypass=bypass_confirm,
+        ):
+            print(colored("Operation cancelled.", "yellow"))
+            return
+
+        cli_config = config.load_config()
+        user = cli_config.user or "anonymous"
+
+        notifications = list(cli_config.default_notifications)
+
+        if notification_types:
+            for notification_type in notification_types:
+                if notification_type not in notifications:
+                    notifications.append(notification_type)
+
+        env_vars = setup.load_current_env()
+        invalid_notifications = []
+
+        for notification_type in notifications:
+            required_vars = config.REQUIRED_ENV_VARS.get(notification_type, [])
+            if any(env_vars.get(var) is None for var in required_vars):
+                invalid_notifications.append(notification_type)
+
+        if invalid_notifications:
+            print(colored("\nWarning: Some notification types are missing required configuration:", "yellow"))
+            for notification_type in invalid_notifications:
+                print(f"  {colored('•', 'yellow')} {notification_type}")
+
+            if not utils.ask_yes_no("Continue with remaining notification types?"):
+                print(colored("Operation cancelled.", "yellow"))
+                return
+
+            notifications = [n for n in notifications if n not in invalid_notifications]
+
         git_tag_id = utils.generate_git_tag_id()
-        # Determine the current branch
         branch_name = utils.get_current_git_branch()
-
-        # Attempt to create/push a git tag
         tag_name = f"nexus-{git_tag_id}"
+        
+        # Check if we're in a git repository
+        is_git_repo = True
         try:
-            subprocess.run(["git", "tag", tag_name], check=True)
-            # Mute push output
-            subprocess.run(["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL)
-        except subprocess.CalledProcessError as e:
-            # Roll back the tag if push fails
-            subprocess.run(["git", "tag", "-d", tag_name], check=False)
-            raise RuntimeError(f"Failed to create/push git tag: {e}")
+            # Check if we're in a git repository
+            subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            is_git_repo = False
+            print(colored("Warning: Not in a git repository. Using default values.", "yellow"))
+            git_repo_url = "https://github.com/user/default-repo"
+            branch_name = "unknown-branch"
+            print(colored("Note: If you need to access private repositories, make sure to set up GIT_TOKEN", "yellow"))
+            print(colored("      Run 'nx setup' to configure this.", "yellow"))
+        
+        if is_git_repo:
+            try:
+                subprocess.run(["git", "tag", tag_name], check=True)
+                subprocess.run(["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL)
+            except subprocess.CalledProcessError as e:
+                subprocess.run(["git", "tag", "-d", tag_name], check=False)
+                raise RuntimeError(f"Failed to create/push git tag: {e}")
 
-        # Derive remote URL (like the old code)
-        result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
-        git_repo_url = result.stdout.strip() or "unknown-url"
+            result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
+            git_repo_url = result.stdout.strip() or "unknown-url"
 
-        # Submit each command as a single job
         created_jobs = []
         for cmd in expanded_commands:
-            # Build the request payload for the new API
             job_request = {
                 "command": cmd,
-                "user": final_user,
+                "user": user,
                 "git_repo_url": git_repo_url,
                 "git_tag": tag_name,
                 "git_branch": branch_name,
@@ -229,13 +247,12 @@ def add_jobs(
                 "env": env_vars,
                 "jobrc": None,
                 "gpu_idxs": None,
-                "run_immediately": False,  # New parameter in the API
+                "run_immediately": False,
             }
 
             result = api_client.add_job(job_request)
             created_jobs.append(result)
 
-        # Summarize
         print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
         for job in created_jobs:
             priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
@@ -251,7 +268,6 @@ def add_jobs(
 
 def show_queue() -> None:
     try:
-        # Use get_jobs with "queued" status instead of get_queue
         jobs = api_client.get_jobs("queued")
 
         if not jobs:
@@ -262,10 +278,11 @@ def show_queue() -> None:
         total_jobs = len(jobs)
         for idx, job in enumerate(reversed(jobs), 1):
             created_time = utils.format_timestamp(job.get("created_at"))
+            priority_str = f" (Priority: {colored(str(job.get('priority', 0)), 'cyan')})" if job.get('priority', 0) != 0 else ""
             print(
                 f"{total_jobs - idx + 1}. {colored(job['id'], 'magenta')} - "
                 f"{colored(job['command'], 'white')} "
-                f"(Added: {colored(created_time, 'cyan')})"
+                f"(Added: {colored(created_time, 'cyan')}){priority_str}"
             )
 
         print(f"\n{colored('Total queued jobs:', 'blue', attrs=['bold'])} " f"{colored(str(total_jobs), 'cyan')}")
@@ -275,7 +292,6 @@ def show_queue() -> None:
 
 def show_history(regex: str | None = None) -> None:
     try:
-        # Get completed, failed, and killed jobs
         statuses = ["completed", "failed", "killed"]
         jobs = []
         for status in statuses:
@@ -285,7 +301,6 @@ def show_history(regex: str | None = None) -> None:
             print(colored("No completed/failed/killed jobs.", "green"))
             return
 
-        # Optional regex filter
         if regex:
             try:
                 pattern = re.compile(regex)
@@ -297,11 +312,9 @@ def show_history(regex: str | None = None) -> None:
                 print(colored(f"Invalid regex pattern: {e}", "red"))
                 return
 
-        # Sort jobs by completion time, ascending
         jobs.sort(key=lambda x: x.get("completed_at", 0), reverse=False)
 
         print(colored("Job History:", "blue", attrs=["bold"]))
-        # Show last 25
         for job in jobs[-25:]:
             runtime = utils.calculate_runtime(job)
             started_time = utils.format_timestamp(job.get("started_at"))
@@ -323,7 +336,6 @@ def show_history(regex: str | None = None) -> None:
             )
             status_str = colored(f"{status_icon} {job['status'].upper()}", status_color)
 
-            # truncated command
             command = job["command"]
             if len(command) > 80:
                 command = command[:77] + "..."
@@ -359,7 +371,6 @@ def kill_jobs(targets: list[str], bypass_confirm: bool = False) -> None:
         jobs_to_kill: set[str] = set()
         jobs_info: list[dict] = []
 
-        # If user gave GPU indices, find which jobs are on those GPUs
         if gpu_indices:
             gpus = api_client.get_gpus()
 
@@ -377,12 +388,10 @@ def kill_jobs(targets: list[str], bypass_confirm: bool = False) -> None:
                         }
                     )
 
-        # If user gave job IDs or regex
         if job_ids:
             running_jobs = api_client.get_jobs("running")
 
             for pattern in job_ids:
-                # First see if there's an exact match
                 if any(j["id"] == pattern for j in running_jobs):
                     j = next(j for j in running_jobs if j["id"] == pattern)
                     jobs_to_kill.add(j["id"])
@@ -397,7 +406,6 @@ def kill_jobs(targets: list[str], bypass_confirm: bool = False) -> None:
                         }
                     )
                 else:
-                    # Try to interpret as regex
                     try:
                         regex = re.compile(pattern)
                         matched = [j for j in running_jobs if regex.search(j["command"])]
@@ -420,7 +428,6 @@ def kill_jobs(targets: list[str], bypass_confirm: bool = False) -> None:
             print(colored("No matching running jobs found.", "yellow"))
             return
 
-        # Confirm
         print(f"\n{colored('The following jobs will be killed:', 'blue', attrs=['bold'])}")
         for info in jobs_info:
             job_details = [
@@ -443,7 +450,6 @@ def kill_jobs(targets: list[str], bypass_confirm: bool = False) -> None:
             print(colored("Operation cancelled.", "yellow"))
             return
 
-        # Issue delete
         result = api_client.kill_running_jobs(list(jobs_to_kill))
 
         print(colored("\nOperation results:", "green", attrs=["bold"]))
@@ -467,14 +473,12 @@ def kill_jobs(targets: list[str], bypass_confirm: bool = False) -> None:
 
 def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
     try:
-        # Get queued jobs
         queued_jobs = api_client.get_jobs("queued")
 
         jobs_to_remove: set[str] = set()
         jobs_info: list[dict] = []
 
         for pattern in job_ids:
-            # Direct ID match
             if any(j["id"] == pattern for j in queued_jobs):
                 j = next(jj for jj in queued_jobs if jj["id"] == pattern)
                 jobs_to_remove.add(pattern)
@@ -489,7 +493,6 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
                     }
                 )
             else:
-                # Regex match
                 try:
                     regex = re.compile(pattern)
                     matched = [jj for jj in queued_jobs if regex.search(jj["command"])]
@@ -559,7 +562,6 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
 
 def view_logs(target: str, tail: int | None = None) -> None:
     try:
-        # Check if target is a GPU index
         if target.isdigit():
             gpu_idx = int(target)
             gpus = api_client.get_gpus()
@@ -576,7 +578,6 @@ def view_logs(target: str, tail: int | None = None) -> None:
 
             target = job_id
 
-        # Now treat target as a job_id
         if tail:
             logs = api_client.get_job_logs(target, last_n_lines=tail)
             if logs:
@@ -586,7 +587,10 @@ def view_logs(target: str, tail: int | None = None) -> None:
                 print(colored("No logs available", "yellow"))
         else:
             logs = api_client.get_job_logs(target)
-            print(logs)
+            if logs:
+                print(logs)
+            else:
+                print(colored("Log is empty", "yellow"))
 
     except Exception as e:
         print(colored(f"Error fetching logs: {e}", "red"))
@@ -606,7 +610,6 @@ def show_health() -> None:
             score_color = "green" if score > 0.8 else "yellow" if score > 0.5 else "red"
             print(f"  {colored('•', 'blue')} Health Score: {colored(f'{score:.2f}', score_color)}")
 
-        # System stats
         if health.get("system"):
             system = health["system"]
             print(colored("\nSystem Statistics:", "blue", attrs=["bold"]))
@@ -631,12 +634,10 @@ def show_health() -> None:
                 load_str = ", ".join([f"{x:.2f}" for x in load_avg])
                 print(f"  {colored('•', 'blue')} Load Average: {colored(load_str, 'cyan')}")
 
-        # Disk stats
         if health.get("disk"):
             disk = health["disk"]
             print(colored("\nDisk Statistics:", "blue", attrs=["bold"]))
 
-            # Convert to GB for better readability
             total_gb = disk.get("total", 0) / (1024**3)
             used_gb = disk.get("used", 0) / (1024**3)
             free_gb = disk.get("free", 0) / (1024**3)
@@ -649,7 +650,6 @@ def show_health() -> None:
             )
             print(f"  {colored('•', 'blue')} Free Space: {colored(f'{free_gb:.1f}GB', 'cyan')}")
 
-        # Network stats
         if health.get("network"):
             network = health["network"]
             print(colored("\nNetwork Statistics:", "blue", attrs=["bold"]))
@@ -674,14 +674,12 @@ def update_job_command(
     job_id: str, command: str | None = None, priority: int | None = None, bypass_confirm: bool = False
 ) -> None:
     try:
-        # Fetch the job first to show before/after
         job = api_client.get_job(job_id)
 
         if not job:
             print(colored(f"Job {job_id} not found", "red"))
             return
 
-        # Only queued jobs can be updated
         if job["status"] != "queued":
             print(colored(f"Only queued jobs can be updated. Job {job_id} has status: {job['status']}", "red"))
             return
@@ -691,7 +689,6 @@ def update_job_command(
         print(f"  {colored('•', 'blue')} Command: {colored(job['command'], 'white')}")
         print(f"  {colored('•', 'blue')} Priority: {colored(str(job['priority']), 'cyan')}")
 
-        # Show what will be updated
         print(f"\n{colored('Will update to:', 'blue', attrs=['bold'])}")
         print(f"  {colored('•', 'blue')} Command: {colored(command if command is not None else 'unchanged', 'white')}")
         print(
@@ -702,7 +699,6 @@ def update_job_command(
             print(colored("Operation cancelled.", "yellow"))
             return
 
-        # Make the API call to update the job
         result = api_client.update_job(job_id, command, priority)
 
         print(colored("\nJob updated successfully:", "green", attrs=["bold"]))
@@ -745,7 +741,6 @@ def handle_blacklist(args) -> None:
 
 def print_status() -> None:
     try:
-        # Check server status
         import importlib.metadata
 
         if not api_client.check_api_connection():
@@ -776,7 +771,6 @@ def print_status() -> None:
         print(f"Running: {running} jobs in progress")
         print(f"History: {colored(str(completed), 'blue')} jobs completed\n")
 
-        # GPU details
         gpus = api_client.get_gpus()
 
         print(colored("GPUs:", "white"))
@@ -790,7 +784,6 @@ def print_status() -> None:
             if gpu.get("running_job_id"):
                 job_id = gpu["running_job_id"]
 
-                # Get specific job details directly with the new function
                 job = api_client.get_job(job_id)
 
                 runtime = utils.calculate_runtime(job)
@@ -815,12 +808,7 @@ def print_status() -> None:
 
 
 def attach_to_job(target: str) -> None:
-    """
-    Attach to a running job's screen session. Can take either a job ID or a GPU index.
-    If GPU index is provided, it will find the job running on that GPU.
-    """
     try:
-        # Check if target is a GPU index
         if target.isdigit():
             gpu_idx = int(target)
             gpus = api_client.get_gpus()
@@ -837,7 +825,6 @@ def attach_to_job(target: str) -> None:
 
             target = job_id
 
-        # Now treat target as a job_id
         job = api_client.get_job(target)
         if not job:
             print(colored(f"Job {target} not found", "red"))
@@ -847,7 +834,6 @@ def attach_to_job(target: str) -> None:
             print(colored(f"Cannot attach to job with status: {job['status']}. Job must be running.", "red"))
             return
 
-        # Get the screen session name
         screen_session_name = job.get("screen_session_name")
         if not screen_session_name:
             print(colored(f"No screen session found for job {target}", "red"))
@@ -856,10 +842,8 @@ def attach_to_job(target: str) -> None:
         print(colored(f"Attaching to job {target} screen session '{screen_session_name}'", "blue"))
         print(colored("Press Ctrl+A Ctrl+D to detach from the screen session", "blue"))
 
-        # Give user time to read the instructions
         time.sleep(1)
 
-        # Attach to the screen session
         os.system(f"screen -r {screen_session_name}")
 
         print(colored(f"Detached from job {target} screen session", "blue"))

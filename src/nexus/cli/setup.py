@@ -71,7 +71,7 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         env_vars["DISCORD_USER_ID"] = discord_id
         env_vars["DISCORD_WEBHOOK_URL"] = discord_webhook
 
-    if utils.ask_yes_no("Would you like to set up Phone Call notifications?"):
+    if utils.ask_yes_no("Would you like to set up Phone Call notifications?", default=False):
         configured_notifications.append("phone")
         print(colored("\nPhone Calls using Twilio require the following:", "cyan"))
 
@@ -128,14 +128,27 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
             if utils.ask_yes_no(f"Enable {notification_type} notifications by default?"):
                 default_notifications.append(notification_type)
 
+    # Add Git token for private repositories
+    if utils.ask_yes_no("Do you work with private Git repositories?", default=False):
+        print(colored("\nNexus needs a Git token to clone private repositories:", "cyan"))
+        print("You can create a Personal Access Token at: https://github.com/settings/tokens")
+        print("The token needs 'repo' scope to access private repositories")
+        
+        git_token = utils.get_user_input(
+            "Git Personal Access Token",
+            default=env_vars.get("GIT_TOKEN", ""),
+            required=True,
+        )
+        env_vars["GIT_TOKEN"] = git_token
+        
     if utils.ask_yes_no("Would you like to add any additional environment variables?", default=True):
-        while True:
-            key = utils.get_user_input("Variable name (or press Enter to finish)")
-            if not key:
-                break
-
-            value = utils.get_user_input(f"Value for {key}", required=True)
-            env_vars[key] = value
+        # Save current env vars before opening editor
+        create_default_env()
+        save_env_vars(env_vars)
+        # Open editor for user to add variables directly
+        utils.open_file_in_editor(get_env_path())
+        # Reload env vars after editing
+        env_vars = load_current_env()
 
     config = config.copy(update={"default_notifications": default_notifications})
     return config, env_vars
@@ -189,6 +202,12 @@ def setup_wizard() -> None:
     )
 
     cfg, env_vars = setup_notifications(cfg)
+    
+    # Initialize jobrc file if requested
+    if utils.ask_yes_no("Would you like to set up a job runtime configuration (.jobrc)?"):
+        jobrc_path = get_jobrc_path()
+        create_default_jobrc()
+        utils.open_file_in_editor(jobrc_path)
 
     print("\nDebug - Config values before saving:")
     print(f"search_wandb: {cfg.search_wandb}")
@@ -205,6 +224,7 @@ def setup_wizard() -> None:
     print("\nYou can edit these files at any time with:")
     print("  nexus config    # Edit configuration")
     print("  nexus env       # Edit environment variables")
+    print("  nexus jobrc     # Manage job runtime configuration")
 
 
 def open_config_editor() -> None:
@@ -221,6 +241,34 @@ def open_env_editor() -> None:
         create_default_env()
 
     utils.open_file_in_editor(env_path)
+
+
+def get_jobrc_path() -> pl.Path:
+    return pl.Path.home() / ".nexus" / ".jobrc"
+
+
+def create_default_jobrc() -> None:
+    jobrc_path = get_jobrc_path()
+    jobrc_dir = jobrc_path.parent
+
+    jobrc_dir.mkdir(parents=True, exist_ok=True)
+
+    if not jobrc_path.exists():
+        with open(jobrc_path, "w") as f:
+            f.write("# Nexus Job Configuration\n\n")
+            f.write("# This file contains environment setup commands that run before each job\n")
+            f.write("# Examples:\n")
+            f.write("# export PATH=$HOME/.local/bin:$PATH\n")
+            f.write("# conda activate myenv\n")
+            f.write("# pip install -e .\n")
+
+
+def open_jobrc_editor() -> None:
+    jobrc_path = get_jobrc_path()
+    if not jobrc_path.exists():
+        create_default_jobrc()
+
+    utils.open_file_in_editor(jobrc_path)
 
 
 def check_config_exists() -> bool:

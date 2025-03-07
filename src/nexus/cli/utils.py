@@ -25,6 +25,15 @@ def generate_git_tag_id() -> str:
 
 def get_current_git_branch() -> str:
     try:
+        # First check if we're in a git repository
+        subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            check=True, 
+            stdout=subprocess.DEVNULL, 
+            stderr=subprocess.DEVNULL
+        )
+        
+        # If we are, get the branch name
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True,

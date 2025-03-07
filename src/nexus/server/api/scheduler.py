@@ -103,25 +103,49 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
 
     available_gpu_idxs = [g.index for g in available_gpus]
 
-    if _job.gpu_idxs and all(idx in available_gpu_idxs for idx in _job.gpu_idxs):
-        job_gpu_idxs = _job.gpu_idxs
-        ctx.logger.info(f"Using user-specified GPU indices {job_gpu_idxs} for job {_job.id}")
+    if _job.gpu_idxs:
+        # Check if ALL user-specified GPUs are available
+        if all(idx in available_gpu_idxs for idx in _job.gpu_idxs):
+            job_gpu_idxs = _job.gpu_idxs
+            ctx.logger.info(f"Using user-specified GPU indices {job_gpu_idxs} for job {_job.id}")
+        else:
+            # Some or all of the user-specified GPUs are unavailable - do not start the job
+            unavailable_gpus = [idx for idx in _job.gpu_idxs if idx not in available_gpu_idxs]
+            ctx.logger.debug(f"Job {_job.id} requires specific GPU indices {_job.gpu_idxs}, but indices {unavailable_gpus} are unavailable")
+            return
     elif _job.num_gpus <= len(available_gpu_idxs):
         job_gpu_idxs = available_gpu_idxs[: _job.num_gpus]
     else:
         return
 
-    started = await job.async_start_job(ctx.logger, job=_job, gpu_idxs=job_gpu_idxs, server_dir=ctx.config.server_dir)
+    try:
+        # Try to start the job
+        started = await job.async_start_job(ctx.logger, job=_job, gpu_idxs=job_gpu_idxs, server_dir=ctx.config.server_dir)
+        
+        db.update_job(ctx.logger, conn=ctx.db, job=started)
+        ctx.logger.info(format.format_job_action(started, action="started"))
 
-    db.update_job(ctx.logger, conn=ctx.db, job=started)
-    ctx.logger.info(format.format_job_action(started, action="started"))
+        if started.notifications:
+            job_with_notification = await notifications.notify_job_action(ctx.logger, _job=started, action="started")
+            db.update_job(ctx.logger, conn=ctx.db, job=job_with_notification)
 
-    if started.notifications:
-        job_with_notification = await notifications.notify_job_action(ctx.logger, _job=started, action="started")
-        db.update_job(ctx.logger, conn=ctx.db, job=job_with_notification)
+    except Exception as e:
+        # If job fails to start, mark it as failed
+        ctx.logger.error(f"Failed to start job {_job.id}: {str(e)}")
+        
+        # Mark the job as failed
+        failed_job = dc.replace(
+            _job,
+            status="failed",
+            completed_at=dt.datetime.now().timestamp(),
+            error_message=f"Failed to start job: {str(e)}"
+        )
+        
+        db.update_job(ctx.logger, conn=ctx.db, job=failed_job)
+        ctx.logger.error(format.format_job_action(failed_job, action="failed"))
 
     remaining = len(db.list_jobs(ctx.logger, conn=ctx.db, status="queued"))
-    ctx.logger.info(f"Started jobs on available GPUs; remaining queued jobs: {remaining}")
+    ctx.logger.info(f"Processed jobs from queue; remaining queued jobs: {remaining}")
 
 
 async def scheduler_loop(ctx: context.NexusServerContext):
