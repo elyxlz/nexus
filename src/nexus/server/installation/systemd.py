@@ -14,7 +14,7 @@ ExecStart=/usr/local/bin/nexus-server
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=-/etc/nexus_server/env
+Environment=SCREENDIR=/tmp/screen_nexus
 """
 
 INSTALL_SECTION = """[Install]

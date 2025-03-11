@@ -18,7 +18,7 @@ SYSTEM_SERVER_DIR = pl.Path("/etc/nexus_server")
 USER_SERVER_DIR = pl.Path.home() / ".nexus_server"
 SERVER_USER = "nexus"
 SYSTEMD_DIR = pl.Path("/etc/systemd/system")
-SYSTEMD_SERVICE_FILENAME = "nexus_server.service"
+SYSTEMD_SERVICE_FILENAME = "nexus-server.service"
 
 MARKER_SYSTEM = SYSTEM_SERVER_DIR / "nexus_server.json"
 MARKER_USER = USER_SERVER_DIR / "nexus_server.json"
@@ -168,6 +168,17 @@ def configure_multiuser_screen() -> bool:
     if not screenrc_path.exists():
         screenrc_path.write_text("multiuser on\nacladd .\n")
         subprocess.run(["chown", f"{SERVER_USER}:{SERVER_USER}", str(screenrc_path)], check=True)
+        return True
+    return False
+
+
+def setup_shared_screen_dir() -> bool:
+    """Create a shared screen socket directory that all users can access."""
+    screen_dir = pl.Path("/tmp/screen_nexus")
+    if not screen_dir.exists():
+        screen_dir.mkdir(parents=True, exist_ok=True)
+        # Mode 1777 = sticky bit + rwxrwxrwx (world-writable with sticky bit)
+        os.chmod(screen_dir, 0o1777)
         return True
     return False
 
@@ -371,14 +382,17 @@ def prepare_system_environment() -> None:
 
     if configure_multiuser_screen():
         print(f"Configured multiuser Screen for {SERVER_USER} user.")
+        
+    if setup_shared_screen_dir():
+        print(f"Created shared screen directory at /tmp/screen_nexus")
 
 
 def print_installation_complete_message(mode: tp.Literal["system", "user"]) -> None:
     print(f"\n{mode.capitalize()} installation complete.")
     if mode == "system":
         print("To uninstall: nexus-server uninstall")
-        print("To start/stop: sudo systemctl start/stop nexus_server")
-        print("To check status: systemctl status nexus_server")
+        print("To start/stop: sudo systemctl start/stop nexus-server")
+        print("To check status: systemctl status nexus-server")
     else:
         print("To uninstall: nexus-server uninstall")
         print("To start the server: nexus-server")
