@@ -100,7 +100,7 @@ def _build_script_content(
     script_lines.append(f"cd '{job_repo_dir}'")
 
     script_lines.append(f"script -f -q -c \"{jobrc + '; ' if jobrc else ''}{command}\" \"{log_file}\"")
-    script_lines.append(f"echo \"COMMAND_EXIT_CODE=$?\" >> \"{log_file}\"")
+    script_lines.append(f'echo "COMMAND_EXIT_CODE=$?" >> "{log_file}"')
 
     return "\n".join(script_lines)
 
@@ -171,7 +171,11 @@ def _parse_exit_code(_logger: logger.NexusServerLogger, last_line: str) -> int:
     if "COMMAND_EXIT_CODE=" not in last_line:
         raise exc.JobError(message="Could not find exit code in log")
 
-    exit_code_str = last_line.split('COMMAND_EXIT_CODE=')[1].split()[0] if ' ' in last_line else last_line.split('COMMAND_EXIT_CODE=')[1]
+    exit_code_str = (
+        last_line.split("COMMAND_EXIT_CODE=")[1].split()[0]
+        if " " in last_line
+        else last_line.split("COMMAND_EXIT_CODE=")[1]
+    )
     return int(exit_code_str)
 
 
@@ -423,7 +427,7 @@ def get_queue(queued_jobs: list[schemas.Job]) -> list[schemas.Job]:
     if not queued_jobs:
         return []
 
-    # Sort with num_gpus as the primary key (for multi-gpu priority) 
+    # Sort with num_gpus as the primary key (for multi-gpu priority)
     # and priority as the secondary key to break ties
     sorted_jobs = sorted(queued_jobs, key=lambda x: (x.num_gpus, x.priority), reverse=True)
 

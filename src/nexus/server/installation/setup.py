@@ -36,35 +36,44 @@ class InstallationInfo:
 
 
 def get_installation_info() -> InstallationInfo:
-    if MARKER_SYSTEM.exists():
-        try:
-            data = json.loads(MARKER_SYSTEM.read_text())
-            return InstallationInfo(
-                version=data.get("version", "unknown"),
-                install_date=data.get("install_date", "unknown"),
-                install_mode="system",
-                install_path=SYSTEM_SERVER_DIR,
-                config_path=SYSTEM_SERVER_DIR / "config.toml",
-                installed_by=data.get("installed_by"),
-                server_enabled=data.get("server_enabled", False),
-            )
-        except Exception:
-            pass
+    # Check system installation but handle permission errors gracefully
+    try:
+        if MARKER_SYSTEM.exists():
+            try:
+                data = json.loads(MARKER_SYSTEM.read_text())
+                return InstallationInfo(
+                    version=data.get("version", "unknown"),
+                    install_date=data.get("install_date", "unknown"),
+                    install_mode="system",
+                    install_path=SYSTEM_SERVER_DIR,
+                    config_path=SYSTEM_SERVER_DIR / "config.toml",
+                    installed_by=data.get("installed_by"),
+                    server_enabled=data.get("server_enabled", False),
+                )
+            except Exception:
+                pass
+    except PermissionError:
+        # Log the permission error but continue checking user installation
+        pass
 
-    if MARKER_USER.exists():
-        try:
-            data = json.loads(MARKER_USER.read_text())
-            return InstallationInfo(
-                version=data.get("version", "unknown"),
-                install_date=data.get("install_date", "unknown"),
-                install_mode="user",
-                install_path=USER_SERVER_DIR,
-                config_path=USER_SERVER_DIR / "config.toml",
-                installed_by=data.get("installed_by"),
-                server_enabled=False,
-            )
-        except Exception:
-            pass
+    # Check user installation
+    try:
+        if MARKER_USER.exists():
+            try:
+                data = json.loads(MARKER_USER.read_text())
+                return InstallationInfo(
+                    version=data.get("version", "unknown"),
+                    install_date=data.get("install_date", "unknown"),
+                    install_mode="user",
+                    install_path=USER_SERVER_DIR,
+                    config_path=USER_SERVER_DIR / "config.toml",
+                    installed_by=data.get("installed_by"),
+                    server_enabled=False,
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     try:
         current_version = importlib.metadata.version("nexusai")
@@ -382,9 +391,9 @@ def prepare_system_environment() -> None:
 
     if configure_multiuser_screen():
         print(f"Configured multiuser Screen for {SERVER_USER} user.")
-        
+
     if setup_shared_screen_dir():
-        print(f"Created shared screen directory at /tmp/screen_nexus")
+        print("Created shared screen directory at /tmp/screen_nexus")
 
 
 def print_installation_complete_message(mode: tp.Literal["system", "user"]) -> None:
@@ -413,8 +422,6 @@ def install_system(
     create_persistent_directory(_config)
     print(f"Created configuration at: {config.get_config_path(SYSTEM_SERVER_DIR)}")
 
-    display_config(_config)
-
     set_system_permissions()
     print("Set proper directory permissions.")
 
@@ -440,8 +447,6 @@ def install_user(interactive: bool = True, config_file: pl.Path | None = None, f
     _config = setup_config(USER_SERVER_DIR, interactive, config_file)
     create_persistent_directory(_config)
     print(f"Created configuration at: {config.get_config_path(USER_SERVER_DIR)}")
-
-    display_config(_config)
 
     current_version = write_installation_marker("user")
     print(f"Installed version {current_version}")
