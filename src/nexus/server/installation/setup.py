@@ -35,7 +35,6 @@ class InstallationInfo:
 
 
 def get_installation_info() -> InstallationInfo:
-    # Check system installation but handle permission errors gracefully
     try:
         if MARKER_SYSTEM.exists():
             try:
@@ -136,28 +135,32 @@ def create_directories(server_dir: pl.Path) -> None:
     (server_dir / "jobs").mkdir(parents=True, exist_ok=True)
 
 
-def create_server_user() -> bool:
+def create_server_user(sup_groups: list[str] | None = None) -> bool:
+    user_exists = False
     try:
         pwd.getpwnam(SERVER_USER)
-        return False
+        user_exists = True
     except KeyError:
         subprocess.run(["useradd", "--system", "--create-home", "--shell", "/bin/bash", SERVER_USER], check=True)
-        return True
+    
+    if sup_groups:
+        for grp in sup_groups:
+            subprocess.run(["usermod", "-aG", grp, SERVER_USER], check=True)
+        print(f"Added supplementary groups: {', '.join(sup_groups)} to user {SERVER_USER}.")
+    
+    return not user_exists
 
 
 def setup_shared_screen_dir() -> bool:
-    """Create a shared screen socket directory that all users can access."""
     screen_dir = pl.Path("/tmp/screen_nexus")
     if not screen_dir.exists():
         screen_dir.mkdir(parents=True, exist_ok=True)
-        # Mode 1777 = sticky bit + rwxrwxrwx (world-writable with sticky bit)
         os.chmod(screen_dir, 0o1777)
         return True
     return False
 
 
 def setup_passwordless_nexus_attach() -> bool:
-    """Set up passwordless sudo access to attach to nexus screen sessions."""
     sudoers_file = pl.Path("/etc/sudoers.d/nexus_attach")
     content = "ALL ALL=(nexus) NOPASSWD: /usr/bin/screen -r *\n"
 
@@ -174,10 +177,10 @@ def set_system_permissions() -> None:
     subprocess.run(["chmod", "-R", "770", str(SYSTEM_SERVER_DIR)], check=True)
 
 
-def setup_systemd_server() -> tuple[bool, str | None]:
+def setup_systemd_server(sup_groups: list[str] | None = None) -> tuple[bool, str | None]:
     from nexus.server.installation import systemd
 
-    server_content = systemd.get_service_file_content()
+    server_content = systemd.get_service_file_content(sup_groups)
     dest_server = SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME
     dest_server.write_text(server_content)
     return True, None
@@ -200,8 +203,8 @@ def manage_systemd_server(action: str) -> bool:
         return False
 
 
-def install_system_server() -> None:
-    server_ok, server_error = setup_systemd_server()
+def install_system_server(sup_groups: list[str] | None = None) -> None:
+    server_ok, server_error = setup_systemd_server(sup_groups)
     if not server_ok:
         sys.exit(server_error)
     print(f"Installed server file to: {SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME}")
@@ -315,7 +318,6 @@ def remove_installation_files(keep_config: bool) -> None:
 
 
 def check_running_processes() -> list[int]:
-    """Check if there are any processes running as the nexus user."""
     try:
         result = subprocess.run(["pgrep", "-u", SERVER_USER], capture_output=True, text=True)
         if result.returncode == 0:
@@ -326,7 +328,6 @@ def check_running_processes() -> list[int]:
 
 
 def terminate_user_processes(yes_flag: bool = False) -> bool:
-    """Terminate all processes running as the nexus user."""
     pids = check_running_processes()
     if not pids:
         return True
@@ -340,14 +341,10 @@ def terminate_user_processes(yes_flag: bool = False) -> bool:
             return False
 
     try:
-        # First try SIGTERM
         subprocess.run(["pkill", "-TERM", "-u", SERVER_USER], check=False)
-        # Wait a moment
         time.sleep(1)
-        # Check if any processes are still running
         remaining_pids = check_running_processes()
         if remaining_pids:
-            # If yes flag is set or user agreed, use SIGKILL
             if yes_flag or input("Some processes are still running. Use force kill? [y/N]: ").strip().lower() == "y":
                 subprocess.run(["pkill", "-KILL", "-u", SERVER_USER], check=False)
                 time.sleep(0.5)
@@ -401,11 +398,19 @@ def check_installation_prerequisites(force: bool = False) -> None:
         sys.exit(f"Nexus server is already installed in system mode (version {info.version}).")
 
 
-def prepare_system_environment() -> None:
+def prompt_for_supplementary_groups() -> list[str]:
+    groups_input = input(
+        "Enter supplementary groups to add to the nexus user (comma-separated, or leave empty for none): "
+    ).strip()
+    if groups_input:
+        return [grp.strip() for grp in groups_input.split(",") if grp.strip()]
+    return []
+
+def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
     create_directories(SYSTEM_SERVER_DIR)
     print(f"Created system directory: {SYSTEM_SERVER_DIR}")
 
-    if create_server_user():
+    if create_server_user(sup_groups):
         print(f"Created {SERVER_USER} system user.")
     else:
         print(f"User '{SERVER_USER}' already exists.")
@@ -436,7 +441,12 @@ def install_system(
     check_installation_prerequisites(force)
 
     print("Installing Nexus server in system mode...")
-    prepare_system_environment()
+    
+    sup_groups = []
+    if interactive:
+        sup_groups = prompt_for_supplementary_groups()
+        
+    prepare_system_environment(sup_groups)
 
     _config = setup_config(SYSTEM_SERVER_DIR, interactive, config_file)
     create_persistent_directory(_config)
@@ -445,7 +455,11 @@ def install_system(
     set_system_permissions()
     print("Set proper directory permissions.")
 
-    install_system_server()
+    server_ok, server_error = setup_systemd_server(sup_groups)
+    if not server_ok:
+        sys.exit(server_error)
+    print(f"Installed server file to: {SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME}")
+    
     server_started = False
     if start_server:
         server_started = start_system_server()
@@ -469,7 +483,6 @@ def uninstall(keep_config: bool = False, force: bool = False, yes: bool = False)
         remove_system_components()
         remove_installation_files(keep_config)
 
-        # Check and terminate processes before removing user
         if not terminate_user_processes(yes_flag=yes):
             print(f"\nCannot remove {SERVER_USER} user while processes are still running.")
             print("Please terminate these processes manually or run with --yes to force termination.")
