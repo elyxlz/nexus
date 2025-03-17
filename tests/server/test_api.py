@@ -498,7 +498,6 @@ def test_update_queued_job(app_client: TestClient, created_job: dict) -> None:
 
 
 def test_update_nonqueued_job(app_client: TestClient, git_tag: str) -> None:
-    # Create a job that will run immediately
     job_payload = {
         "command": "echo 'Test non-queued update'",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",

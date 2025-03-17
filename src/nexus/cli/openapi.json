@@ -317,6 +317,22 @@
               "type": "string",
               "title": "Job Id"
             }
+          },
+          {
+            "name": "last_n_lines",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last N Lines"
+            }
           }
         ],
         "responses": {
@@ -487,6 +503,16 @@
               "type": "boolean",
               "default": false,
               "title": "Detailed"
+            }
+          },
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
             }
           }
         ],
@@ -847,6 +873,17 @@
             "type": "boolean",
             "title": "Ignore Blacklist"
           },
+          "screen_session_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Screen Session Name"
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -906,6 +943,7 @@
           "wandb_url",
           "marked_for_kill",
           "ignore_blacklist",
+          "screen_session_name",
           "completed_at",
           "exit_code",
           "error_message"

@@ -65,9 +65,8 @@ def create_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # ====== CORE JOB MANAGEMENT COMMANDS (FIRST) ======
     # Basic job commands
-    run_parser = subparsers.add_parser("run", help="Run a job immediately")
+    run_parser = subparsers.add_parser("run", help="Run a job")
     run_parser.add_argument("commands", nargs="+", help='Command to run, e.g., "python train.py"')
     run_parser.add_argument(
         "-i", "--gpu-idxs", dest="gpu_idxs", help="Specific GPU indices to run on (e.g., '0' or '0,1' for multi-GPU)"
@@ -249,7 +248,6 @@ def handle_jobrc(args) -> None:
 
 def handle_setup(args) -> None:
     if hasattr(args, "non_interactive") and args.non_interactive:
-        # Let Pydantic populate the config from environment variables
         cfg = config.load_config()
         config.save_config(cfg)
         print(colored("Configuration initialized from environment variables", "green"))
