@@ -32,6 +32,10 @@ def main() -> None:
 
     if server_dir is None:
         setup.prompt_installation_mode()
+        server_dir = setup.get_server_directory()
+        if setup.get_installation_info().install_mode == "system":
+            print("Server installed and running via systemd. Exiting.")
+            return
 
     _run_server(server_dir)
 

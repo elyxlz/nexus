@@ -1,11 +1,11 @@
-# Project Setup and Commands
-
 ## CRITICAL INSTRUCTIONS - READ FIRST
 
-- **IMPORTANT**: Thoroughly review ALL guidelines in this document BEFORE modifying code
-- **MANDATORY**: Apply ALL style guidelines from this document to your work without exception
-- **ZERO TOLERANCE**: The user will not accept violations of these guidelines
-- **REPEATED MISTAKES**: Will result in degraded user trust and experience
+- ⚠️ **ABSOLUTE REQUIREMENT**: Thoroughly review ALL guidelines in this document BEFORE modifying code
+- 🚫 **ZERO COMMENTS POLICY**: DO NOT add comments to code - the code must be self-documenting
+- ⛔ **FORBIDDEN**: Do not add explanatory, descriptive, or purpose comments to code under ANY circumstances
+- 🔴 **MANDATORY**: Apply ALL style guidelines from this document to your work without exception
+- ⚠️ **ZERO TOLERANCE**: The user will not accept violations of these guidelines
+- ❌ **REPEATED MISTAKES**: Will result in degraded user trust and experience
 
 ## Package Management
 
@@ -13,20 +13,12 @@
 - **Run Commands**: Use `uv run script.py` to run scripts
 - **Install Packages**: Use `uv add package` to add dependencies
 
-## Type Checking
-
-- **Pyright**: This project uses strict type checking with Pyright
-- **Verification**: Always run `uv run pyright` (typically in src directory) before submitting changes
-- **No Type Errors**: All code must satisfy Pyright's type checker without errors or warnings
-
 ## Memory & Learning
 
 - Update this file whenever user corrects or provides specific instructions
 - Record user's command preferences and workflow patterns
 - Proactively remember past corrections and apply them consistently
 - Ask if unclear whether a correction should be recorded here
-
-# Codebase Style Guidelines
 
 ## Programming Paradigm
 
@@ -51,6 +43,9 @@
 - **Literal Types**: Use `tp.Literal` for constrained string values (`JobStatus = tp.Literal["queued", "running", "completed", "failed"]`)
 - **Type Aliases**: Define type aliases for complex types at the module level
 - **Return Type Clarity**: Always specify return types, including `None` when appropriate
+- **Pyright**: This project uses strict type checking with Pyright
+- **Verification**: Always run `uv run pyright` (typically in src directory) before submitting changes
+- **No Type Errors**: All code must satisfy Pyright's type checker without errors or warnings
 
 ## Import Style
 
@@ -69,13 +64,17 @@
 - **Parameter Order**: Context/logger parameters first, optional params last
 - **Default Values**: Use sensible defaults for optional parameters
 
-## Code Documentation
+## Code Documentation - NO COMMENTS POLICY
 
-- **Self-Documenting Code**: Prefer clear, descriptive variable and function names over comments
-- **No Redundant Comments**: Avoid comments that repeat what the code already expresses
-- **No Useless Comments**: Never add comments like "Add X to Y" that simply describe the next line of code
-- **No Implementation Comments**: Don't comment on how code works; make code readable instead
-- **Rare Comments**: Only use comments for non-obvious design decisions or complex domain logic
-- **Type-Based Documentation**: Rely on type signatures to document interfaces, not comments
-- **Clean Interfaces**: Function names and signatures should be clear enough without comments
-- **Docstrings Optional**: Only add docstrings when function purpose isn't obvious from name/types
+- 🔴 **NEVER ADD COMMENTS**: Code should be clear enough without them - NO EXCEPTIONS
+- 🔴 **ZERO EXPLANATORY COMMENTS**: Do not explain what the code does - the code itself is the explanation
+- 🔴 **NO INLINE COMMENTS**: Never add comments next to or above code lines
+- 🔴 **NO DESCRIPTIVE COMMENTS**: Never add comments describing what a section does
+- 🔴 **NO CODE WALKTHROUGH COMMENTS**: Don't add comments explaining the algorithm or approach
+- 🔴 **NO FUNCTION PURPOSE COMMENTS**: Function names and signatures must communicate purpose
+- 🔴 **NO FILE PURPOSE COMMENTS**: File organization should make purpose obvious
+
+- ✅ **Self-Documenting Code**: Use clear, descriptive variable and function names
+- ✅ **Type-Based Documentation**: Rely on type signatures to document interfaces
+- ✅ **Clean Interfaces**: Function names and signatures must be clear enough without comments
+- ✅ **Docstrings Restricted**: Only add docstrings when function purpose isn't obvious from name/types

@@ -92,12 +92,10 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
     available_gpu_idxs = [g.index for g in available_gpus]
 
     if _job.gpu_idxs:
-        # Check if ALL user-specified GPUs are available
         if all(idx in available_gpu_idxs for idx in _job.gpu_idxs):
             job_gpu_idxs = _job.gpu_idxs
             ctx.logger.info(f"Using user-specified GPU indices {job_gpu_idxs} for job {_job.id}")
         else:
-            # Some or all of the user-specified GPUs are unavailable - do not start the job
             unavailable_gpus = [idx for idx in _job.gpu_idxs if idx not in available_gpu_idxs]
             ctx.logger.debug(
                 f"Job {_job.id} requires specific GPU indices {_job.gpu_idxs}, but indices {unavailable_gpus} are unavailable"
@@ -122,10 +120,8 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
             db.update_job(ctx.logger, conn=ctx.db, job=job_with_notification)
 
     except Exception as e:
-        # If job fails to start, mark it as failed
         ctx.logger.error(f"Failed to start job {_job.id}: {str(e)}")
 
-        # Mark the job as failed
         failed_job = dc.replace(
             _job,
             status="failed",

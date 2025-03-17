@@ -12,8 +12,8 @@ import time
 
 import base58
 
-from nexus.server.core import config, logger, schemas
 from nexus.server.core import exceptions as exc
+from nexus.server.core import logger, schemas
 
 __all__ = [
     "create_job",
@@ -266,8 +266,9 @@ def create_job(
 async def async_start_job(
     _logger: logger.NexusServerLogger, job: schemas.Job, gpu_idxs: list[int], server_dir: pl.Path | None
 ) -> schemas.Job:
-    jobs_dir = config.get_jobs_dir(server_dir) if server_dir is not None else pl.Path(tempfile.mkdtemp())
-    job = dc.replace(job, dir=jobs_dir)
+    job_dir = pl.Path(tempfile.mkdtemp())
+    job_dir.mkdir(parents=True, exist_ok=True)
+    job = dc.replace(job, dir=job_dir)
 
     if job.dir is None:
         raise exc.JobError(message=f"Job directory not set for job {job.id}")
@@ -315,9 +316,6 @@ async def async_cleanup_job_repo(_logger: logger.NexusServerLogger, job_dir: pl.
 
 
 async def async_end_job(_logger: logger.NexusServerLogger, _job: schemas.Job, killed: bool) -> schemas.Job:
-    if is_job_running(_logger, _job):
-        return _job
-
     job_log = await async_get_job_logs(_logger, job_dir=_job.dir)
     exit_code = await _get_job_exit_code(_logger, job_id=_job.id, job_dir=_job.dir)
     completed_at = dt.datetime.now().timestamp()
