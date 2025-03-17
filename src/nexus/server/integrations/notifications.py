@@ -122,7 +122,7 @@ async def _send_notification(
 
 
 @exc.handle_exception_async(
-    aiohttp.ClientError, exc.NotificationError, message="Discord notification edit request failed", reraise=False
+    aiohttp.ClientError, exc.NotificationError, message="Discord notification edit request failed"
 )
 async def _edit_notification_message(
     _logger: logger.NexusServerLogger, notification_url: str, message_id: str, message_data: dict
@@ -157,9 +157,7 @@ async def _upload_logs_to_nullpointer(_logger: logger.NexusServerLogger, _job: s
     return paste_url
 
 
-@exc.handle_exception_async(
-    aiohttp.ClientError, exc.NotificationError, message="Phone call notification failed", reraise=False
-)
+@exc.handle_exception_async(aiohttp.ClientError, exc.NotificationError, message="Phone call notification failed")
 async def _make_phone_call(
     _logger: logger.NexusServerLogger, to_number: str, from_number: str, account_sid: str, auth_token: str, message: str
 ) -> str:
@@ -232,6 +230,7 @@ def _create_message_for_messaging(job: schemas.Job, action: JobAction, include_w
 ####################
 
 
+@exc.handle_exception_async(Exception, reraise=False)
 async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job, action: JobAction) -> schemas.Job:
     updated_job = _job
 
@@ -271,6 +270,7 @@ async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job
     return updated_job
 
 
+@exc.handle_exception_async(Exception, reraise=False)
 async def update_notification_with_wandb(_logger: logger.NexusServerLogger, job: schemas.Job) -> None:
     if "discord" in job.notifications:
         webhook_url = _get_discord_secrets(job)[0]
