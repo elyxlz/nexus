@@ -4,6 +4,7 @@ import datetime as dt
 import hashlib
 import os
 import pathlib as pl
+import re
 import shutil
 import signal
 import subprocess
@@ -162,15 +163,10 @@ def _read_log_file(_logger: logger.NexusServerLogger, log_path: pl.Path, last_n_
 
 @exc.handle_exception(ValueError, message="Invalid exit code format", reraise=False, default_return=None)
 def _parse_exit_code(_logger: logger.NexusServerLogger, last_line: str) -> int:
-    if "COMMAND_EXIT_CODE=" not in last_line:
+    match = re.search(r'COMMAND_EXIT_CODE=["\']?(\d+)["\']?', last_line)
+    if not match:
         raise exc.JobError(message="Could not find exit code in log")
-
-    exit_code_str = (
-        last_line.split("COMMAND_EXIT_CODE=")[1].split()[0]
-        if " " in last_line
-        else last_line.split("COMMAND_EXIT_CODE=")[1]
-    )
-    return int(exit_code_str)
+    return int(match.group(1))
 
 
 @exc.handle_exception_async(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
