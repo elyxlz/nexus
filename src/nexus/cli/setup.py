@@ -249,13 +249,9 @@ def get_jobrc_path() -> pl.Path:
 
 def create_default_jobrc() -> None:
     jobrc_path = get_jobrc_path()
-    jobrc_dir = jobrc_path.parent
-
-    jobrc_dir.mkdir(parents=True, exist_ok=True)
-
+    jobrc_path.parent.mkdir(parents=True, exist_ok=True)
     if not jobrc_path.exists():
-        with open(jobrc_path, "w") as f:
-            f.write("# Environment setup commands that run before each job\n")
+        jobrc_path.touch()
 
 
 def open_jobrc_editor() -> None:
