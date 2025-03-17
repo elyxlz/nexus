@@ -36,8 +36,7 @@ async def update_running_jobs(ctx: context.NexusServerContext) -> None:
             else:
                 action = "failed"
 
-            msg = format.format_job_action(updated_job, action=action)
-            ctx.logger.info(msg) if action == "completed" else ctx.logger.error(msg)
+            ctx.logger.info(format.format_job_action(updated_job, action=action))
 
             if _job.notifications:
                 await notifications.notify_job_action(ctx.logger, _job=_job, action=action)
