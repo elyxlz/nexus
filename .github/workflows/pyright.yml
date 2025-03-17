@@ -20,4 +20,4 @@ jobs:
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Run Pyright
-        run: uv run --group test pyright --threads 8
+        run: uv run pyright --threads 4

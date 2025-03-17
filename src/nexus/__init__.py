@@ -6,4 +6,4 @@ def hello() -> str:
 
 
 if not sys.platform.startswith("linux"):
-    raise RuntimeError("This package is only compatible with Linux operating systems")
+    raise RuntimeError("This package is only compatible with the Linux operating systems")
