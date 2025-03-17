@@ -15,20 +15,18 @@ import typing as tp
 from nexus.server.core import config, context, db, logger
 
 SYSTEM_SERVER_DIR = pl.Path("/etc/nexus_server")
-USER_SERVER_DIR = pl.Path.home() / ".nexus_server"
 SERVER_USER = "nexus"
 SYSTEMD_DIR = pl.Path("/etc/systemd/system")
 SYSTEMD_SERVICE_FILENAME = "nexus-server.service"
 
 MARKER_SYSTEM = SYSTEM_SERVER_DIR / "nexus_server.json"
-MARKER_USER = USER_SERVER_DIR / "nexus_server.json"
 
 
 @dc.dataclass(frozen=True)
 class InstallationInfo:
     version: str
     install_date: str
-    install_mode: tp.Literal["system", "user", "none"] = "none"
+    install_mode: tp.Literal["system", "none"] = "none"
     install_path: pl.Path | None = None
     config_path: pl.Path | None = None
     installed_by: str | None = None
@@ -53,26 +51,6 @@ def get_installation_info() -> InstallationInfo:
             except Exception:
                 pass
     except PermissionError:
-        # Log the permission error but continue checking user installation
-        pass
-
-    # Check user installation
-    try:
-        if MARKER_USER.exists():
-            try:
-                data = json.loads(MARKER_USER.read_text())
-                return InstallationInfo(
-                    version=data.get("version", "unknown"),
-                    install_date=data.get("install_date", "unknown"),
-                    install_mode="user",
-                    install_path=USER_SERVER_DIR,
-                    config_path=USER_SERVER_DIR / "config.toml",
-                    installed_by=data.get("installed_by"),
-                    server_enabled=False,
-                )
-            except Exception:
-                pass
-    except Exception:
         pass
 
     try:
@@ -95,11 +73,6 @@ def get_server_directory() -> pl.Path | None:
 
     if info.install_mode == "system":
         return SYSTEM_SERVER_DIR
-    elif info.install_mode == "user":
-        return USER_SERVER_DIR
-
-    if (USER_SERVER_DIR / "config.toml").exists():
-        return USER_SERVER_DIR
 
     return None
 
@@ -133,7 +106,7 @@ def handle_version_check() -> None:
         pass
 
 
-def write_installation_marker(mode: tp.Literal["system", "user"], server_enabled: bool = False) -> str:
+def write_installation_marker(server_enabled: bool = False) -> str:
     from datetime import datetime
 
     try:
@@ -141,18 +114,17 @@ def write_installation_marker(mode: tp.Literal["system", "user"], server_enabled
     except importlib.metadata.PackageNotFoundError:
         current_version = "unknown"
 
-    marker_path = MARKER_SYSTEM if mode == "system" else MARKER_USER
     install_data = {
         "version": current_version,
         "install_date": datetime.now().isoformat(),
-        "install_mode": mode,
+        "install_mode": "system",
         "installed_by": getpass.getuser(),
         "server_enabled": server_enabled,
     }
 
-    marker_path.parent.mkdir(parents=True, exist_ok=True)
-    marker_path.write_text(json.dumps(install_data, indent=2))
-    os.chmod(marker_path, 0o644)
+    MARKER_SYSTEM.parent.mkdir(parents=True, exist_ok=True)
+    MARKER_SYSTEM.write_text(json.dumps(install_data, indent=2))
+    os.chmod(MARKER_SYSTEM, 0o644)
 
     return current_version
 
@@ -170,15 +142,6 @@ def create_server_user() -> bool:
     except KeyError:
         subprocess.run(["useradd", "--system", "--create-home", "--shell", "/bin/bash", SERVER_USER], check=True)
         return True
-
-
-def configure_multiuser_screen() -> bool:
-    screenrc_path = pl.Path(f"/home/{SERVER_USER}/.screenrc")
-    if not screenrc_path.exists():
-        screenrc_path.write_text("multiuser on\nacladd .\n")
-        subprocess.run(["chown", f"{SERVER_USER}:{SERVER_USER}", str(screenrc_path)], check=True)
-        return True
-    return False
 
 
 def setup_shared_screen_dir() -> bool:
@@ -327,17 +290,15 @@ def create_persistent_directory(_config: config.NexusServerConfig) -> None:
     config.save_config(_config)
 
 
-def remove_installation_files(mode: tp.Literal["system", "user"], keep_config: bool) -> None:
-    server_dir = SYSTEM_SERVER_DIR if mode == "system" else USER_SERVER_DIR
-    if not keep_config and server_dir.exists():
-        shutil.rmtree(server_dir, ignore_errors=True)
-        print(f"Removed directory: {server_dir}")
+def remove_installation_files(keep_config: bool) -> None:
+    if not keep_config and SYSTEM_SERVER_DIR.exists():
+        shutil.rmtree(SYSTEM_SERVER_DIR, ignore_errors=True)
+        print(f"Removed directory: {SYSTEM_SERVER_DIR}")
     else:
-        marker = MARKER_SYSTEM if mode == "system" else MARKER_USER
-        if marker.exists():
-            marker.unlink()
+        if MARKER_SYSTEM.exists():
+            MARKER_SYSTEM.unlink()
         if keep_config:
-            print(f"Kept configuration directory: {server_dir}")
+            print(f"Kept configuration directory: {SYSTEM_SERVER_DIR}")
 
 
 def remove_server_user() -> bool:
@@ -361,7 +322,7 @@ def remove_system_components() -> None:
     print(f"Removed server file: {SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME}")
 
 
-def check_installation_prerequisites(mode: tp.Literal["system", "user"], force: bool = False) -> None:
+def check_installation_prerequisites(force: bool = False) -> None:
     if importlib.util.find_spec("nexus") is None:
         sys.exit(
             "ERROR: The 'nexus' package is not available in the system Python environment.\n"
@@ -369,15 +330,8 @@ def check_installation_prerequisites(mode: tp.Literal["system", "user"], force: 
         )
 
     info = get_installation_info()
-    if info.install_mode != "none" and not force:
-        if info.install_mode == mode:
-            sys.exit(f"Nexus server is already installed in {mode} mode (version {info.version}).")
-        else:
-            other_mode = "user" if mode == "system" else "system"
-            sys.exit(
-                f"Nexus server is already installed in {other_mode} mode (version {info.version}).\n"
-                f"Please uninstall the {other_mode} installation first or use --force."
-            )
+    if info.install_mode == "system" and not force:
+        sys.exit(f"Nexus server is already installed in system mode (version {info.version}).")
 
 
 def prepare_system_environment() -> None:
@@ -389,23 +343,15 @@ def prepare_system_environment() -> None:
     else:
         print(f"User '{SERVER_USER}' already exists.")
 
-    if configure_multiuser_screen():
-        print(f"Configured multiuser Screen for {SERVER_USER} user.")
-
     if setup_shared_screen_dir():
         print("Created shared screen directory at /tmp/screen_nexus")
 
 
-def print_installation_complete_message(mode: tp.Literal["system", "user"]) -> None:
-    print(f"\n{mode.capitalize()} installation complete.")
-    if mode == "system":
-        print("To uninstall: nexus-server uninstall")
-        print("To start/stop: sudo systemctl start/stop nexus-server")
-        print("To check status: systemctl status nexus-server")
-    else:
-        print("To uninstall: nexus-server uninstall")
-        print("To start the server: nexus-server")
-        print("To check status: nexus-server status")
+def print_installation_complete_message() -> None:
+    print("\nSystem installation complete.")
+    print("To uninstall: nexus-server uninstall")
+    print("To start/stop: sudo systemctl start/stop nexus-server")
+    print("To check status: systemctl status nexus-server")
 
 
 def install_system(
@@ -413,7 +359,7 @@ def install_system(
 ) -> None:
     require_root()
     verify_external_dependencies()
-    check_installation_prerequisites("system", force)
+    check_installation_prerequisites(force)
 
     print("Installing Nexus server in system mode...")
     prepare_system_environment()
@@ -430,28 +376,10 @@ def install_system(
     if start_server:
         server_started = start_system_server()
 
-    current_version = write_installation_marker("system", server_started)
+    current_version = write_installation_marker(server_started)
     print(f"Installed version {current_version}")
 
-    print_installation_complete_message("system")
-
-
-def install_user(interactive: bool = True, config_file: pl.Path | None = None, force: bool = False) -> None:
-    verify_external_dependencies()
-    check_installation_prerequisites("user", force)
-
-    print("Installing Nexus server in user mode...")
-    create_directories(USER_SERVER_DIR)
-    print(f"Created user directory: {USER_SERVER_DIR}")
-
-    _config = setup_config(USER_SERVER_DIR, interactive, config_file)
-    create_persistent_directory(_config)
-    print(f"Created configuration at: {config.get_config_path(USER_SERVER_DIR)}")
-
-    current_version = write_installation_marker("user")
-    print(f"Installed version {current_version}")
-
-    print_installation_complete_message("user")
+    print_installation_complete_message()
 
 
 def uninstall(keep_config: bool = False, force: bool = False) -> None:
@@ -465,14 +393,10 @@ def uninstall(keep_config: bool = False, force: bool = False) -> None:
         require_root()
         print("Uninstalling system installation...")
         remove_system_components()
-        remove_installation_files("system", keep_config)
+        remove_installation_files(keep_config)
 
         if remove_server_user():
             print(f"Removed {SERVER_USER} system user.")
-
-    elif info.install_mode == "user":
-        print("Uninstalling user installation...")
-        remove_installation_files("user", keep_config)
 
     print("\nNexus server has been uninstalled.")
 
@@ -550,12 +474,8 @@ def handle_install_command(args: argparse.Namespace) -> None:
     interactive = not getattr(args, "no_interactive", False)
     force = getattr(args, "force", False)
     config_file = pl.Path(args.config) if args.config else None
-
-    if getattr(args, "user", False):
-        install_user(interactive=interactive, config_file=config_file, force=force)
-    else:
-        start_server = not getattr(args, "no_start", False)
-        install_system(interactive=interactive, config_file=config_file, start_server=start_server, force=force)
+    start_server = not getattr(args, "no_start", False)
+    install_system(interactive=interactive, config_file=config_file, start_server=start_server, force=force)
 
 
 def handle_uninstall_command(args: argparse.Namespace) -> None:
@@ -585,18 +505,14 @@ def prompt_installation_mode() -> None:
     print("First run detected. Nexus server is not installed.")
     print("You can run in the following modes:")
     print("  1. Install as systemd service (requires sudo)")
-    print("  2. Install for current user only")
-    print("  3. Run without installing (stateless)")
+    print("  2. Run without installing (stateless)")
 
     try:
-        choice = input("Select mode [1-3, default=1]: ").strip()
+        choice = input("Select mode [1-2, default=1]: ").strip()
 
         if choice == "1":
             install_system(interactive=True)
-        if choice == "2":
-            install_user(interactive=True)
-            sys.exit(0)
-        elif choice == "3":
+        elif choice == "2":
             print("Running in stateless mode...")
             return
         else:
@@ -615,7 +531,6 @@ def create_argument_parser() -> argparse.ArgumentParser:
 Examples:
   nexus-server                      # Run the server
   nexus-server install              # Install as system server
-  nexus-server install --user       # Install for current user only
   nexus-server uninstall            # Remove installation
   nexus-server config               # Show current configuration
   nexus-server config --edit        # Edit configuration in text editor
@@ -628,9 +543,6 @@ Configuration can also be set using environment variables (prefix=NS_):
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     install_parser = subparsers.add_parser("install", help="Install Nexus server")
-    install_parser.add_argument(
-        "--user", action="store_true", help="Install for current user only (default: system installation)"
-    )
     install_parser.add_argument("--config", help="Path to config file for non-interactive setup")
     install_parser.add_argument("--no-interactive", action="store_true", help="Skip interactive configuration")
     install_parser.add_argument("--force", action="store_true", help="Force installation even if already installed")
@@ -650,7 +562,7 @@ Configuration can also be set using environment variables (prefix=NS_):
     return parser
 
 
-def initialize_server(server_dir: pl.Path | None) -> context.NexusServerContext:
+def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext:
     if server_dir and (server_dir / "config.toml").exists():
         _config = config.load_config(server_dir)
         create_persistent_directory(_config)

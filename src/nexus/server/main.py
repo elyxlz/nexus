@@ -9,7 +9,7 @@ __all__ = ["main"]
 
 
 def _run_server(server_dir: pl.Path | None) -> None:
-    ctx = setup.initialize_server(server_dir)
+    ctx = setup.initialize_context(server_dir)
 
     api_app = app.create_app(ctx)
 

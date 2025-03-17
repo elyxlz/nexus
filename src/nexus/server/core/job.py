@@ -6,6 +6,7 @@ import os
 import pathlib as pl
 import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import time
@@ -179,12 +180,74 @@ def _parse_exit_code(_logger: logger.NexusServerLogger, last_line: str) -> int:
     return int(exit_code_str)
 
 
+@exc.handle_exception_async(subprocess.SubprocessError, exc.JobError, message="Failed to setup screen permissions")
+async def _setup_multiuser_screen_permissions(_logger: logger.NexusServerLogger) -> None:
+    """Ensure the screen setup allows multiuser access."""
+    # Ensure the screen directory exists with appropriate permissions
+    screen_dir = pl.Path("/tmp/screen_nexus")
+    if not screen_dir.exists():
+        screen_dir.mkdir(parents=True, exist_ok=True)
+        # Mode 1777 = sticky bit + rwxrwxrwx (world-writable with sticky bit)
+        os.chmod(screen_dir, 0o1777)
+        _logger.info(f"Created shared screen directory at {screen_dir}")
+
+    # Set/export SCREENDIR for the current process and future commands
+    os.environ["SCREENDIR"] = str(screen_dir)
+    _logger.debug(f"Set SCREENDIR environment variable to {screen_dir}")
+
+    # Check if screen has suid permission, warn if not
+    screen_path = shutil.which("screen")
+    if screen_path:
+        screen_stat = os.stat(screen_path)
+        if not (screen_stat.st_mode & stat.S_ISUID):
+            _logger.warning(
+                f"Screen binary at {screen_path} does not have SUID bit set. "
+                "This may limit multiuser functionality. "
+                "Consider running: sudo chmod u+s {screen_path}"
+            )
+
+
+@exc.handle_exception_async(
+    subprocess.SubprocessError, exc.JobError, message="Failed to enable multiuser for screen session"
+)
+async def _enable_session_multiuser(_logger: logger.NexusServerLogger, session_name: str) -> None:
+    """Enable multiuser mode for a specific screen session and add all users."""
+    # Enable multiuser mode for the session
+    proc = await asyncio.create_subprocess_exec(
+        "screen",
+        "-S",
+        session_name,
+        "-X",
+        "multiuser",
+        "on",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await proc.wait()
+
+    # Add ACL to allow any user to access this session (the dot means all users)
+    proc = await asyncio.create_subprocess_exec(
+        "screen",
+        "-S",
+        session_name,
+        "-X",
+        "acladd",
+        ".",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await proc.wait()
+
+    _logger.info(f"Enabled multiuser access for screen session {session_name}")
+
+
+@exc.handle_exception_async(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
+@exc.handle_exception_async(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
 @exc.handle_exception_async(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
 @exc.handle_exception_async(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
 async def _launch_screen_process(
     _logger: logger.NexusServerLogger, session_name: str, script_path: str, env: dict[str, str]
 ) -> int:
-    # Convert to absolute path to ensure consistent path representation
     abs_script_path = pl.Path(script_path).absolute()
 
     process = await asyncio.create_subprocess_exec(
@@ -203,7 +266,6 @@ async def _launch_screen_process(
 
     await asyncio.sleep(0.2)
 
-    # Search by session name only, which is more reliable
     proc = await asyncio.create_subprocess_exec("pgrep", "-f", f"{session_name}", stdout=asyncio.subprocess.PIPE)
     stdout, _ = await proc.communicate()
     pids = stdout.decode().strip().split("\n")
@@ -211,7 +273,7 @@ async def _launch_screen_process(
         _logger.error(f"Could not find PID for job in session {session_name}")
         raise exc.JobError(message=f"Failed to get PID for job in session {session_name}")
 
-    return int(pids[0])  # Return the first PID found (main process)
+    return int(pids[0])
 
 
 ####################
