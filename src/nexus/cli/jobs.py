@@ -106,6 +106,13 @@ def run_job(
 
         gpus_count = len(gpu_idxs) if gpu_idxs else num_gpus
 
+        jobrc_content = None
+        if cli_config.jobrc:
+            jobrc_path = setup.get_jobrc_path()
+            if jobrc_path.exists():
+                with open(jobrc_path) as f:
+                    jobrc_content = f.read()
+
         job_request = {
             "command": command,
             "user": user,
@@ -117,7 +124,7 @@ def run_job(
             "search_wandb": cli_config.search_wandb,
             "notifications": notifications,
             "env": env_vars,
-            "jobrc": None,
+            "jobrc": jobrc_content,
             "gpu_idxs": gpu_idxs,
             "run_immediately": True,
         }
@@ -244,6 +251,13 @@ def add_jobs(
             result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
             git_repo_url = result.stdout.strip() or "unknown-url"
 
+        jobrc_content = None
+        if cli_config.jobrc:
+            jobrc_path = setup.get_jobrc_path()
+            if jobrc_path.exists():
+                with open(jobrc_path) as f:
+                    jobrc_content = f.read()
+
         created_jobs = []
         for cmd in expanded_commands:
             job_request = {
@@ -257,7 +271,7 @@ def add_jobs(
                 "search_wandb": cli_config.search_wandb,
                 "notifications": notifications,
                 "env": env_vars,
-                "jobrc": None,
+                "jobrc": jobrc_content,
                 "gpu_idxs": None,
                 "run_immediately": False,
             }
