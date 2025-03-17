@@ -56,10 +56,8 @@ def run_job(
         tag_name = f"nexus-{git_tag_id}"
         git_repo_url = None
 
-        # Check if we're in a git repository
         is_git_repo = True
         try:
-            # Check if we're in a git repository
             subprocess.run(
                 ["git", "rev-parse", "--is-inside-work-tree"],
                 check=True,
@@ -68,11 +66,8 @@ def run_job(
             )
         except subprocess.CalledProcessError:
             is_git_repo = False
-            print(colored("Warning: Not in a git repository. Using default values.", "yellow"))
-            git_repo_url = "https://github.com/user/default-repo"
-            branch_name = "unknown-branch"
-            print(colored("Note: If you need to access private repositories, make sure to set up GIT_TOKEN", "yellow"))
-            print(colored("      Run 'nx setup' to configure this.", "yellow"))
+            print(colored("Error: Not in a git repository.", "red"))
+            raise
 
         if is_git_repo:
             try:
@@ -107,12 +102,12 @@ def run_job(
         gpus_count = len(gpu_idxs) if gpu_idxs else num_gpus
 
         jobrc_content = None
-        if cli_config.jobrc:
-            jobrc_path = setup.get_jobrc_path()
-            if jobrc_path.exists():
-                with open(jobrc_path) as f:
-                    jobrc_content = f.read()
+        jobrc_path = setup.get_jobrc_path()
+        if jobrc_path.exists():
+            with open(jobrc_path) as f:
+                jobrc_content = f.read()
 
+        breakpoint()
         job_request = {
             "command": command,
             "user": user,
@@ -234,11 +229,8 @@ def add_jobs(
             )
         except subprocess.CalledProcessError:
             is_git_repo = False
-            print(colored("Warning: Not in a git repository. Using default values.", "yellow"))
-            git_repo_url = "https://github.com/user/default-repo"
-            branch_name = "unknown-branch"
-            print(colored("Note: If you need to access private repositories, make sure to set up GIT_TOKEN", "yellow"))
-            print(colored("      Run 'nx setup' to configure this.", "yellow"))
+            print(colored("Error: Not in a git repository.", "red"))
+            raise
 
         if is_git_repo:
             try:
@@ -252,11 +244,10 @@ def add_jobs(
             git_repo_url = result.stdout.strip() or "unknown-url"
 
         jobrc_content = None
-        if cli_config.jobrc:
-            jobrc_path = setup.get_jobrc_path()
-            if jobrc_path.exists():
-                with open(jobrc_path) as f:
-                    jobrc_content = f.read()
+        jobrc_path = setup.get_jobrc_path()
+        if jobrc_path.exists():
+            with open(jobrc_path) as f:
+                jobrc_content = f.read()
 
         created_jobs = []
         for cmd in expanded_commands:
