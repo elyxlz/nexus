@@ -4,6 +4,11 @@ import typing as tp
 
 __all__ = ["JobStatus", "NotificationType", "Job"]
 
+
+def _exclude_env_repr(obj):
+    return {k: v for k, v in dc.asdict(obj).items() if k != "env"}
+
+
 JobStatus = tp.Literal["queued", "running", "completed", "failed", "killed"]
 NotificationType = tp.Literal["discord", "phone"]
 
@@ -40,3 +45,6 @@ class Job:
     completed_at: float | None
     exit_code: int | None
     error_message: str | None
+
+    def __repr__(self) -> str:
+        return str(_exclude_env_repr(self))
