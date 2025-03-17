@@ -10,6 +10,7 @@ import pwd
 import shutil
 import subprocess
 import sys
+import time
 import typing as tp
 
 from nexus.server.core import config, context, db, logger
@@ -153,6 +154,19 @@ def setup_shared_screen_dir() -> bool:
         os.chmod(screen_dir, 0o1777)
         return True
     return False
+
+
+def setup_passwordless_nexus_attach() -> bool:
+    """Set up passwordless sudo access to attach to nexus screen sessions."""
+    sudoers_file = pl.Path("/etc/sudoers.d/nexus_attach")
+    content = "ALL ALL=(nexus) NOPASSWD: /usr/bin/screen -r *\n"
+
+    try:
+        sudoers_file.write_text(content)
+        os.chmod(sudoers_file, 0o440)
+        return True
+    except Exception:
+        return False
 
 
 def set_system_permissions() -> None:
@@ -301,6 +315,55 @@ def remove_installation_files(keep_config: bool) -> None:
             print(f"Kept configuration directory: {SYSTEM_SERVER_DIR}")
 
 
+def check_running_processes() -> list[int]:
+    """Check if there are any processes running as the nexus user."""
+    try:
+        result = subprocess.run(["pgrep", "-u", SERVER_USER], capture_output=True, text=True)
+        if result.returncode == 0:
+            return [int(pid) for pid in result.stdout.strip().split()]
+        return []
+    except Exception:
+        return []
+
+
+def terminate_user_processes(yes_flag: bool = False) -> bool:
+    """Terminate all processes running as the nexus user."""
+    pids = check_running_processes()
+    if not pids:
+        return True
+
+    if not yes_flag:
+        print(f"\n⚠️  WARNING: Found {len(pids)} processes running as the {SERVER_USER} user.")
+        print(f"These processes must be terminated before removing the {SERVER_USER} user.")
+        user_input = input("Do you want to terminate these processes? [y/N]: ").strip().lower()
+        if user_input != "y":
+            print("Aborted. Please terminate the processes manually and try again.")
+            return False
+
+    try:
+        # First try SIGTERM
+        subprocess.run(["pkill", "-TERM", "-u", SERVER_USER], check=False)
+        # Wait a moment
+        time.sleep(1)
+        # Check if any processes are still running
+        remaining_pids = check_running_processes()
+        if remaining_pids:
+            # If yes flag is set or user agreed, use SIGKILL
+            if yes_flag or input("Some processes are still running. Use force kill? [y/N]: ").strip().lower() == "y":
+                subprocess.run(["pkill", "-KILL", "-u", SERVER_USER], check=False)
+                time.sleep(0.5)
+                if check_running_processes():
+                    print("⚠️  Some processes could not be terminated. Please check manually.")
+                    return False
+            else:
+                print("Aborted. Please terminate the processes manually and try again.")
+                return False
+        return True
+    except Exception as e:
+        print(f"Error terminating processes: {e}")
+        return False
+
+
 def remove_server_user() -> bool:
     try:
         pwd.getpwnam(SERVER_USER)
@@ -314,12 +377,17 @@ def remove_server_files() -> None:
     server_file = SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME
     if server_file.exists():
         server_file.unlink()
+        print(f"Removed systemd service file: {server_file}")
+
+    sudoers_file = pl.Path("/etc/sudoers.d/nexus_attach")
+    if sudoers_file.exists():
+        sudoers_file.unlink()
+        print("Removed passwordless sudo access rule from /etc/sudoers.d/nexus_attach")
 
 
 def remove_system_components() -> None:
     stop_system_server()
     remove_server_files()
-    print(f"Removed server file: {SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME}")
 
 
 def check_installation_prerequisites(force: bool = False) -> None:
@@ -346,12 +414,19 @@ def prepare_system_environment() -> None:
     if setup_shared_screen_dir():
         print("Created shared screen directory at /tmp/screen_nexus")
 
+    if setup_passwordless_nexus_attach():
+        print(
+            "PASSWORDLESS ACCESS ENABLED: Any user can now run 'sudo -u nexus screen -r <session>' without a password"
+        )
+        print("Added rule to /etc/sudoers.d/nexus_attach")
+
 
 def print_installation_complete_message() -> None:
     print("\nSystem installation complete.")
     print("To uninstall: nexus-server uninstall")
     print("To start/stop: sudo systemctl start/stop nexus-server")
     print("To check status: systemctl status nexus-server")
+    print("To attach to a job: sudo -u nexus screen -r <session_name>")
 
 
 def install_system(
@@ -382,7 +457,7 @@ def install_system(
     print_installation_complete_message()
 
 
-def uninstall(keep_config: bool = False, force: bool = False) -> None:
+def uninstall(keep_config: bool = False, force: bool = False, yes: bool = False) -> None:
     info = get_installation_info()
 
     if info.install_mode == "none" and not force:
@@ -394,6 +469,12 @@ def uninstall(keep_config: bool = False, force: bool = False) -> None:
         print("Uninstalling system installation...")
         remove_system_components()
         remove_installation_files(keep_config)
+
+        # Check and terminate processes before removing user
+        if not terminate_user_processes(yes_flag=yes):
+            print(f"\nCannot remove {SERVER_USER} user while processes are still running.")
+            print("Please terminate these processes manually or run with --yes to force termination.")
+            return
 
         if remove_server_user():
             print(f"Removed {SERVER_USER} system user.")
@@ -479,7 +560,7 @@ def handle_install_command(args: argparse.Namespace) -> None:
 
 
 def handle_uninstall_command(args: argparse.Namespace) -> None:
-    uninstall(keep_config=args.keep_config, force=args.force)
+    uninstall(keep_config=args.keep_config, force=args.force, yes=args.yes)
 
 
 def handle_config_command(args: argparse.Namespace) -> None:
@@ -553,6 +634,9 @@ Configuration can also be set using environment variables (prefix=NS_):
         "--keep-config", action="store_true", help="Keep configuration files when uninstalling"
     )
     uninstall_parser.add_argument("--force", action="store_true", help="Force uninstallation even if not installed")
+    uninstall_parser.add_argument(
+        "--yes", "-y", action="store_true", help="Automatically terminate running processes without prompting"
+    )
 
     config_parser = subparsers.add_parser("config", help="Manage Nexus server configuration")
     config_parser.add_argument("--edit", action="store_true", help="Edit configuration in text editor")

@@ -6,7 +6,6 @@ import os
 import pathlib as pl
 import shutil
 import signal
-import stat
 import subprocess
 import tempfile
 import time
@@ -180,69 +179,6 @@ def _parse_exit_code(_logger: logger.NexusServerLogger, last_line: str) -> int:
     return int(exit_code_str)
 
 
-@exc.handle_exception_async(subprocess.SubprocessError, exc.JobError, message="Failed to setup screen permissions")
-async def _setup_multiuser_screen_permissions(_logger: logger.NexusServerLogger) -> None:
-    """Ensure the screen setup allows multiuser access."""
-    # Ensure the screen directory exists with appropriate permissions
-    screen_dir = pl.Path("/tmp/screen_nexus")
-    if not screen_dir.exists():
-        screen_dir.mkdir(parents=True, exist_ok=True)
-        # Mode 1777 = sticky bit + rwxrwxrwx (world-writable with sticky bit)
-        os.chmod(screen_dir, 0o1777)
-        _logger.info(f"Created shared screen directory at {screen_dir}")
-
-    # Set/export SCREENDIR for the current process and future commands
-    os.environ["SCREENDIR"] = str(screen_dir)
-    _logger.debug(f"Set SCREENDIR environment variable to {screen_dir}")
-
-    # Check if screen has suid permission, warn if not
-    screen_path = shutil.which("screen")
-    if screen_path:
-        screen_stat = os.stat(screen_path)
-        if not (screen_stat.st_mode & stat.S_ISUID):
-            _logger.warning(
-                f"Screen binary at {screen_path} does not have SUID bit set. "
-                "This may limit multiuser functionality. "
-                "Consider running: sudo chmod u+s {screen_path}"
-            )
-
-
-@exc.handle_exception_async(
-    subprocess.SubprocessError, exc.JobError, message="Failed to enable multiuser for screen session"
-)
-async def _enable_session_multiuser(_logger: logger.NexusServerLogger, session_name: str) -> None:
-    """Enable multiuser mode for a specific screen session and add all users."""
-    # Enable multiuser mode for the session
-    proc = await asyncio.create_subprocess_exec(
-        "screen",
-        "-S",
-        session_name,
-        "-X",
-        "multiuser",
-        "on",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    await proc.wait()
-
-    # Add ACL to allow any user to access this session (the dot means all users)
-    proc = await asyncio.create_subprocess_exec(
-        "screen",
-        "-S",
-        session_name,
-        "-X",
-        "acladd",
-        ".",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    await proc.wait()
-
-    _logger.info(f"Enabled multiuser access for screen session {session_name}")
-
-
-@exc.handle_exception_async(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
-@exc.handle_exception_async(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
 @exc.handle_exception_async(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
 @exc.handle_exception_async(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
 async def _launch_screen_process(
@@ -428,14 +364,11 @@ async def async_get_job_logs(
 async def kill_job(_logger: logger.NexusServerLogger, job: schemas.Job) -> None:
     killed = False
 
-    # 1. Try to kill by PID if we have it
     if job.pid is not None:
         try:
-            # Send SIGTERM first for graceful termination
             _logger.debug(f"Sending SIGTERM to PID {job.pid}")
             os.kill(job.pid, signal.SIGTERM)
 
-            # Wait for up to 1 second for process to terminate
             for _ in range(10):
                 try:
                     os.kill(job.pid, 0)
@@ -445,7 +378,6 @@ async def kill_job(_logger: logger.NexusServerLogger, job: schemas.Job) -> None:
                     _logger.debug(f"Process {job.pid} terminated with SIGTERM")
                     break
 
-            # If process didn't terminate, use SIGKILL
             if not killed:
                 _logger.debug(f"Process {job.pid} didn't respond to SIGTERM, sending SIGKILL")
                 os.kill(job.pid, signal.SIGKILL)
@@ -454,7 +386,6 @@ async def kill_job(_logger: logger.NexusServerLogger, job: schemas.Job) -> None:
             _logger.debug(f"Process {job.pid} not found")
             pass
 
-    # 2. Terminate the screen session
     session_name = _get_job_session_name(job.id)
     _logger.debug(f"Terminating screen session {session_name}")
     screen_proc = await asyncio.create_subprocess_exec(
@@ -462,16 +393,12 @@ async def kill_job(_logger: logger.NexusServerLogger, job: schemas.Job) -> None:
     )
     await screen_proc.wait()
 
-    # 3. Try more aggressive termination methods for any remaining processes
-    # First, get all processes in the screen session
     _logger.debug(f"Killing any processes containing session name {session_name}")
     await asyncio.create_subprocess_shell(f"pkill -9 -f {session_name}")
 
-    # Try killing by job id as fallback
     _logger.debug(f"Killing any processes containing job id {job.id}")
     await asyncio.create_subprocess_shell(f"pkill -9 -f {job.id}")
 
-    # Extra fallback for persistent shell loops that might not have job id in command
     if job.pid is not None:
         _logger.debug(f"Killing any child processes of {job.pid}")
         pgid_proc = await asyncio.create_subprocess_shell(
@@ -481,7 +408,6 @@ async def kill_job(_logger: logger.NexusServerLogger, job: schemas.Job) -> None:
         pgid = stdout.decode().strip()
         if pgid:
             _logger.debug(f"Killing process group {pgid}")
-            # Kill the entire process group
             await asyncio.create_subprocess_shell(f"kill -9 -{pgid}")
 
 
@@ -504,6 +430,7 @@ async def prepare_job_environment(
 
     log_file, job_repo_dir = await asyncio.to_thread(_create_directories, _logger, job.dir)
     env = await asyncio.to_thread(_build_environment, _logger, gpu_idxs, job.env)
+    env["NEXUS_GIT_TAG"] = job.git_tag
 
     git_token = job.env.get("GIT_TOKEN")
     askpass_path = None

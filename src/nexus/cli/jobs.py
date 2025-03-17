@@ -21,7 +21,7 @@ def run_job(
     try:
         command = " ".join(commands)
 
-        print(f"\n{colored('Running job immediately:', 'blue', attrs=['bold'])}")
+        print(f"\n{colored('Running job:', 'blue', attrs=['bold'])}")
 
         gpu_idxs = None
         gpu_info = ""
@@ -35,7 +35,7 @@ def run_job(
         print(f"  {colored('•', 'blue')} {command}{gpu_info}")
 
         if not utils.confirm_action(
-            "Run this job immediately?",
+            "Run this job",
             bypass=bypass_confirm,
         ):
             print(colored("Operation cancelled.", "yellow"))
@@ -860,15 +860,20 @@ def attach_to_job(target: str) -> None:
         print(colored("Press Ctrl+A Ctrl+D to detach from the screen session", "blue"))
         time.sleep(1)
 
-        exit_code = os.system(f"sudo -u nexus screen -r {screen_session_name}")
+        # First try to attach directly (if session belongs to current user)
+        current_user_exit_code = os.system(f"screen -r {screen_session_name}")
 
-        if exit_code != 0:
-            print(colored("Screen session not found. Available sessions:", "yellow"))
-            os.system("screen -ls")
-            print(colored("\nTroubleshooting tips:", "yellow"))
-            print("  1. Verify that the job is still running and the session name is correct.")
-            print("  2. Check if you have the proper permissions to access the screen session.")
-            print(f"  3. You can always view job logs with: nx logs {target}")
+        # If direct attach fails, try as nexus user
+        if current_user_exit_code != 0:
+            exit_code = os.system(f"sudo -u nexus screen -r {screen_session_name}")
+
+            if exit_code != 0:
+                print(colored("Screen session not found. Available sessions:", "yellow"))
+                os.system("screen -ls")
+                print(colored("\nTroubleshooting tips:", "yellow"))
+                print("  1. Verify that the job is still running and the session name is correct.")
+                print("  2. Check if you have the proper permissions to access the screen session.")
+                print(f"  3. You can always view job logs with: nx logs {target}")
 
         print(colored(f"Detached from job {target} screen session", "blue"))
 
