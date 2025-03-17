@@ -85,23 +85,17 @@ def _build_script_content(
         "set -e",
         "export GIT_TERMINAL_PROMPT=0",
     ]
-
     clone_url = git_repo_url
     if git_token and git_repo_url.startswith("https://"):
         clone_url = git_repo_url.replace("https://", f"https://{git_token}@")
-
     if askpass_path:
         script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
-
     script_lines.append(
         f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet '{clone_url}' '{job_repo_dir}'"
     )
     script_lines.append(f"cd '{job_repo_dir}'")
-
     prefix = jobrc.strip() + "\n" if jobrc and jobrc.strip() else ""
-    script_lines.append(f'script -f -q -c "{prefix}{command}" "{log_file}"')
-    script_lines.append(f'echo "COMMAND_EXIT_CODE=$?" >> "{log_file}"')
-
+    script_lines.append(f'script -q -e -f -c "{prefix}{command}" "{log_file}"')
     return "\n".join(script_lines)
 
 
