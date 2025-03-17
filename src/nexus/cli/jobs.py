@@ -864,10 +864,8 @@ def attach_to_job(target: str) -> None:
         print(colored("Press Ctrl+A Ctrl+D to detach from the screen session", "blue"))
         time.sleep(1)
 
-        # First try to attach directly (if session belongs to current user)
         current_user_exit_code = os.system(f"screen -r {screen_session_name}")
 
-        # If direct attach fails, try as nexus user
         if current_user_exit_code != 0:
             exit_code = os.system(f"sudo -u nexus screen -r {screen_session_name}")
 
