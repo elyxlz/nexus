@@ -242,9 +242,13 @@ async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job
             if action in ["failed", "killed"]:
                 job_logs = await job.async_get_job_logs(_logger, job_dir=_job.dir, last_n_lines=20)
                 if job_logs:
-                    message_data["embeds"][0]["fields"].append(
-                        {"name": "Last few log lines", "value": f"```\n{job_logs}\n```"}
-                    )
+                    MAX_FIELD_LENGTH = 1024
+                    log_field = f"```\n{job_logs}\n```"
+                    if len(log_field) > MAX_FIELD_LENGTH:
+                        allowed_length = MAX_FIELD_LENGTH - len("```\n...\n```")
+                        truncated_logs = job_logs[:allowed_length] + "..."
+                        log_field = f"```\n{truncated_logs}\n```"
+                    message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": log_field})
 
             logs_url = await _upload_logs_to_nullpointer(_logger, _job)
             if logs_url:
