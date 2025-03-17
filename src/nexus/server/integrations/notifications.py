@@ -1,5 +1,5 @@
 import dataclasses as dc
-import datetime
+import datetime as dt
 import json
 import typing as tp
 
@@ -62,35 +62,32 @@ def _get_phone_secrets(job: schemas.Job) -> tuple[str, str, str, str]:
 
 def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction) -> dict:
     color_mapping = {
-        "started": 0x3498DB,  # Blue
-        "completed": 0x2ECC71,  # Green
-        "failed": 0xE74C3C,  # Red
-        "killed": 0xF39C12,  # Orange/Yellow
+        "started": 0x3498DB,
+        "completed": 0x2ECC71,
+        "failed": 0xE74C3C,
+        "killed": 0xF39C12,
     }
-
     discord_id = _get_discord_secrets(job)[1]
     user_mention = f"<@{discord_id}>"
-    gpu_idxs = ", ".join(str(idx) for idx in job.gpu_idxs)
+    gpu_idxs = ", ".join(str(idx) for idx in job.gpu_idxs) if job.gpu_idxs else "None"
     message_title = f"{EMOJI_MAPPING[job_action]} **Job {job.id} {job_action} on GPU {gpu_idxs} - ({job.node_name})** - {user_mention}"
-    command = job.command
+    command = str(job.command)
     git_info = f"{job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}"
-    wandb_url = "Pending ..." if job_action == "started" and not job.wandb_url else (job.wandb_url or "Not Found")
     fields = [
         {"name": "Command", "value": command},
-        {"name": "W&B", "value": wandb_url},
         {"name": "Git", "value": git_info},
-        {"name": "User", "value": job.user, "inline": True},
+        {"name": "User", "value": str(job.user), "inline": True},
     ]
     if job.error_message and job_action in ["completed", "failed"]:
-        fields.insert(1, {"name": "Error Message", "value": job.error_message})
+        fields.insert(1, {"name": "Error Message", "value": str(job.error_message)})
     return {
         "content": message_title,
         "embeds": [
             {
                 "fields": fields,
-                "color": color_mapping.get(job_action, 0x4915310),  # Default to original purple if action not found
+                "color": color_mapping.get(job_action, 0x4915310),
                 "footer": {"text": f"Job Status Update • {job.id}"},
-                "timestamp": datetime.datetime.now().isoformat(),
+                "timestamp": dt.datetime.now().isoformat(),
             }
         ],
     }
