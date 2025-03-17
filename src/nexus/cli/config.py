@@ -21,7 +21,6 @@ class NexusCliConfig(pyds.BaseSettings):
     user: str | None = pyd.Field(default=None)
     search_wandb: bool = False
     default_notifications: list[NotificationType] = []
-    jobrc: str | None = pyd.Field(default=None)
 
     model_config = {"env_prefix": "NEXUS_", "env_nested_delimiter": "__"}
 
