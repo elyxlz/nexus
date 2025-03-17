@@ -107,7 +107,6 @@ def run_job(
             with open(jobrc_path) as f:
                 jobrc_content = f.read()
 
-        breakpoint()
         job_request = {
             "command": command,
             "user": user,
@@ -879,8 +878,6 @@ def attach_to_job(target: str) -> None:
                 print("  1. Verify that the job is still running and the session name is correct.")
                 print("  2. Check if you have the proper permissions to access the screen session.")
                 print(f"  3. You can always view job logs with: nx logs {target}")
-
-        print(colored(f"Detached from job {target} screen session", "blue"))
 
     except Exception as e:
         print(colored(f"Error attaching to job: {e}", "red"))
