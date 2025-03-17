@@ -270,9 +270,7 @@ def add_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: sc
 def update_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
 
-    env_json = (
-        json.dumps(job.env) if job.status in ["failed", "completed"] else json.dumps(job.env)
-    )  # clear env for completed jobs
+    env_json = json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env)
     notification_messages_json = json.dumps(job.notification_messages)
     notifications_str = ",".join(job.notifications)
     gpu_idxs_str = ",".join([str(i) for i in job.gpu_idxs])
