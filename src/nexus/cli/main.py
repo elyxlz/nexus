@@ -5,6 +5,7 @@ import sys
 from termcolor import colored
 
 from nexus.cli import api_client, config, jobs, setup
+from nexus.cli.config import NexusCliConfig
 
 try:
     VERSION = importlib.metadata.version("nexusai")
@@ -12,9 +13,8 @@ except importlib.metadata.PackageNotFoundError:
     VERSION = "unknown"
 
 
-def show_config() -> None:
+def show_config(cfg: NexusCliConfig) -> None:
     try:
-        cfg = config.load_config()
         print(colored("Current Configuration:", "blue", attrs=["bold"]))
         for key, value in cfg.model_dump().items():
             print(f"{colored(key, 'cyan')}: {value}")
@@ -104,7 +104,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     # Job monitoring commands
     logs_parser = subparsers.add_parser("logs", help="View logs for job")
-    logs_parser.add_argument("id", help="Job ID or GPU index")
+    logs_parser.add_argument("id", nargs="?", help="Job ID or GPU index (optional, most recent job if omitted)")
     logs_parser.add_argument("-t", "--tail", type=int, metavar="N", help="Show only the last N lines")
 
     attach_parser = subparsers.add_parser("attach", help="Attach to a running job's screen session")
@@ -164,12 +164,14 @@ def main() -> None:
             jobs.print_status()
             return
 
+    cfg = config.load_config()
+
     if not hasattr(args, "command") or not args.command:
         jobs.print_status()
         return
 
     no_api_commands = {
-        "config": lambda: handle_config(args),
+        "config": lambda: handle_config(args, cfg),
         "env": lambda: handle_env(args),
         "jobrc": lambda: handle_jobrc(args),
         "setup": lambda: handle_setup(args),
@@ -188,6 +190,7 @@ def main() -> None:
 
     command_handlers = {
         "add": lambda: jobs.add_jobs(
+            cfg,
             args.commands,
             repeat=args.repeat,
             priority=args.priority,
@@ -196,6 +199,7 @@ def main() -> None:
             bypass_confirm=args.yes,
         ),
         "run": lambda: jobs.run_job(
+            cfg,
             args.commands,
             gpu_idxs_str=args.gpu_idxs,
             num_gpus=args.gpus,
@@ -208,7 +212,7 @@ def main() -> None:
         "remove": lambda: jobs.remove_jobs(args.job_ids, bypass_confirm=args.yes),
         "blacklist": lambda: jobs.handle_blacklist(args),
         "logs": lambda: jobs.view_logs(args.id, tail=args.tail),
-        "attach": lambda: jobs.attach_to_job(args.id),
+        "attach": lambda: jobs.attach_to_job(cfg, args.id),
         "health": lambda: jobs.show_health(refresh=args.refresh),
         "edit": lambda: jobs.edit_job_command(
             args.job_id,
@@ -227,11 +231,11 @@ def main() -> None:
             parser.print_help()
 
 
-def handle_config(args) -> None:
+def handle_config(args, cfg: NexusCliConfig) -> None:
     if hasattr(args, "config_action") and args.config_action == "edit":
         setup.open_config_editor()
     else:
-        show_config()
+        show_config(cfg)
 
 
 def handle_env(args) -> None:
