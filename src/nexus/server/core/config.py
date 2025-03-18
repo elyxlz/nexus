@@ -10,7 +10,6 @@ __all__ = [
     "get_env_path",
     "get_config_path",
     "get_db_path",
-    "get_log_dir",
     "save_config",
     "load_config",
 ]
@@ -49,10 +48,6 @@ def get_config_path(server_dir: pl.Path) -> pl.Path:
 
 def get_db_path(server_dir: pl.Path) -> pl.Path:
     return server_dir / "nexus_server.db"
-
-
-def get_log_dir(server_dir: pl.Path) -> pl.Path:
-    return server_dir / "logs"
 
 
 def save_config(config: NexusServerConfig) -> None:

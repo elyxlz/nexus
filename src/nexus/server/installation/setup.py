@@ -301,8 +301,6 @@ def create_persistent_directory(_config: config.NexusServerConfig) -> None:
         raise ValueError("Server directory cannot be None")
 
     _config.server_dir.mkdir(parents=True, exist_ok=True)
-    config.get_log_dir(_config.server_dir).mkdir(parents=True, exist_ok=True)
-
     config.save_config(_config)
 
 
