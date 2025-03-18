@@ -108,7 +108,9 @@ def create_parser() -> argparse.ArgumentParser:
     logs_parser.add_argument("-t", "--tail", type=int, metavar="N", help="Show only the last N lines")
 
     attach_parser = subparsers.add_parser("attach", help="Attach to a running job's screen session")
-    attach_parser.add_argument("id", help="Job ID or GPU index to attach to")
+    attach_parser.add_argument(
+        "id", nargs="?", help="Job ID or GPU index to attach to (optional, last job ran if omitted)"
+    )
 
     history_parser = subparsers.add_parser("history", help="Show completed, failed, or killed jobs")
     history_parser.add_argument("pattern", nargs="?", help="Filter jobs by command regex pattern")

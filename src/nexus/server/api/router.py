@@ -94,18 +94,29 @@ async def create_job_endpoint(
     ignore_blacklist = job_request.run_immediately
 
     gpu_idxs_list = job_request.gpu_idxs or []
-    if job_request.run_immediately and gpu_idxs_list:
+    if job_request.run_immediately:
         running_jobs = db.list_jobs(ctx.logger, conn=ctx.db, status="running")
         blacklisted = db.list_blacklisted_gpus(ctx.logger, conn=ctx.db)
         all_gpus = gpu.get_gpus(
             ctx.logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
         )
-        requested_gpus = [g for g in all_gpus if g.index in gpu_idxs_list]
-        if len(requested_gpus) != len(gpu_idxs_list):
-            missing = set(gpu_idxs_list) - {g.index for g in requested_gpus}
-            raise exc.GPUError(message=f"Requested GPUs not found: {missing}")
-        if any(g.running_job_id for g in requested_gpus):
-            raise exc.GPUError(message="Requested GPUs are in use")
+
+        available_gpus = [g for g in all_gpus if gpu.is_gpu_available(g, ignore_blacklist=ignore_blacklist)]
+
+        if gpu_idxs_list:
+            requested_gpus = [g for g in all_gpus if g.index in gpu_idxs_list]
+            if len(requested_gpus) != len(gpu_idxs_list):
+                missing = set(gpu_idxs_list) - {g.index for g in requested_gpus}
+                raise exc.GPUError(message=f"Requested GPUs not found: {missing}")
+            if any(not gpu.is_gpu_available(g, ignore_blacklist=ignore_blacklist) for g in requested_gpus):
+                unavailable = [
+                    g.index for g in requested_gpus if not gpu.is_gpu_available(g, ignore_blacklist=ignore_blacklist)
+                ]
+                raise exc.GPUError(message=f"Requested GPUs are not available: {unavailable}")
+        elif job_request.num_gpus > len(available_gpus):
+            raise exc.GPUError(
+                message=f"Requested {job_request.num_gpus} GPUs but only {len(available_gpus)} are available"
+            )
 
     j = job.create_job(
         command=job_request.command,

@@ -127,12 +127,14 @@ def confirm_action(action_description: str, bypass: bool = False) -> bool:
 
 
 def ask_yes_no(question: str, default: bool = True) -> bool:
-    default_prompt = "[Y/n]" if default else "[y/N]"
+    default_text = "YES" if default else "NO"
+    default_prompt = f"[press ENTER for {colored(default_text, 'cyan')}]"
     prompt = f"{colored('?', 'blue', attrs=['bold'])} {question} {default_prompt}: "
 
     while True:
         answer = input(prompt).strip().lower()
         if not answer:
+            print(colored(f"Using default: {default_text}", "cyan"))
             return default
         elif answer in ["y", "yes"]:
             return True
@@ -143,15 +145,21 @@ def ask_yes_no(question: str, default: bool = True) -> bool:
 
 
 def get_user_input(prompt: str, default: str = "", required: bool = False) -> str:
-    default_display = f" [{default}]" if default else ""
+    if default:
+        default_display = f" [press ENTER for {colored(default, 'cyan')}]"
+    else:
+        default_display = ""
+
     while True:
         result = input(f"{colored('?', 'blue', attrs=['bold'])} {prompt}{default_display}: ").strip()
-        if not result and default:
-            return default
-        if not result and required:
-            print(colored("This field is required.", "red"))
-            continue
-        return result
+        if not result:
+            if default:
+                print(colored(f"Using default: {default}", "cyan"))
+                return default
+            elif required:
+                print(colored("This field is required.", "red"))
+                continue
+        return result or ""
 
 
 def open_file_in_editor(file_path: str | pl.Path) -> None:

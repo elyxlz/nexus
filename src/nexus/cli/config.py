@@ -16,7 +16,6 @@ REQUIRED_ENV_VARS = {
 
 
 class NexusCliConfig(pyds.BaseSettings):
-    host: str = pyd.Field(default="localhost")
     port: int = pyd.Field(default=54323)
     user: str | None = pyd.Field(default=None)
     search_wandb: bool = False

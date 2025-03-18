@@ -185,8 +185,8 @@ def setup_wizard() -> None:
         cfg = config.load_config()
 
     print(colored("\nBasic Configuration", "blue", attrs=["bold"]))
+    print(colored("Press ENTER to accept the default values shown in cyan.", "white"))
 
-    host = utils.get_user_input("Nexus API host", default=cfg.host)
     port = utils.get_user_input("Nexus API port", default=str(cfg.port))
     user = utils.get_user_input("Your username", default=cfg.user or os.environ.get("USER", ""))
 
@@ -194,7 +194,6 @@ def setup_wizard() -> None:
         config.NexusCliConfig,
         cfg.copy(
             update={
-                "host": host,
                 "port": int(port),
                 "user": user,
             }

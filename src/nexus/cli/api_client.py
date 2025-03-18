@@ -64,13 +64,13 @@ def handle_api_errors(func):
 
 def get_api_base_url() -> str:
     cfg = config.load_config()
-    return f"http://{cfg.host}:{cfg.port}/v1"
+    return f"http://localhost:{cfg.port}/v1"
 
 
 def check_api_connection() -> bool:
     cfg = config.load_config()
     try:
-        response = requests.get(f"http://{cfg.host}:{cfg.port}/v1/health", timeout=2)
+        response = requests.get(f"http://localhost:{cfg.port}/v1/health", timeout=2)
         return response.status_code == 200
     except requests.RequestException:
         return False
