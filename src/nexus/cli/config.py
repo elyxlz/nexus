@@ -21,7 +21,7 @@ class NexusCliConfig(pyds.BaseSettings):
     search_wandb: bool = False
     default_notifications: list[NotificationType] = []
 
-    model_config = {"env_prefix": "NEXUS_", "env_nested_delimiter": "__"}
+    model_config = {"env_prefix": "NEXUS_", "env_nested_delimiter": "__", "extra": "ignore"}
 
 
 def get_config_path() -> pl.Path:

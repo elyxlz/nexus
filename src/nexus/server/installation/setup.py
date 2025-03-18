@@ -429,8 +429,10 @@ def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
 def print_installation_complete_message() -> None:
     print("\nSystem installation complete.")
     print("To uninstall: nexus-server uninstall")
-    print("To start/stop: sudo systemctl start/stop nexus-server")
-    print("To check status: systemctl status nexus-server")
+    print("To start: nexus-server start")
+    print("To stop: nexus-server stop")
+    print("To restart: nexus-server restart")
+    print("To check status: nexus-server status")
     print("To attach to a job: sudo -u nexus screen -r <session_name>")
 
 
@@ -620,6 +622,42 @@ def handle_restart_command(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def handle_stop_command(args: argparse.Namespace) -> None:
+    """Stop the nexus-server systemd service."""
+    if os.geteuid() != 0:
+        print("This operation requires root privileges. Please run with sudo.")
+        sys.exit(1)
+
+    try:
+        if not args.yes:
+            confirm = input("Are you sure you want to stop the nexus-server? [y/N] ").strip().lower()
+            if confirm != "y":
+                print("Stop cancelled.")
+                return
+
+        print("Stopping nexus-server...")
+        subprocess.run(["systemctl", "stop", "nexus-server.service"], check=True)
+        print("Server stopped successfully.")
+    except Exception as e:
+        print(f"Error stopping server: {e}")
+        sys.exit(1)
+
+
+def handle_start_command(args: argparse.Namespace) -> None:
+    """Start the nexus-server systemd service."""
+    if os.geteuid() != 0:
+        print("This operation requires root privileges. Please run with sudo.")
+        sys.exit(1)
+
+    try:
+        print("Starting nexus-server...")
+        subprocess.run(["systemctl", "start", "nexus-server.service"], check=True)
+        print("Server started successfully.")
+    except Exception as e:
+        print(f"Error starting server: {e}")
+        sys.exit(1)
+
+
 def handle_command(args: argparse.Namespace) -> bool:
     command_handlers = {
         "install": handle_install_command,
@@ -628,6 +666,8 @@ def handle_command(args: argparse.Namespace) -> bool:
         "status": lambda _: command_status(),
         "logs": handle_logs_command,
         "restart": handle_restart_command,
+        "stop": handle_stop_command,
+        "start": handle_start_command,
     }
 
     if args.command in command_handlers:
@@ -672,6 +712,8 @@ Examples:
   nexus-server config --edit        # Edit configuration in text editor
   nexus-server status               # Check server status
   nexus-server logs [-f] [-n N]     # View server logs (with optional follow and line count)
+  nexus-server start                # Start the server
+  nexus-server stop [-y]            # Stop the server (with optional skip confirmation)
   nexus-server restart [-y]         # Restart the server (with optional skip confirmation)
 
 Configuration can also be set using environment variables (prefix=NS_):
@@ -708,6 +750,11 @@ Configuration can also be set using environment variables (prefix=NS_):
 
     restart_parser = subparsers.add_parser("restart", help="Restart the server")
     restart_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+
+    stop_parser = subparsers.add_parser("stop", help="Stop the server")
+    stop_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+
+    subparsers.add_parser("start", help="Start the server")
 
     return parser
 

@@ -1,4 +1,5 @@
 import os
+import pathlib as pl
 import re
 import subprocess
 import sys
@@ -81,6 +82,12 @@ def run_job(
             git_repo_url = result.stdout.strip() or "unknown-url"
 
         env_vars = setup.load_current_env()
+
+        # Check if local .env file exists and notify user
+        local_env_path = pl.Path.cwd() / ".env"
+        if local_env_path.exists():
+            print(colored("Including environment variables from local .env file", "blue"))
+
         invalid_notifications = []
 
         for notification_type in notifications:

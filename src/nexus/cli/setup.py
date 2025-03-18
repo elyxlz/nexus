@@ -23,10 +23,8 @@ def create_default_env() -> None:
             f.write("# Nexus CLI Environment Variables\n\n")
 
 
-def load_current_env() -> dict[str, str]:
-    env_path = get_env_path()
+def read_env_file(env_path: pl.Path) -> dict[str, str]:
     env_vars = {}
-
     if env_path.exists():
         with open(env_path) as f:
             for line in f:
@@ -34,6 +32,20 @@ def load_current_env() -> dict[str, str]:
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
                     env_vars[key.strip()] = value.strip().strip('"').strip("'")
+    return env_vars
+
+
+def load_current_env() -> dict[str, str]:
+    # Load environment from ~/.nexus/.env
+    global_env_path = get_env_path()
+    env_vars = read_env_file(global_env_path)
+
+    # Check for local .env file in current directory
+    local_env_path = pl.Path.cwd() / ".env"
+    if local_env_path.exists():
+        local_env_vars = read_env_file(local_env_path)
+        # Local variables take precedence over global ones
+        env_vars.update(local_env_vars)
 
     return env_vars
 
