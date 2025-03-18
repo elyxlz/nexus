@@ -767,9 +767,8 @@ def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext
         _config = config.NexusServerConfig(server_dir=server_dir)
 
     db_path = ":memory:" if _config.server_dir is None else str(config.get_db_path(_config.server_dir))
-    log_dir = None if _config.server_dir is None else config.get_log_dir(_config.server_dir)
 
-    _logger = logger.create_logger(log_dir, name="nexus_server", log_level=_config.log_level)
+    _logger = logger.create_logger(name="nexus_server", log_level=_config.log_level)
     _db = db.create_connection(_logger, db_path=db_path)
 
     return context.NexusServerContext(db=_db, config=_config, logger=_logger)
