@@ -7,6 +7,8 @@ After=network.target
 
 SERVICE_SECTION = """[Service]
 Type=simple
+User=nexus
+Group=nexus
 WorkingDirectory=/home/nexus
 ExecStart=/usr/local/bin/nexus-server
 Restart=on-failure
