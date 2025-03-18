@@ -584,15 +584,15 @@ def handle_logs_command(args: argparse.Namespace) -> None:
     """View nexus-server logs using journalctl."""
     try:
         cmd = ["journalctl"]
-        
+
         if args.unit:
             cmd.extend(["-u", "nexus-server.service"])
-            
+
         if args.follow:
             cmd.append("-f")
-            
+
         cmd.extend(["-n", str(args.lines)])
-            
+
         subprocess.run(cmd)
     except Exception as e:
         print(f"Error viewing logs: {e}")
@@ -604,14 +604,14 @@ def handle_restart_command(args: argparse.Namespace) -> None:
     if os.geteuid() != 0:
         print("This operation requires root privileges. Please run with sudo.")
         sys.exit(1)
-        
+
     try:
         if not args.yes:
             confirm = input("Are you sure you want to restart the nexus-server? [y/N] ").strip().lower()
             if confirm != "y":
                 print("Restart cancelled.")
                 return
-                
+
         print("Restarting nexus-server...")
         subprocess.run(["systemctl", "restart", "nexus-server.service"], check=True)
         print("Server restarted successfully.")
@@ -699,13 +699,13 @@ Configuration can also be set using environment variables (prefix=NS_):
     config_parser.add_argument("--edit", action="store_true", help="Edit configuration in text editor")
 
     subparsers.add_parser("status", help="Show Nexus server status")
-    
+
     # Server management commands
     logs_parser = subparsers.add_parser("logs", help="View server logs")
     logs_parser.add_argument("-f", "--follow", action="store_true", help="Follow log output")
     logs_parser.add_argument("-u", "--unit", action="store_true", help="Use journalctl unit filter")
     logs_parser.add_argument("-n", "--lines", type=int, default=50, help="Number of log lines to show")
-    
+
     restart_parser = subparsers.add_parser("restart", help="Restart the server")
     restart_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 

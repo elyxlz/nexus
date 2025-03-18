@@ -149,7 +149,7 @@ def get_user_input(prompt: str, default: str = "", required: bool = False) -> st
         default_display = f" [press ENTER for {colored(default, 'cyan')}]"
     else:
         default_display = ""
-    
+
     while True:
         result = input(f"{colored('?', 'blue', attrs=['bold'])} {prompt}{default_display}: ").strip()
         if not result:

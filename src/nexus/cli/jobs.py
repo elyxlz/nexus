@@ -835,16 +835,16 @@ def attach_to_job(target: str | None = None) -> None:
     try:
         cli_config = config.load_config()
         user = cli_config.user or "anonymous"
-        
+
         if target is None:
             # Find the most recent running job started by the current user
             running_jobs = api_client.get_jobs("running")
             user_jobs = [j for j in running_jobs if j.get("user") == user]
-            
+
             if not user_jobs:
                 print(colored(f"No running jobs found for user '{user}'", "yellow"))
                 return
-                
+
             # Sort by started_at (newest first)
             user_jobs.sort(key=lambda x: x.get("started_at", 0), reverse=True)
             target = user_jobs[0]["id"]
