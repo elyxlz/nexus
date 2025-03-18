@@ -16,7 +16,7 @@ logging.setLoggerClass(NexusServerLogger)
 
 
 def create_logger(
-    log_dir: pl.Path | None,
+    log_dir: pl.Path | None = None,
     name: str = "server",
     log_file: str = "server.log",
     log_level: str = "info",
@@ -37,23 +37,6 @@ def create_logger(
     logger = logging.getLogger(name)
     logger.setLevel(numeric_log_level)
     logger.handlers = []
-
-    file_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    file_formatter = logging.Formatter(file_format, datefmt="%Y-%m-%d %H:%M:%S")
-
-    if log_dir is not None:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file_path = log_dir / log_file
-        log_file_path.touch()  # Ensures the file exists
-        file_handler = logging.handlers.RotatingFileHandler(
-            filename=str(log_file_path),
-            maxBytes=max_bytes,
-            backupCount=backup_count,
-            encoding="utf-8",
-        )
-        file_handler.setFormatter(file_formatter)
-        file_handler.setLevel(numeric_log_level)
-        logger.addHandler(file_handler)
 
     if console_output:
         console_format = "%(log_color)s%(asctime)s - %(name)s - %(levelname)s - %(message)s%(reset)s"
