@@ -17,7 +17,7 @@ __all__ = [
 
 
 class NexusServerConfig(pyds.BaseSettings):
-    model_config = pyds.SettingsConfigDict(env_prefix="ns_", frozen=True)
+    model_config = pyds.SettingsConfigDict(env_prefix="ns_", frozen=True, extra="ignore")
 
     server_dir: pl.Path | None  # if none, never persist
     refresh_rate: int = pyd.Field(default=3)

@@ -121,6 +121,11 @@ def parse_pmon_line(_logger: logger.NexusServerLogger, line: str) -> int | None:
     parts = line.split()
     if len(parts) < 2:
         raise ValueError("Line does not contain enough fields")
+
+    # Check if the line indicates no process is running (contains "-" markers)
+    if parts[1] == "-" and parts[2] == "-":
+        return None
+
     return int(parts[0])
 
 
