@@ -861,11 +861,11 @@ def attach_to_job(target: str | None = None) -> None:
                 print(colored(f"No running job found on GPU {gpu_idx}", "yellow"))
                 return
             target = job_id
-            
+
         if target is None:
             print(colored("No job target specified", "red"))
             return
-            
+
         job = api_client.get_job(target)
         if not job:
             print(colored(f"Job {target} not found", "red"))
