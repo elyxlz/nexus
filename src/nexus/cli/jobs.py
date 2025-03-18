@@ -831,9 +831,25 @@ def print_status() -> None:
         print(colored(f"Error: {e}", "red"))
 
 
-def attach_to_job(target: str) -> None:
+def attach_to_job(target: str | None = None) -> None:
     try:
-        if target.isdigit():
+        cli_config = config.load_config()
+        user = cli_config.user or "anonymous"
+        
+        if target is None:
+            # Find the most recent running job started by the current user
+            running_jobs = api_client.get_jobs("running")
+            user_jobs = [j for j in running_jobs if j.get("user") == user]
+            
+            if not user_jobs:
+                print(colored(f"No running jobs found for user '{user}'", "yellow"))
+                return
+                
+            # Sort by started_at (newest first)
+            user_jobs.sort(key=lambda x: x.get("started_at", 0), reverse=True)
+            target = user_jobs[0]["id"]
+            print(colored(f"Attaching to most recent job: {target}", "blue"))
+        elif target.isdigit():
             gpu_idx = int(target)
             gpus = api_client.get_gpus()
             gmatch = next((g for g in gpus if g["index"] == gpu_idx), None)

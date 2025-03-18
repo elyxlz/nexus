@@ -114,7 +114,17 @@ def is_gpu_available(gpu_info: GpuInfo, ignore_blacklist: bool = False) -> bool:
     return blacklist_check and gpu_info.running_job_id is None and gpu_info.process_count == 0
 
 
-def _get_gpu_info(_logger: logger.NexusServerLogger) -> tuple[str, GpuProcesses]:
+@exc.handle_exception(ValueError, exc.GPUError, message="Error parsing GPU pmon line", reraise=False)
+def parse_pmon_line(_logger: logger.NexusServerLogger, line: str) -> int | None:
+    if not line.strip() or line.lstrip().startswith("#"):
+        raise ValueError("Line is empty or a header/comment")
+    parts = line.split()
+    if len(parts) < 2:
+        raise ValueError("Line does not contain enough fields")
+    return int(parts[0])
+
+
+def _get_gpu_info(_logger: logger.NexusServerLogger) -> tuple[str, dict[int, int]]:
     current_time = time.time()
     cache_age = current_time - _nvidia_smi_cache["timestamp"]
 
@@ -128,23 +138,18 @@ def _get_gpu_info(_logger: logger.NexusServerLogger) -> tuple[str, GpuProcesses]
     )
 
     if not output.strip():
-        error = exc.GPUError(
+        raise exc.GPUError(
             message="nvidia-smi returned no output. Ensure that nvidia-smi is installed and GPUs are available."
         )
-        _logger.debug(f"GPU error code: {error.code}")
-        raise error
 
     pmon_output = _run_command(_logger, ["nvidia-smi", "pmon", "-c", "1", "-s", "m"])
 
-    gpu_processes: GpuProcesses = {}
+    gpu_processes: dict[int, int] = {}
     for line in pmon_output.strip().split("\n")[2:]:
-        if not line.strip():
+        gpu_idx = parse_pmon_line(_logger, line)
+        if gpu_idx is None:
             continue
-
-        parts = line.split()
-        if len(parts) > 1 and parts[1].strip() != "-":
-            gpu_idx = int(parts[0])
-            gpu_processes[gpu_idx] = gpu_processes.get(gpu_idx, 0) + 1
+        gpu_processes[gpu_idx] = gpu_processes.get(gpu_idx, 0) + 1
 
     _nvidia_smi_cache["timestamp"] = current_time
     _nvidia_smi_cache["output"] = output

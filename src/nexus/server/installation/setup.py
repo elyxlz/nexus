@@ -142,12 +142,12 @@ def create_server_user(sup_groups: list[str] | None = None) -> bool:
         user_exists = True
     except KeyError:
         subprocess.run(["useradd", "--system", "--create-home", "--shell", "/bin/bash", SERVER_USER], check=True)
-    
+
     if sup_groups:
         for grp in sup_groups:
             subprocess.run(["usermod", "-aG", grp, SERVER_USER], check=True)
         print(f"Added supplementary groups: {', '.join(sup_groups)} to user {SERVER_USER}.")
-    
+
     return not user_exists
 
 
@@ -406,6 +406,7 @@ def prompt_for_supplementary_groups() -> list[str]:
         return [grp.strip() for grp in groups_input.split(",") if grp.strip()]
     return []
 
+
 def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
     create_directories(SYSTEM_SERVER_DIR)
     print(f"Created system directory: {SYSTEM_SERVER_DIR}")
@@ -441,11 +442,11 @@ def install_system(
     check_installation_prerequisites(force)
 
     print("Installing Nexus server in system mode...")
-    
+
     sup_groups = []
     if interactive:
         sup_groups = prompt_for_supplementary_groups()
-        
+
     prepare_system_environment(sup_groups)
 
     _config = setup_config(SYSTEM_SERVER_DIR, interactive, config_file)
@@ -459,7 +460,7 @@ def install_system(
     if not server_ok:
         sys.exit(server_error)
     print(f"Installed server file to: {SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME}")
-    
+
     server_started = False
     if start_server:
         server_started = start_system_server()
@@ -579,12 +580,54 @@ def handle_config_command(args: argparse.Namespace) -> None:
     command_config(edit_mode=args.edit)
 
 
+def handle_logs_command(args: argparse.Namespace) -> None:
+    """View nexus-server logs using journalctl."""
+    try:
+        cmd = ["journalctl"]
+        
+        if args.unit:
+            cmd.extend(["-u", "nexus-server.service"])
+            
+        if args.follow:
+            cmd.append("-f")
+            
+        cmd.extend(["-n", str(args.lines)])
+            
+        subprocess.run(cmd)
+    except Exception as e:
+        print(f"Error viewing logs: {e}")
+        sys.exit(1)
+
+
+def handle_restart_command(args: argparse.Namespace) -> None:
+    """Restart the nexus-server systemd service."""
+    if os.geteuid() != 0:
+        print("This operation requires root privileges. Please run with sudo.")
+        sys.exit(1)
+        
+    try:
+        if not args.yes:
+            confirm = input("Are you sure you want to restart the nexus-server? [y/N] ").strip().lower()
+            if confirm != "y":
+                print("Restart cancelled.")
+                return
+                
+        print("Restarting nexus-server...")
+        subprocess.run(["systemctl", "restart", "nexus-server.service"], check=True)
+        print("Server restarted successfully.")
+    except Exception as e:
+        print(f"Error restarting server: {e}")
+        sys.exit(1)
+
+
 def handle_command(args: argparse.Namespace) -> bool:
     command_handlers = {
         "install": handle_install_command,
         "uninstall": handle_uninstall_command,
         "config": handle_config_command,
         "status": lambda _: command_status(),
+        "logs": handle_logs_command,
+        "restart": handle_restart_command,
     }
 
     if args.command in command_handlers:
@@ -628,6 +671,8 @@ Examples:
   nexus-server config               # Show current configuration
   nexus-server config --edit        # Edit configuration in text editor
   nexus-server status               # Check server status
+  nexus-server logs [-f] [-n N]     # View server logs (with optional follow and line count)
+  nexus-server restart [-y]         # Restart the server (with optional skip confirmation)
 
 Configuration can also be set using environment variables (prefix=NS_):
 """,
@@ -654,6 +699,15 @@ Configuration can also be set using environment variables (prefix=NS_):
     config_parser.add_argument("--edit", action="store_true", help="Edit configuration in text editor")
 
     subparsers.add_parser("status", help="Show Nexus server status")
+    
+    # Server management commands
+    logs_parser = subparsers.add_parser("logs", help="View server logs")
+    logs_parser.add_argument("-f", "--follow", action="store_true", help="Follow log output")
+    logs_parser.add_argument("-u", "--unit", action="store_true", help="Use journalctl unit filter")
+    logs_parser.add_argument("-n", "--lines", type=int, default=50, help="Number of log lines to show")
+    
+    restart_parser = subparsers.add_parser("restart", help="Restart the server")
+    restart_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     return parser
 

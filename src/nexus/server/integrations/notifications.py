@@ -70,7 +70,7 @@ def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction
     discord_id = _get_discord_secrets(job)[1]
     user_mention = f"<@{discord_id}>"
     gpu_idxs = ", ".join(str(idx) for idx in job.gpu_idxs) if job.gpu_idxs else "None"
-    message_title = f"{EMOJI_MAPPING[job_action]} **Job {job.id} {job_action} on GPU {gpu_idxs} - ({job.node_name})** - {user_mention}"
+    message_title = f"{EMOJI_MAPPING[job_action]} **Job {job.id} {job_action} on GPU(s) {gpu_idxs} - ({job.node_name})** - {user_mention}"
     command = str(job.command)
     git_info = f"{job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}"
     fields = [
@@ -204,27 +204,6 @@ async def _send_phone_notification(_logger: logger.NexusServerLogger, job: schem
     )
 
     _logger.info(f"Initiated phone call notification for job {job.id}: {result}")
-
-
-def _create_message_for_messaging(job: schemas.Job, action: JobAction, include_wandb: bool = False) -> str:
-    status_emoji = {"started": "🚀", "completed": "✅", "failed": "❌", "killed": "🛑"}
-    emoji = status_emoji.get(action, "")
-    gpu_idxs = ", ".join(str(idx) for idx in job.gpu_idxs)
-
-    message_parts = [
-        f"{emoji} Nexus Job {job.id} {action} on GPU {gpu_idxs} - ({job.node_name})",
-        f"Command: {job.command}",
-        f"Git: {job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}",
-        f"User: {job.user}",
-    ]
-
-    if include_wandb:
-        message_parts.insert(2, f"W&B: {job.wandb_url or 'Not Found'}")
-
-    if job.error_message and action in ["completed", "failed"]:
-        message_parts.insert(2, f"Error: {job.error_message}")
-
-    return "\n".join(message_parts)
 
 
 ####################
