@@ -350,37 +350,7 @@ async def async_get_job_logs(
 
 @exc.handle_exception_async(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
 async def kill_job(_logger: logger.NexusServerLogger, job: schemas.Job) -> None:
-    killed = False
-
-    if job.pid is not None:
-        try:
-            _logger.debug(f"Sending SIGTERM to PID {job.pid}")
-            os.kill(job.pid, signal.SIGTERM)
-
-            for _ in range(10):
-                try:
-                    os.kill(job.pid, 0)
-                    await asyncio.sleep(0.1)
-                except ProcessLookupError:
-                    killed = True
-                    _logger.debug(f"Process {job.pid} terminated with SIGTERM")
-                    break
-
-            if not killed:
-                _logger.debug(f"Process {job.pid} didn't respond to SIGTERM, sending SIGKILL")
-                os.kill(job.pid, signal.SIGKILL)
-                killed = True
-        except ProcessLookupError:
-            _logger.debug(f"Process {job.pid} not found")
-            pass
-
     session_name = _get_job_session_name(job.id)
-    _logger.debug(f"Terminating screen session {session_name}")
-    screen_proc = await asyncio.create_subprocess_exec(
-        "screen", "-S", session_name, "-X", "quit", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    await screen_proc.wait()
-
     _logger.debug(f"Killing any processes containing session name {session_name}")
     await asyncio.create_subprocess_shell(f"pkill -9 -f {session_name}")
 

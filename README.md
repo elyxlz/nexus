@@ -1,15 +1,12 @@
 ## Immediate TODO
 
-- [x] more job details when printing job stuff, especially when removing or killing
-- [x] setup
-- [x] not able to select address at setup (removed, always localhost)
-- [x] nx run should crash if gpus not available
-- [x] make fact that you can press enter for default more obvious
-- [x] simple way to get logs with nexus-server cli
-- [x] automatically load .env in dir
+- [ ] more agressive job killing
+- [ ] cleanup git functions
+- [ ] cleanup git tags optional
 - [ ] dependent jobs (a after b is done)
+- [ ] nicer error messages on the cli instead of showing apierror
 - [ ] better secrets management
 - [ ] git branch mode
-- [ ] multi node and auth
+- [ ] multi node and auth with dht and dqlite
 - [ ] documentation
 - [ ] job execution isolation
