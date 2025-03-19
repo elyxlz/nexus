@@ -227,8 +227,6 @@ def create_interactive_config(default_config: config.NexusServerConfig) -> confi
     print("=========================")
     print("(You can also set these values with environment variables: NS_HOST, NS_PORT, etc.)")
 
-    host = input(f"Host [default: {default_config.host}]: ").strip() or default_config.host
-
     port_str = input(f"Port [default: {default_config.port}]: ").strip()
     port = int(port_str) if port_str.isdigit() else default_config.port
 
@@ -241,7 +239,6 @@ def create_interactive_config(default_config: config.NexusServerConfig) -> confi
 
     return config.NexusServerConfig(
         server_dir=default_config.server_dir,
-        host=host,
         port=port,
         node_name=node_name,
         log_level=log_level,
