@@ -1,5 +1,4 @@
 import os
-import pathlib as pl
 import re
 import subprocess
 import sys
@@ -82,11 +81,6 @@ def run_job(
             git_repo_url = result.stdout.strip() or "unknown-url"
 
         env_vars = setup.load_current_env()
-
-        # Check if local .env file exists and notify user
-        local_env_path = pl.Path.cwd() / ".env"
-        if local_env_path.exists():
-            print(colored("Including environment variables from local .env file", "blue"))
 
         invalid_notifications = []
 
@@ -598,7 +592,6 @@ def view_logs(target: str | None = None, tail: int | None = None) -> None:
     try:
         job_id: str = ""
         if target is None:
-            # Find the most recent job
             jobs = []
             for status in ["running", "completed", "failed", "killed"]:
                 jobs.extend(api_client.get_jobs(status))
@@ -607,10 +600,10 @@ def view_logs(target: str | None = None, tail: int | None = None) -> None:
                 print(colored("No jobs found", "yellow"))
                 return
 
-            # Sort by started_at (newest first)
             jobs.sort(key=lambda x: x.get("started_at", 0), reverse=True)
             job_id = jobs[0]["id"]
-            print(colored(f"Viewing logs for most recent job: {job_id}", "blue"))
+            job_status = jobs[0]["status"]
+            print(colored(f"Viewing logs for most recent job: {job_id} ({job_status})", "blue"))
         elif target.isdigit():
             gpu_idx = int(target)
             gpus = api_client.get_gpus()
@@ -629,10 +622,18 @@ def view_logs(target: str | None = None, tail: int | None = None) -> None:
         else:
             job_id = target
 
+        job = api_client.get_job(job_id)
+        if not job:
+            print(colored(f"Job {job_id} not found", "red"))
+            return
+
+        if tail is None and job["status"] in ["completed", "failed", "killed"]:
+            tail = 5000
+            print(colored(f"Job {job_id} is {job['status']}. Showing last {tail} lines:", "blue"))
+
         if tail:
             logs = api_client.get_job_logs(job_id, last_n_lines=tail)
             if logs:
-                print(colored(f"Showing last {tail} lines:", "blue"))
                 print(logs)
             else:
                 print(colored("No logs available", "yellow"))
