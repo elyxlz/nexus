@@ -6,7 +6,6 @@ import os
 import pathlib as pl
 import re
 import shutil
-import signal
 import subprocess
 import tempfile
 import time
