@@ -36,7 +36,6 @@ def read_env_file(env_path: pl.Path) -> dict[str, str]:
 
 
 def load_current_env() -> dict[str, str]:
-    # Load environment from ~/.nexus/.env only
     global_env_path = get_env_path()
     env_vars = read_env_file(global_env_path)
     return env_vars

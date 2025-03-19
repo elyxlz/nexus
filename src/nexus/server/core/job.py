@@ -349,12 +349,14 @@ async def async_get_job_logs(
 
 @exc.handle_exception_async(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
 async def kill_job(_logger: logger.NexusServerLogger, job: schemas.Job) -> None:
+    if job.dir is not None:
+        job_dir = str(job.dir)
+        _logger.debug(f"Killing any processes running in directory {job_dir}")
+        await asyncio.create_subprocess_shell(f"pkill -9 -f {job_dir}")
+
     session_name = _get_job_session_name(job.id)
     _logger.debug(f"Killing any processes containing session name {session_name}")
     await asyncio.create_subprocess_shell(f"pkill -9 -f {session_name}")
-
-    _logger.debug(f"Killing any processes containing job id {job.id}")
-    await asyncio.create_subprocess_shell(f"pkill -9 -f {job.id}")
 
     if job.pid is not None:
         _logger.debug(f"Killing any child processes of {job.pid}")

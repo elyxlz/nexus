@@ -1,6 +1,7 @@
 ## Immediate TODO
 
-- [ ] more agressive job killing
+- [x] more agressive job killing
+- [x] after job completes, show complete logs
 - [ ] cleanup git functions
 - [ ] cleanup git tags optional
 - [ ] dependent jobs (a after b is done)
