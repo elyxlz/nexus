@@ -12,6 +12,7 @@ from nexus.cli.config import NotificationType
 
 
 def run_job(
+    cfg: config.NexusCliConfig,
     commands: list[str],
     gpu_idxs_str: str | None = None,
     num_gpus: int = 1,
@@ -42,10 +43,9 @@ def run_job(
             print(colored("Operation cancelled.", "yellow"))
             return
 
-        cli_config = config.load_config()
-        user = cli_config.user or "anonymous"
+        user = cfg.user or "anonymous"
 
-        notifications = list(cli_config.default_notifications)
+        notifications = list(cfg.default_notifications)
 
         if notification_types:
             for notification_type in notification_types:
@@ -122,7 +122,7 @@ def run_job(
             "git_branch": branch_name,
             "num_gpus": gpus_count,
             "priority": 0,
-            "search_wandb": cli_config.search_wandb,
+            "search_wandb": cfg.search_wandb,
             "notifications": notifications,
             "env": env_vars,
             "jobrc": jobrc_content,
@@ -145,7 +145,7 @@ def run_job(
                 job = api_client.get_job(job_id)
                 if job["status"] == "running" and job.get("screen_session_name"):
                     print(colored(f"Job {job_id} running, attaching to screen session...", "green"))
-                    attach_to_job(job_id)
+                    attach_to_job(cfg, job_id)
                     return
             except Exception:
                 pass
@@ -164,6 +164,7 @@ def run_job(
 
 
 def add_jobs(
+    cfg: config.NexusCliConfig,
     commands: list[str],
     repeat: int,
     priority: int = 0,
@@ -189,10 +190,9 @@ def add_jobs(
             print(colored("Operation cancelled.", "yellow"))
             return
 
-        cli_config = config.load_config()
-        user = cli_config.user or "anonymous"
+        user = cfg.user or "anonymous"
 
-        notifications = list(cli_config.default_notifications)
+        notifications = list(cfg.default_notifications)
 
         if notification_types:
             for notification_type in notification_types:
@@ -265,7 +265,7 @@ def add_jobs(
                 "git_branch": branch_name,
                 "num_gpus": num_gpus,
                 "priority": priority,
-                "search_wandb": cli_config.search_wandb,
+                "search_wandb": cfg.search_wandb,
                 "notifications": notifications,
                 "env": env_vars,
                 "jobrc": jobrc_content,
@@ -594,9 +594,24 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
         print(colored(f"Error removing jobs: {e}", "red"))
 
 
-def view_logs(target: str, tail: int | None = None) -> None:
+def view_logs(target: str | None = None, tail: int | None = None) -> None:
     try:
-        if target.isdigit():
+        job_id: str = ""
+        if target is None:
+            # Find the most recent job
+            jobs = []
+            for status in ["running", "completed", "failed", "killed"]:
+                jobs.extend(api_client.get_jobs(status))
+
+            if not jobs:
+                print(colored("No jobs found", "yellow"))
+                return
+
+            # Sort by started_at (newest first)
+            jobs.sort(key=lambda x: x.get("started_at", 0), reverse=True)
+            job_id = jobs[0]["id"]
+            print(colored(f"Viewing logs for most recent job: {job_id}", "blue"))
+        elif target.isdigit():
             gpu_idx = int(target)
             gpus = api_client.get_gpus()
 
@@ -605,22 +620,24 @@ def view_logs(target: str, tail: int | None = None) -> None:
                 print(colored(f"No GPU found with index {gpu_idx}", "red"))
                 return
 
-            job_id = gmatch.get("running_job_id")
-            if not job_id:
+            gpu_job_id = gmatch.get("running_job_id")
+            if not gpu_job_id:
                 print(colored(f"No running job found on GPU {gpu_idx}", "yellow"))
                 return
 
-            target = job_id
+            job_id = gpu_job_id
+        else:
+            job_id = target
 
         if tail:
-            logs = api_client.get_job_logs(target, last_n_lines=tail)
+            logs = api_client.get_job_logs(job_id, last_n_lines=tail)
             if logs:
                 print(colored(f"Showing last {tail} lines:", "blue"))
                 print(logs)
             else:
                 print(colored("No logs available", "yellow"))
         else:
-            logs = api_client.get_job_logs(target)
+            logs = api_client.get_job_logs(job_id)
             if logs:
                 print(logs)
             else:
@@ -838,10 +855,9 @@ def print_status() -> None:
         print(colored(f"Error: {e}", "red"))
 
 
-def attach_to_job(target: str | None = None) -> None:
+def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None:
     try:
-        cli_config = config.load_config()
-        user = cli_config.user or "anonymous"
+        user = cfg.user or "anonymous"
 
         if target is None:
             # Find the most recent running job started by the current user
