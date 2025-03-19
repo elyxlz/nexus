@@ -26,9 +26,8 @@ def server_config() -> NexusServerConfig:
     """Create server configuration for testing."""
     return NexusServerConfig(
         server_dir=None,
-        refresh_rate=1,  # Faster refresh, must be an integer
-        host="localhost",
-        port=54325,  # Different port to avoid conflicts
+        refresh_rate=1,
+        port=54325,
         node_name="test_persistence_node",
         log_level="debug",
         mock_gpus=True,

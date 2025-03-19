@@ -11,6 +11,7 @@ User=nexus
 Group=nexus
 WorkingDirectory=/home/nexus
 ExecStart=/usr/local/bin/nexus-server
+KillMode=process
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

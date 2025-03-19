@@ -20,7 +20,6 @@ class NexusServerConfig(pyds.BaseSettings):
 
     server_dir: pl.Path | None  # if none, never persist
     refresh_rate: int = pyd.Field(default=3)
-    host: str = pyd.Field(default="localhost")
     port: int = pyd.Field(default=54323)
     node_name: str = pyd.Field(default="test_node")
     log_level: str = pyd.Field(default="info")
