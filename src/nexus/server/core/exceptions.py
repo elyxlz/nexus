@@ -2,7 +2,7 @@ import functools
 import typing as tp
 from collections import abc
 
-from nexus.server.core import logger
+from nexus.server.utils import logger
 
 __all__ = [
     "NexusServerError",
@@ -104,28 +104,12 @@ def handle_exception(
     def decorator(func: abc.Callable[P, T]) -> abc.Callable[P, T]:  # And here
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:  # And here
-            _logger = None
-
-            for arg in args:
-                if isinstance(arg, logger.NexusServerLogger):
-                    _logger = arg
-                    break
-
-            if _logger is None:
-                for arg_name, arg_value in kwargs.items():
-                    if isinstance(arg_value, logger.NexusServerLogger):
-                        _logger = arg_value
-                        break
-
-            if _logger is None:
-                raise ValueError(f"Function '{func.__name__}' requires a NexusServerLogger parameter")
-
             try:
                 return func(*args, **kwargs)
             except Exception as e:
                 if isinstance(e, source_exception):
                     error_msg = f"{message}: {str(e)}"
-                    _logger.exception(error_msg)
+                    logger.exception(error_msg)
 
                     if not reraise:
                         return tp.cast(T, default_return)
@@ -153,28 +137,12 @@ def handle_exception_async(
     def decorator(func: abc.Callable[P, tp.Awaitable[T]]) -> abc.Callable[P, tp.Awaitable[T]]:
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            _logger = None
-
-            for arg in args:
-                if isinstance(arg, logger.NexusServerLogger):
-                    _logger = arg
-                    break
-
-            if _logger is None:
-                for arg_name, arg_value in kwargs.items():
-                    if isinstance(arg_value, logger.NexusServerLogger):
-                        _logger = arg_value
-                        break
-
-            if _logger is None:
-                raise ValueError(f"Function '{func.__name__}' requires a NexusServerLogger parameter")
-
             try:
                 return await func(*args, **kwargs)
             except Exception as e:
                 if isinstance(e, source_exception):
                     error_msg = f"{message}: {str(e)}"
-                    _logger.exception(error_msg)
+                    logger.exception(error_msg)
 
                     if not reraise:
                         return tp.cast(T, default_return)

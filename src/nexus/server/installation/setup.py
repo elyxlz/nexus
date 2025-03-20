@@ -13,7 +13,7 @@ import sys
 import time
 import typing as tp
 
-from nexus.server.core import config, context, db, logger
+from nexus.server.core import config, context, db
 
 SYSTEM_SERVER_DIR = pl.Path("/etc/nexus_server")
 SERVER_USER = "nexus"
@@ -763,7 +763,7 @@ def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext
 
     db_path = ":memory:" if _config.server_dir is None else str(config.get_db_path(_config.server_dir))
 
-    _logger = logger.create_logger(name="nexus_server", log_level=_config.log_level)
-    _db = db.create_connection(_logger, db_path=db_path)
+    # Create DB connection
+    _db = db.create_connection(db_path=db_path)
 
-    return context.NexusServerContext(db=_db, config=_config, logger=_logger)
+    return context.NexusServerContext(db=_db, config=_config)

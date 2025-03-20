@@ -5,8 +5,9 @@ import re
 import sqlite3
 import typing as tp
 
-from nexus.server.core import context, logger, schemas
+from nexus.server.core import context, schemas
 from nexus.server.core import exceptions as exc
+from nexus.server.utils import logger
 
 __all__ = [
     "create_connection",
@@ -23,7 +24,7 @@ __all__ = [
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database tables")
-def _create_tables(_logger: logger.NexusServerLogger, conn: sqlite3.Connection) -> None:
+def _create_tables(conn: sqlite3.Connection) -> None:
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
@@ -39,7 +40,7 @@ def _create_tables(_logger: logger.NexusServerLogger, conn: sqlite3.Connection) 
             env JSON, 
             node_name TEXT,
             jobrc TEXT,
-            search_wandb INTEGER,
+            integrations TEXT,
             notifications TEXT,
             notification_messages JSON,
             pid INTEGER,
@@ -65,13 +66,13 @@ def _create_tables(_logger: logger.NexusServerLogger, conn: sqlite3.Connection) 
 
 
 @exc.handle_exception(json.JSONDecodeError, exc.DatabaseError, message="Invalid environment data in database")
-def _parse_json(_logger: logger.NexusServerLogger, json_obj: str | None) -> dict[str, str]:
+def _parse_json(json_obj: str | None) -> dict[str, str]:
     if not json_obj:
         return {}
     return json.loads(json_obj)
 
 
-def _row_to_job(_logger: logger.NexusServerLogger, row: sqlite3.Row) -> schemas.Job:
+def _row_to_job(row: sqlite3.Row) -> schemas.Job:
     return schemas.Job(
         id=row["id"],
         command=row["command"],
@@ -94,11 +95,11 @@ def _row_to_job(_logger: logger.NexusServerLogger, row: sqlite3.Row) -> schemas.
         ignore_blacklist=bool(row["ignore_blacklist"]),
         dir=pl.Path(row["dir"]) if row["dir"] else None,
         pid=row["pid"],
-        env=_parse_json(_logger, json_obj=row["env"]),
+        env=_parse_json(json_obj=row["env"]),
         jobrc=row["jobrc"],
-        search_wandb=bool(row["search_wandb"]) if row["search_wandb"] is not None else False,
+        integrations=row["integrations"].split(",") if row["integrations"] else [],
         notifications=row["notifications"].split(",") if row["notifications"] else [],
-        notification_messages=_parse_json(_logger, json_obj=row["notification_messages"]),
+        notification_messages=_parse_json(json_obj=row["notification_messages"]),
         screen_session_name=row["screen_session_name"] if "screen_session_name" in row.keys() else None,
     )
 
@@ -109,13 +110,13 @@ def _validate_job_id(job_id: str) -> None:
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job")
-def _query_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job:
+def _query_job(conn: sqlite3.Connection, job_id: str) -> schemas.Job:
     cur = conn.cursor()
     cur.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
     row = cur.fetchone()
     if not row:
         raise exc.JobNotFoundError(message=f"Job not found: {job_id}")
-    return _row_to_job(_logger, row=row)
+    return _row_to_job(row=row)
 
 
 def _validate_job_status(status: str | None) -> None:
@@ -126,9 +127,7 @@ def _validate_job_status(status: str | None) -> None:
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list jobs")
-def _query_jobs(
-    _logger: logger.NexusServerLogger, conn: sqlite3.Connection, status: str | None, command_regex: str | None = None
-) -> list[schemas.Job]:
+def _query_jobs(conn: sqlite3.Connection, status: str | None, command_regex: str | None = None) -> list[schemas.Job]:
     cur = conn.cursor()
 
     query = "SELECT * FROM jobs"
@@ -150,11 +149,11 @@ def _query_jobs(
 
     cur.execute(query, params)
     rows = cur.fetchall()
-    return [_row_to_job(_logger, row=row) for row in rows]
+    return [_row_to_job(row=row) for row in rows]
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job status")
-def _check_job_status(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> str:
+def _check_job_status(conn: sqlite3.Connection, job_id: str) -> str:
     cur = conn.cursor()
     cur.execute("SELECT status FROM jobs WHERE id = ?", (job_id,))
     row = cur.fetchone()
@@ -171,7 +170,7 @@ def _verify_job_is_queued(job_id: str, status: str) -> None:
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to delete job")
-def _delete_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> None:
+def _delete_job(conn: sqlite3.Connection, job_id: str) -> None:
     cur = conn.cursor()
     cur.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
 
@@ -182,7 +181,7 @@ def _validate_gpu_idx(gpu_idx: int) -> None:
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to blacklist GPU")
-def _add_gpu_to_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def _add_gpu_to_blacklist(conn: sqlite3.Connection, gpu_idx: int) -> bool:
     """Add GPU to blacklist. Returns True if added, False if already blacklisted."""
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
@@ -193,7 +192,7 @@ def _add_gpu_to_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.Conne
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to remove GPU from blacklist")
-def _remove_gpu_from_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def _remove_gpu_from_blacklist(conn: sqlite3.Connection, gpu_idx: int) -> bool:
     """Remove GPU from blacklist. Returns True if removed, False if not blacklisted."""
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
@@ -207,20 +206,21 @@ def _remove_gpu_from_blacklist(_logger: logger.NexusServerLogger, conn: sqlite3.
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database connection")
-def create_connection(_logger: logger.NexusServerLogger, db_path: str) -> sqlite3.Connection:
+def create_connection(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    _create_tables(_logger, conn=conn)
+    _create_tables(conn=conn)
     return conn
 
 
 @exc.handle_exception(sqlite3.IntegrityError, exc.JobError, message="Job already exists")
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add job to database")
-def add_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
+def add_job(conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
     env_json = json.dumps(job.env)
     notification_messages_json = json.dumps(job.notification_messages)
     notifications_str = ",".join(job.notifications)
+    integrations_str = ",".join(job.integrations)
     gpu_idxs_str = ",".join([str(i) for i in job.gpu_idxs])
 
     cur.execute(
@@ -229,7 +229,7 @@ def add_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: sc
             id, command, git_repo_url, git_tag, git_branch, status, created_at, priority,
             num_gpus, started_at, completed_at, gpu_idxs, exit_code, error_message, 
             wandb_url, user, marked_for_kill, dir, node_name,
-            pid, jobrc, env, search_wandb, notifications, notification_messages, ignore_blacklist,
+            pid, jobrc, env, integrations, notifications, notification_messages, ignore_blacklist,
             screen_session_name
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -257,7 +257,7 @@ def add_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: sc
             job.pid,
             job.jobrc,
             env_json,
-            int(job.search_wandb),
+            integrations_str,
             notifications_str,
             notification_messages_json,
             int(job.ignore_blacklist),
@@ -267,12 +267,13 @@ def add_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: sc
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to update job")
-def update_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job: schemas.Job) -> None:
+def update_job(conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
 
     env_json = json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env)
     notification_messages_json = json.dumps(job.notification_messages)
     notifications_str = ",".join(job.notifications)
+    integrations_str = ",".join(job.integrations)
     gpu_idxs_str = ",".join([str(i) for i in job.gpu_idxs])
 
     cur.execute(
@@ -298,7 +299,7 @@ def update_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job:
             pid = ?,
             jobrc = ?,
             env = ?,
-            search_wandb = ?,
+            integrations = ?,
             notifications = ?,
             notification_messages = ?,
             ignore_blacklist = ?,
@@ -326,7 +327,7 @@ def update_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job:
             job.pid,
             job.jobrc,
             env_json,
-            int(job.search_wandb),
+            integrations_str,
             notifications_str,
             notification_messages_json,
             int(job.ignore_blacklist),
@@ -339,40 +340,39 @@ def update_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job:
         raise exc.JobNotFoundError(message="Job not found")
 
 
-def get_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> schemas.Job:
+def get_job(conn: sqlite3.Connection, job_id: str) -> schemas.Job:
     _validate_job_id(job_id)
-    return _query_job(_logger, conn=conn, job_id=job_id)
+    return _query_job(conn=conn, job_id=job_id)
 
 
 def list_jobs(
-    _logger: logger.NexusServerLogger,
     conn: sqlite3.Connection,
     status: str | None = None,
     command_regex: str | None = None,
 ) -> list[schemas.Job]:
     _validate_job_status(status)
-    return _query_jobs(_logger, conn=conn, status=status, command_regex=command_regex)
+    return _query_jobs(conn=conn, status=status, command_regex=command_regex)
 
 
-def delete_queued_job(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, job_id: str) -> None:
+def delete_queued_job(conn: sqlite3.Connection, job_id: str) -> None:
     _validate_job_id(job_id)
-    status = _check_job_status(_logger, conn=conn, job_id=job_id)
+    status = _check_job_status(conn=conn, job_id=job_id)
     _verify_job_is_queued(job_id, status)
-    return _delete_job(_logger, conn=conn, job_id=job_id)
+    return _delete_job(conn=conn, job_id=job_id)
 
 
-def add_blacklisted_gpu(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def add_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int) -> bool:
     _validate_gpu_idx(gpu_idx)
-    return _add_gpu_to_blacklist(_logger, conn=conn, gpu_idx=gpu_idx)
+    return _add_gpu_to_blacklist(conn=conn, gpu_idx=gpu_idx)
 
 
-def remove_blacklisted_gpu(_logger: logger.NexusServerLogger, conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def remove_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int) -> bool:
     _validate_gpu_idx(gpu_idx)
-    return _remove_gpu_from_blacklist(_logger, conn=conn, gpu_idx=gpu_idx)
+    return _remove_gpu_from_blacklist(conn=conn, gpu_idx=gpu_idx)
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list blacklisted GPUs")
-def list_blacklisted_gpus(_logger: logger.NexusServerLogger, conn: sqlite3.Connection) -> list[int]:
+def list_blacklisted_gpus(conn: sqlite3.Connection) -> list[int]:
     cur = conn.cursor()
     cur.execute("SELECT gpu_idx FROM blacklisted_gpus")
     rows = cur.fetchall()
@@ -402,7 +402,7 @@ def safe_transaction(func: tp.Callable[..., tp.Any]) -> tp.Callable[..., tp.Any]
             ctx.db.commit()
             return result
         except Exception as e:
-            ctx.logger.error(f"Transaction failed, rolling back: {str(e)}")
+            logger.error(f"Transaction failed, rolling back: {str(e)}")
             ctx.db.rollback()
             raise
 

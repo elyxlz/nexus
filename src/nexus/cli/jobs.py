@@ -7,7 +7,7 @@ import time
 from termcolor import colored
 
 from nexus.cli import api_client, config, setup, utils
-from nexus.cli.config import NotificationType
+from nexus.cli.config import IntegrationType, NotificationType
 
 
 def run_job(
@@ -16,6 +16,7 @@ def run_job(
     gpu_idxs_str: str | None = None,
     num_gpus: int = 1,
     notification_types: list[NotificationType] | None = None,
+    integration_types: list[config.IntegrationType] | None = None,
     bypass_confirm: bool = False,
 ) -> None:
     """Run a job immediately on the server"""
@@ -45,11 +46,17 @@ def run_job(
         user = cfg.user or "anonymous"
 
         notifications = list(cfg.default_notifications)
+        integrations = list(cfg.default_integrations)
 
         if notification_types:
             for notification_type in notification_types:
                 if notification_type not in notifications:
                     notifications.append(notification_type)
+
+        if integration_types:
+            for integration_type in integration_types:
+                if integration_type not in integrations:
+                    integrations.append(integration_type)
 
         git_tag_id = utils.generate_git_tag_id()
         branch_name = utils.get_current_git_branch()
@@ -116,7 +123,7 @@ def run_job(
             "git_branch": branch_name,
             "num_gpus": gpus_count,
             "priority": 0,
-            "search_wandb": cfg.search_wandb,
+            "integrations": integrations,
             "notifications": notifications,
             "env": env_vars,
             "jobrc": jobrc_content,
@@ -164,6 +171,7 @@ def add_jobs(
     priority: int = 0,
     num_gpus: int = 1,
     notification_types: list[NotificationType] | None = None,
+    integration_types: list[IntegrationType] | None = None,
     bypass_confirm: bool = False,
 ) -> None:
     try:
@@ -187,11 +195,17 @@ def add_jobs(
         user = cfg.user or "anonymous"
 
         notifications = list(cfg.default_notifications)
+        integrations = list(cfg.default_integrations)
 
         if notification_types:
             for notification_type in notification_types:
                 if notification_type not in notifications:
                     notifications.append(notification_type)
+
+        if integration_types:
+            for integration_type in integration_types:
+                if integration_type not in integrations:
+                    integrations.append(integration_type)
 
         env_vars = setup.load_current_env()
         invalid_notifications = []
@@ -259,7 +273,7 @@ def add_jobs(
                 "git_branch": branch_name,
                 "num_gpus": num_gpus,
                 "priority": priority,
-                "search_wandb": cfg.search_wandb,
+                "integrations": integrations,
                 "notifications": notifications,
                 "env": env_vars,
                 "jobrc": jobrc_content,

@@ -3,7 +3,8 @@ import subprocess
 import time
 
 from nexus.server.core import exceptions as exc
-from nexus.server.core import logger, schemas
+from nexus.server.core import schemas
+from nexus.server.utils import logger
 
 __all__ = ["GpuInfo", "get_gpus", "is_gpu_available"]
 
@@ -29,7 +30,7 @@ GpuProcesses = dict[int, int]
 @exc.handle_exception(subprocess.TimeoutExpired, exc.GPUError, message="Command timed out")
 @exc.handle_exception(subprocess.CalledProcessError, exc.GPUError, message="Command failed with error")
 @exc.handle_exception(Exception, exc.GPUError, message="Error executing command")
-def _run_command(_logger: logger.NexusServerLogger, command: list[str], timeout: int = 5) -> str:
+def _run_command(command: list[str], timeout: int = 5) -> str:
     result = subprocess.run(
         command,
         capture_output=True,
@@ -62,9 +63,7 @@ def _create_gpu_info(
 
 
 @exc.handle_exception(ValueError, exc.GPUError, message="Error parsing GPU info line")
-def _parse_gpu_line(
-    _logger: logger.NexusServerLogger, line: str, gpu_processes: dict, blacklisted_gpus: set, running_jobs_idxs: dict
-) -> GpuInfo:
+def _parse_gpu_line(line: str, gpu_processes: dict, blacklisted_gpus: set, running_jobs_idxs: dict) -> GpuInfo:
     index, name, total, used = (x.strip() for x in line.split(","))
     return _create_gpu_info(
         int(index),
@@ -77,10 +76,8 @@ def _parse_gpu_line(
     )
 
 
-def _get_mock_gpus(
-    _logger: logger.NexusServerLogger, running_jobs: list[schemas.Job], blacklisted_gpus: list[int]
-) -> list[GpuInfo]:
-    _logger.debug("Generating mock GPUs")
+def _get_mock_gpus(running_jobs: list[schemas.Job], blacklisted_gpus: list[int]) -> list[GpuInfo]:
+    logger.debug("Generating mock GPUs")
     running_jobs_idxs = {gpu_idx: j.id for j in running_jobs for gpu_idx in j.gpu_idxs}
     blacklisted_gpus_set = set(blacklisted_gpus)
 
@@ -103,9 +100,9 @@ def _get_mock_gpus(
     ]
 
     for gpu in mock_gpus:
-        _logger.debug(f"Mock GPU {gpu.index} availability: {is_gpu_available(gpu)}")
+        logger.debug(f"Mock GPU {gpu.index} availability: {is_gpu_available(gpu)}")
 
-    _logger.debug(f"Total mock GPUs generated: {len(mock_gpus)}")
+    logger.debug(f"Total mock GPUs generated: {len(mock_gpus)}")
     return mock_gpus
 
 
@@ -115,7 +112,7 @@ def is_gpu_available(gpu_info: GpuInfo, ignore_blacklist: bool = False) -> bool:
 
 
 @exc.handle_exception(ValueError, exc.GPUError, message="Error parsing GPU pmon line", reraise=False)
-def parse_pmon_line(_logger: logger.NexusServerLogger, line: str) -> int | None:
+def parse_pmon_line(line: str) -> int | None:
     if not line.strip() or line.lstrip().startswith("#"):
         raise ValueError("Line is empty or a header/comment")
     parts = line.split()
@@ -129,17 +126,17 @@ def parse_pmon_line(_logger: logger.NexusServerLogger, line: str) -> int | None:
     return int(parts[0])
 
 
-def _get_gpu_info(_logger: logger.NexusServerLogger) -> tuple[str, dict[int, int]]:
+def _get_gpu_info() -> tuple[str, dict[int, int]]:
     current_time = time.time()
     cache_age = current_time - _nvidia_smi_cache["timestamp"]
 
     if cache_age < CACHE_TTL and _nvidia_smi_cache["output"] and _nvidia_smi_cache["processes"]:
-        _logger.debug("Using cached GPU information")
+        logger.debug("Using cached GPU information")
         return _nvidia_smi_cache["output"], _nvidia_smi_cache["processes"]
 
-    _logger.debug("Refreshing GPU cache")
+    logger.debug("Refreshing GPU cache")
     output = _run_command(
-        _logger, ["nvidia-smi", "--query-gpu=index,name,memory.total,memory.used", "--format=csv,noheader,nounits"]
+        ["nvidia-smi", "--query-gpu=index,name,memory.total,memory.used", "--format=csv,noheader,nounits"]
     )
 
     if not output.strip():
@@ -147,11 +144,11 @@ def _get_gpu_info(_logger: logger.NexusServerLogger) -> tuple[str, dict[int, int
             message="nvidia-smi returned no output. Ensure that nvidia-smi is installed and GPUs are available."
         )
 
-    pmon_output = _run_command(_logger, ["nvidia-smi", "pmon", "-c", "1", "-s", "m"])
+    pmon_output = _run_command(["nvidia-smi", "pmon", "-c", "1", "-s", "m"])
 
     gpu_processes: dict[int, int] = {}
     for line in pmon_output.strip().split("\n")[2:]:
-        gpu_idx = parse_pmon_line(_logger, line)
+        gpu_idx = parse_pmon_line(line)
         if gpu_idx is None:
             continue
         gpu_processes[gpu_idx] = gpu_processes.get(gpu_idx, 0) + 1
@@ -163,21 +160,18 @@ def _get_gpu_info(_logger: logger.NexusServerLogger) -> tuple[str, dict[int, int
     return output, gpu_processes
 
 
-def get_gpus(
-    _logger: logger.NexusServerLogger, running_jobs: list[schemas.Job], blacklisted_gpus: list[int], mock_gpus: bool
-) -> list[GpuInfo]:
+def get_gpus(running_jobs: list[schemas.Job], blacklisted_gpus: list[int], mock_gpus: bool) -> list[GpuInfo]:
     if mock_gpus:
-        return _get_mock_gpus(_logger, running_jobs=running_jobs, blacklisted_gpus=blacklisted_gpus)
+        return _get_mock_gpus(running_jobs, blacklisted_gpus=blacklisted_gpus)
 
-    output, gpu_processes = _get_gpu_info(_logger)
+    output, gpu_processes = _get_gpu_info()
     running_jobs_idxs = {gpu_idx: j.id for j in running_jobs for gpu_idx in j.gpu_idxs}
     blacklisted_set = set(blacklisted_gpus)
     gpus: list[GpuInfo] = []
 
     for line in output.strip().split("\n"):
         gpu = _parse_gpu_line(
-            _logger,
-            line=line,
+            line,
             gpu_processes=gpu_processes,
             blacklisted_gpus=blacklisted_set,
             running_jobs_idxs=running_jobs_idxs,
@@ -185,8 +179,8 @@ def get_gpus(
         if gpu:
             gpus.append(gpu)
 
-    _logger.debug(f"Total GPUs found: {len(gpus)}")
+    logger.debug(f"Total GPUs found: {len(gpus)}")
     if not gpus:
-        _logger.warning("No GPUs detected on the system")
+        logger.warning("No GPUs detected on the system")
 
     return gpus

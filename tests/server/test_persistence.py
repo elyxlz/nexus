@@ -8,7 +8,6 @@ from nexus.server.api.app import create_app
 from nexus.server.core.config import NexusServerConfig
 from nexus.server.core.context import NexusServerContext
 from nexus.server.core.db import create_connection
-from nexus.server.core.logger import create_logger
 
 # Use a fixed file for the test database
 DB_FILE = "test_persistence.db"
@@ -39,11 +38,10 @@ def create_test_client(db_path: str, server_config: NexusServerConfig) -> Callab
     """Factory fixture to create test clients with the same DB path."""
 
     def _create_client() -> TestClient:
-        logger = create_logger(log_dir=None, name="nexus_test")
         # Use the same DB path for all test clients
         print(f"Using database at: {db_path}")
-        db = create_connection(logger, db_path)
-        context = NexusServerContext(db=db, config=server_config, logger=logger)
+        db = create_connection(db_path)
+        context = NexusServerContext(db=db, config=server_config)
         app = create_app(ctx=context)
 
         client = TestClient(app)

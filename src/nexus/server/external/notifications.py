@@ -7,8 +7,9 @@ import aiohttp
 import pydantic as pyd
 
 from nexus.server.core import exceptions as exc
-from nexus.server.core import job, logger, schemas
-from nexus.server.integrations import nullpointer
+from nexus.server.core import job, schemas
+from nexus.server.external import nullpointer
+from nexus.server.utils import logger
 
 __all__ = ["notify_job_action", "update_notification_with_wandb"]
 
@@ -102,9 +103,7 @@ def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction
     message="Invalid JSON response from Discord notification",
     reraise=False,
 )
-async def _send_notification(
-    _logger: logger.NexusServerLogger, webhook_url: str, message_data: dict, wait: bool = False
-) -> str | None:
+async def _send_notification(webhook_url: str, message_data: dict, wait: bool = False) -> str | None:
     notification_data = NotificationMessage(**message_data)
     params = {"wait": "true"} if wait else {}
 
@@ -117,16 +116,14 @@ async def _send_notification(
                 return None
             else:
                 error_msg = f"Failed to send notification: Status {response.status}, Message: {await response.text()}"
-                _logger.error(error_msg)
+                logger.error(error_msg)
                 raise exc.NotificationError(message=error_msg)
 
 
 @exc.handle_exception_async(
     aiohttp.ClientError, exc.NotificationError, message="Discord notification edit request failed"
 )
-async def _edit_notification_message(
-    _logger: logger.NexusServerLogger, notification_url: str, message_id: str, message_data: dict
-) -> bool:
+async def _edit_notification_message(notification_url: str, message_id: str, message_data: dict) -> bool:
     edit_url = f"{notification_url}/messages/{message_id}"
     notification_data = NotificationMessage(**message_data)
 
@@ -134,33 +131,29 @@ async def _edit_notification_message(
         async with session.patch(edit_url, json=notification_data.model_dump()) as response:
             if response.status != 200:
                 error_msg = f"Failed to edit notification: Status {response.status}, Message: {await response.text()}"
-                _logger.error(error_msg)
+                logger.error(error_msg)
                 raise exc.NotificationError(message=error_msg)
             return True
 
 
-async def _upload_logs_to_nullpointer(_logger: logger.NexusServerLogger, _job: schemas.Job) -> str | None:
-    if not _job.dir:
+async def _upload_logs_to_nullpointer(_job: schemas.Job) -> str | None:
+    if "nullpointer" not in _job.integrations or not _job.dir:
         return None
 
-    job_logs = await job.async_get_job_logs(_logger, job_dir=_job.dir)
+    job_logs = await job.async_get_job_logs(_job.dir)
     if not job_logs:
         return None
 
-    instance_url = _job.env.get("NULLPOINTER_URL", "https://0x0.st/")
-
-    paste_url = await nullpointer.upload_text_to_nullpointer(_logger, job_logs, instance_url)
+    paste_url = await nullpointer.upload_text_to_nullpointer(job_logs)
 
     if paste_url:
-        _logger.info(f"Uploaded job logs for {_job.id} to 0x0.st: {paste_url}")
+        logger.info(f"Uploaded job logs for {_job.id} to 0x0.st: {paste_url}")
 
     return paste_url
 
 
 @exc.handle_exception_async(aiohttp.ClientError, exc.NotificationError, message="Phone call notification failed")
-async def _make_phone_call(
-    _logger: logger.NexusServerLogger, to_number: str, from_number: str, account_sid: str, auth_token: str, message: str
-) -> str:
+async def _make_phone_call(to_number: str, from_number: str, account_sid: str, auth_token: str, message: str) -> str:
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="alice">{message}</Say>
@@ -178,14 +171,14 @@ async def _make_phone_call(
 
             if response.status not in [200, 201]:
                 error_msg = f"Failed to make phone call: Status {response.status}, Message: {response_text}"
-                _logger.error(error_msg)
+                logger.error(error_msg)
                 raise exc.NotificationError(message=error_msg)
 
-            _logger.debug(f"Twilio API response: {response_text}")
+            logger.debug(f"Twilio API response: {response_text}")
             return "call_initiated"
 
 
-async def _send_phone_notification(_logger: logger.NexusServerLogger, job: schemas.Job, job_action: JobAction) -> None:
+async def _send_phone_notification(job: schemas.Job, job_action: JobAction) -> None:
     if job_action not in ["completed", "failed", "killed"]:
         return
 
@@ -195,22 +188,21 @@ async def _send_phone_notification(_logger: logger.NexusServerLogger, job: schem
     message = f"Your Nexus job {job.id} has {status}. The command was: {job.command}."
 
     result = await _make_phone_call(
-        _logger,
-        to_number=to_number,
+        to_number,
         from_number=from_number,
         account_sid=account_sid,
         auth_token=auth_token,
         message=message,
     )
 
-    _logger.info(f"Initiated phone call notification for job {job.id}: {result}")
+    logger.info(f"Initiated phone call notification for job {job.id}: {result}")
 
 
 ####################
 
 
 @exc.handle_exception_async(Exception, reraise=False)
-async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job, action: JobAction) -> schemas.Job:
+async def notify_job_action(_job: schemas.Job, action: JobAction) -> schemas.Job:
     updated_job = _job
 
     if "discord" in _job.notifications:
@@ -219,7 +211,7 @@ async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job
 
         if action in ["completed", "failed", "killed"] and _job.dir:
             if action in ["failed", "killed"]:
-                job_logs = await job.async_get_job_logs(_logger, job_dir=_job.dir, last_n_lines=20)
+                job_logs = await job.async_get_job_logs(_job.dir, last_n_lines=20)
                 if job_logs:
                     MAX_FIELD_LENGTH = 1024
                     log_field = f"```\n{job_logs}\n```"
@@ -229,32 +221,30 @@ async def notify_job_action(_logger: logger.NexusServerLogger, _job: schemas.Job
                         log_field = f"```\n{truncated_logs}\n```"
                     message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": log_field})
 
-            logs_url = await _upload_logs_to_nullpointer(_logger, _job)
+            logs_url = await _upload_logs_to_nullpointer(_job)
             if logs_url:
-                _logger.info(f"Adding logs URL to Discord message: {logs_url}")
+                logger.info(f"Adding logs URL to Discord message: {logs_url}")
                 message_data["embeds"][0]["fields"].append(
                     {"name": "Full logs", "value": f"[View full logs]({logs_url})"}
                 )
 
         if action == "started":
-            message_id = await _send_notification(
-                _logger, webhook_url=webhook_url, message_data=message_data, wait=True
-            )
+            message_id = await _send_notification(webhook_url, message_data=message_data, wait=True)
             if message_id:
                 updated_messages = dict(_job.notification_messages)
                 updated_messages["discord_start_job"] = message_id
                 updated_job = dc.replace(updated_job, notification_messages=updated_messages)
         else:
-            await _send_notification(_logger, webhook_url=webhook_url, message_data=message_data)
+            await _send_notification(webhook_url, message_data=message_data)
 
     if "phone" in _job.notifications:
-        await _send_phone_notification(_logger, _job, action)
+        await _send_phone_notification(_job, action)
 
     return updated_job
 
 
 @exc.handle_exception_async(Exception, reraise=False)
-async def update_notification_with_wandb(_logger: logger.NexusServerLogger, job: schemas.Job) -> None:
+async def update_notification_with_wandb(job: schemas.Job) -> None:
     if "discord" in job.notifications:
         webhook_url = _get_discord_secrets(job)[0]
 
@@ -264,5 +254,5 @@ async def update_notification_with_wandb(_logger: logger.NexusServerLogger, job:
             raise exc.NotificationError("No Discord start job message id found")
 
         message_data = _format_job_message_for_notification(job, "started")
-        await _edit_notification_message(_logger, webhook_url, notification_id, message_data)
-        _logger.info(f"Updated notification message for job {job.id} with W&B URL")
+        await _edit_notification_message(webhook_url, notification_id, message_data)
+        logger.info(f"Updated notification message for job {job.id} with W&B URL")
