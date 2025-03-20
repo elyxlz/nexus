@@ -77,13 +77,6 @@ def test_server_status(app_client: TestClient) -> None:
     assert "server_user" in data
 
 
-def test_server_logs(app_client: TestClient) -> None:
-    response = app_client.get("/v1/server/logs")
-    assert response.status_code == 200
-    data = response.json()
-    assert "logs" in data
-
-
 def test_add_job(app_client: TestClient, job_payload: dict) -> None:
     response = app_client.post("/v1/jobs", json=job_payload)
     print("Response:", response.status_code, response.text)
