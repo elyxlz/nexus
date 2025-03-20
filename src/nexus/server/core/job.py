@@ -366,9 +366,7 @@ def get_queue(queued_jobs: list[schemas.Job]) -> list[schemas.Job]:
     if not queued_jobs:
         return []
 
-    # Sort with num_gpus as the primary key (for multi-gpu priority)
-    # and priority as the secondary key to break ties
-    sorted_jobs = sorted(queued_jobs, key=lambda x: (x.num_gpus, x.priority), reverse=True)
+    sorted_jobs = sorted(queued_jobs, key=lambda x: (x.priority, x.num_gpus), reverse=True)
 
     return sorted_jobs
 
