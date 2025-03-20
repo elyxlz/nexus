@@ -8,7 +8,6 @@ from nexus.server.api.app import create_app
 from nexus.server.core.config import NexusServerConfig
 from nexus.server.core.context import NexusServerContext
 from nexus.server.core.db import create_connection
-from nexus.server.core.logger import create_logger
 
 
 @pytest.fixture
@@ -27,14 +26,12 @@ def app_client() -> Iterator[TestClient]:
         mock_gpus=True,
     )
 
-    _logger = create_logger(log_dir=None, name="nexus_test")
-    _db = create_connection(_logger, ":memory:")
-    context = NexusServerContext(db=_db, config=config, logger=_logger)
+    _db = create_connection(":memory:")
+    context = NexusServerContext(db=_db, config=config)
     _app = create_app(ctx=context)
 
     with TestClient(_app) as client:
         time.sleep(0.1)
-        _logger.info("Test client created with lifespan context")
         yield client
 
 
@@ -78,13 +75,6 @@ def test_server_status(app_client: TestClient) -> None:
     assert "running_jobs" in data
     assert "completed_jobs" in data
     assert "server_user" in data
-
-
-def test_server_logs(app_client: TestClient) -> None:
-    response = app_client.get("/v1/server/logs")
-    assert response.status_code == 200
-    data = response.json()
-    assert "logs" in data
 
 
 def test_add_job(app_client: TestClient, job_payload: dict) -> None:

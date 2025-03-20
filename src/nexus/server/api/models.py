@@ -18,6 +18,7 @@ __all__ = [
 
 REQUIRED_ENV_VARS = {
     "wandb": ["WANDB_API_KEY", "WANDB_ENTITY"],
+    "nullpointer": [],
     "discord": ["DISCORD_USER_ID", "DISCORD_WEBHOOK_URL"],
     "phone": ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "PHONE_TO_NUMBER"],
 }
@@ -36,7 +37,7 @@ class JobRequest(FrozenBaseModel):
     num_gpus: int = 1
     gpu_idxs: list[int] | None = None
     priority: int = 0
-    search_wandb: bool = False
+    integrations: list[schemas.IntegrationType] = []
     notifications: list[schemas.NotificationType] = []
     env: dict[str, str] = {}
     jobrc: str | None = None
@@ -44,10 +45,10 @@ class JobRequest(FrozenBaseModel):
 
     @pyd.model_validator(mode="after")
     def check_requirements(self) -> tpe.Self:
-        if self.search_wandb:
-            for key in REQUIRED_ENV_VARS["wandb"]:
+        for integration_type in self.integrations:
+            for key in REQUIRED_ENV_VARS[integration_type]:
                 if key not in self.env:
-                    raise ValueError(f"Missing required environment variable {key} for wandb integration")
+                    raise ValueError(f"Missing required environment variable {key} for {integration_type} integration")
 
         for notification_type in self.notifications:
             for key in REQUIRED_ENV_VARS[notification_type]:

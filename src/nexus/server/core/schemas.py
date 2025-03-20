@@ -2,7 +2,7 @@ import dataclasses as dc
 import pathlib as pl
 import typing as tp
 
-__all__ = ["JobStatus", "NotificationType", "Job"]
+__all__ = ["JobStatus", "NotificationType", "IntegrationType", "Job"]
 
 
 def _exclude_env_repr(obj):
@@ -11,6 +11,7 @@ def _exclude_env_repr(obj):
 
 JobStatus = tp.Literal["queued", "running", "completed", "failed", "killed"]
 NotificationType = tp.Literal["discord", "phone"]
+IntegrationType = tp.Literal["wandb", "nullpointer"]
 
 
 @dc.dataclass(frozen=True)
@@ -27,7 +28,7 @@ class Job:
     env: dict[str, str]
     jobrc: str | None
     notifications: list[NotificationType]
-    search_wandb: bool
+    integrations: list[IntegrationType]
 
     status: JobStatus
     created_at: float

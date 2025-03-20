@@ -91,9 +91,6 @@ def get_jobs(status: str | None = None) -> list[dict]:
     return response.json()
 
 
-# We'll now use get_jobs("queued") instead of a separate get_queue function
-
-
 @handle_api_errors
 def get_job(job_id: str) -> dict:
     response = requests.get(f"{get_api_base_url()}/jobs/{job_id}")

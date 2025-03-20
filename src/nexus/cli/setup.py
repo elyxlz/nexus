@@ -5,7 +5,7 @@ import typing as tp
 from termcolor import colored
 
 from nexus.cli import config, utils
-from nexus.cli.config import NotificationType
+from nexus.cli.config import IntegrationType, NotificationType
 
 
 def get_env_path() -> pl.Path:
@@ -51,12 +51,15 @@ def save_env_vars(env_vars: dict[str, str]) -> None:
 
 
 def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliConfig, dict[str, str]]:
-    print(colored("\nNotification Setup", "blue", attrs=["bold"]))
-    print("Nexus can notify you when your jobs complete or fail.")
+    print(colored("\nNotification and Integration Setup", "blue", attrs=["bold"]))
+    print("Nexus can notify you when your jobs complete or fail, and integrate with various services.")
 
     configured_notifications: list[NotificationType] = []
+    configured_integrations: list[IntegrationType] = []
     env_vars = load_current_env()
 
+    # Setup notifications
+    print(colored("\nNotification Setup", "blue", attrs=["bold"]))
     if utils.ask_yes_no("Would you like to set up Discord notifications?"):
         configured_notifications.append("discord")
         print(colored("\nDiscord requires the following configuration:", "cyan"))
@@ -104,8 +107,10 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         env_vars["TWILIO_FROM_NUMBER"] = twilio_from_number
         env_vars["PHONE_TO_NUMBER"] = phone_to
 
+    # Setup integrations
+    print(colored("\nIntegration Setup", "blue", attrs=["bold"]))
     if utils.ask_yes_no("Would you like to enable Weights & Biases integration?"):
-        config = config.copy(update={"search_wandb": True})
+        configured_integrations.append("wandb")
         print(colored("\nWeights & Biases requires the following:", "cyan"))
 
         wandb_api_key = utils.get_user_input(
@@ -122,6 +127,14 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         env_vars["WANDB_API_KEY"] = wandb_api_key
         env_vars["WANDB_ENTITY"] = wandb_entity
 
+    if utils.ask_yes_no("Would you like to enable nullpointer (0x0.st) integration for logs?", default=False):
+        configured_integrations.append("nullpointer")
+        print(colored("\nNullpointer integration will upload logs to 0x0.st with long, unlisted URLs", "cyan"))
+        print(colored("and set them to expire after 24 hours", "cyan"))
+        print(colored("\nWarning: While logs are unlisted and temporary, they are still publicly accessible", "yellow"))
+        print(colored("Be careful with sensitive information in your logs", "yellow"))
+
+    # Set default notifications
     default_notifications: list[NotificationType] = []
     if configured_notifications:
         print(colored("\nDefault Notification Types", "blue", attrs=["bold"]))
@@ -130,6 +143,16 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         for notification_type in configured_notifications:
             if utils.ask_yes_no(f"Enable {notification_type} notifications by default?"):
                 default_notifications.append(notification_type)
+
+    # Set default integrations
+    default_integrations: list[IntegrationType] = []
+    if configured_integrations:
+        print(colored("\nDefault Integration Types", "blue", attrs=["bold"]))
+        print("Select which integration types should be enabled by default for all jobs:")
+
+        for integration_type in configured_integrations:
+            if utils.ask_yes_no(f"Enable {integration_type} integration by default?"):
+                default_integrations.append(integration_type)
 
     # Add Git token for private repositories
     if utils.ask_yes_no("Do you work with private Git repositories?", default=False):
@@ -153,7 +176,9 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         # Reload env vars after editing
         env_vars = load_current_env()
 
-    config = config.copy(update={"default_notifications": default_notifications})
+    config = config.copy(
+        update={"default_notifications": default_notifications, "default_integrations": default_integrations}
+    )
     return config, env_vars
 
 
@@ -212,7 +237,7 @@ def setup_wizard() -> None:
         utils.open_file_in_editor(jobrc_path)
 
     print("\nDebug - Config values before saving:")
-    print(f"search_wandb: {cfg.search_wandb}")
+    print(f"default_integrations: {cfg.default_integrations}")
     print(f"default_notifications: {cfg.default_notifications}")
 
     config.save_config(cfg)

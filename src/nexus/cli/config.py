@@ -6,10 +6,12 @@ import pydantic_settings as pyds
 import toml
 
 NotificationType = tp.Literal["discord", "phone"]
+IntegrationType = tp.Literal["wandb", "nullpointer"]
 
 
 REQUIRED_ENV_VARS = {
     "wandb": ["WANDB_API_KEY", "WANDB_ENTITY"],
+    "nullpointer": [],
     "discord": ["DISCORD_USER_ID", "DISCORD_WEBHOOK_URL"],
     "phone": ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "PHONE_TO_NUMBER"],
 }
@@ -18,7 +20,7 @@ REQUIRED_ENV_VARS = {
 class NexusCliConfig(pyds.BaseSettings):
     port: int = pyd.Field(default=54323)
     user: str | None = pyd.Field(default=None)
-    search_wandb: bool = False
+    default_integrations: list[IntegrationType] = []
     default_notifications: list[NotificationType] = []
 
     model_config = {"env_prefix": "NEXUS_", "env_nested_delimiter": "__", "extra": "ignore"}
