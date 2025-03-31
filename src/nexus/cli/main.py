@@ -4,7 +4,7 @@ import sys
 
 from termcolor import colored
 
-from nexus.cli import api_client, config, jobs, setup
+from nexus.cli import api_client, config, jobs, setup, utils
 from nexus.cli.config import NexusCliConfig
 
 try:
@@ -31,7 +31,7 @@ def show_env() -> None:
             if any(sensitive in key.lower() for sensitive in ["key", "token", "secret", "password", "sid", "number"]):
                 value = "********"
             print(f"{colored(key, 'cyan')}: {value}")
-        print(f"\nTo edit environment variables: {colored('nx nv edit', 'green')}")
+        print(f"\nTo edit environment variables: {colored('nx env edit', 'green')}")
     except Exception as e:
         print(colored(f"Error displaying environment variables: {e}", "red"))
 
@@ -67,7 +67,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     # Basic job commands
     run_parser = subparsers.add_parser("run", help="Run a job")
-    run_parser.add_argument("commands", nargs="+", help='Command to run, e.g., "python train.py"')
+    run_parser.add_argument("commands", nargs="*", help='Command to run, e.g., "python train.py". If not provided, starts an interactive shell.')
     run_parser.add_argument(
         "-i", "--gpu-idxs", dest="gpu_idxs", help="Specific GPU indices to run on (e.g., '0' or '0,1' for multi-GPU)"
     )
@@ -76,6 +76,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("-n", "--notify", nargs="+", help="Additional notification types for this job")
     run_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+    run_parser.add_argument("--interactive", action="store_true", help="Start an interactive shell session on GPU(s)")
 
     add_parser = subparsers.add_parser("add", help="Add job(s) to queue")
     add_parser.add_argument("commands", nargs="+", help='Command(s) to add, e.g., "python train.py"')
@@ -88,18 +89,19 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("queue", help="Show pending jobs (queued)")
 
     # Job control commands
-    kill_parser = subparsers.add_parser("kill", help="Kill running job(s) by GPU index, job ID, or regex")
-    kill_parser.add_argument("targets", nargs="+", help="List of GPU indices, job IDs, or command regex patterns")
+    kill_parser = subparsers.add_parser("kill", help="Kill running job(s) by GPU index, job ID, or regex (latest job if no arguments)")
+    kill_parser.add_argument("targets", nargs="*", help="List of GPU indices, job IDs, or command regex patterns (optional, kills latest job if omitted)")
     kill_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     remove_parser = subparsers.add_parser("remove", help="Remove queued job(s) by ID or regex")
     remove_parser.add_argument("job_ids", nargs="+", help="List of job IDs or command regex patterns")
     remove_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
-    edit_parser = subparsers.add_parser("edit", help="Edit a queued job's command or priority")
+    edit_parser = subparsers.add_parser("edit", help="Edit a queued job's command, priority or GPU count")
     edit_parser.add_argument("job_id", help="Job ID to edit")
     edit_parser.add_argument("-c", "--command", dest="new_command", help="New command to run")
     edit_parser.add_argument("-p", "--priority", type=int, help="New priority value")
+    edit_parser.add_argument("-g", "--gpus", type=int, dest="num_gpus", help="New number of GPUs")
     edit_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     # Job monitoring commands
@@ -114,6 +116,9 @@ def create_parser() -> argparse.ArgumentParser:
 
     history_parser = subparsers.add_parser("history", help="Show completed, failed, or killed jobs")
     history_parser.add_argument("pattern", nargs="?", help="Filter jobs by command regex pattern")
+    
+    get_parser = subparsers.add_parser("get", help="Get detailed information about a job")
+    get_parser.add_argument("job_id", help="Job ID to get information about")
 
     health_parser = subparsers.add_parser("health", help="Show detailed node health information")
     health_parser.add_argument("-r", "--refresh", action="store_true", help="Force refresh of health metrics")
@@ -127,6 +132,12 @@ def create_parser() -> argparse.ArgumentParser:
     env_parser = subparsers.add_parser("env", help="Display or edit environment variables")
     env_subparsers = env_parser.add_subparsers(dest="env_action", help="Environment actions")
     env_subparsers.add_parser("edit", help="Edit environment variables in editor")
+    
+    env_set_parser = env_subparsers.add_parser("set", help="Set an environment variable")
+    env_set_parser.add_argument("key_value", nargs="?", help="KEY=VALUE format or just KEY to be prompted for value")
+    
+    env_unset_parser = env_subparsers.add_parser("unset", help="Remove an environment variable")
+    env_unset_parser.add_argument("key", help="Environment variable to remove")
 
     jobrc_parser = subparsers.add_parser("jobrc", help="Manage job runtime configuration (.jobrc)")
     jobrc_subparsers = jobrc_parser.add_subparsers(dest="jobrc_action", help="Jobrc actions")
@@ -205,19 +216,22 @@ def main() -> None:
             num_gpus=args.gpus,
             notification_types=args.notify,
             bypass_confirm=args.yes,
+            interactive=not args.commands,  # Interactive mode if no commands are provided
         ),
         "queue": lambda: jobs.show_queue(),
         "history": lambda: jobs.show_history(getattr(args, "pattern", None)),
-        "kill": lambda: jobs.kill_jobs(args.targets, bypass_confirm=args.yes),
+        "kill": lambda: jobs.kill_jobs(getattr(args, "targets", None), bypass_confirm=args.yes),
         "remove": lambda: jobs.remove_jobs(args.job_ids, bypass_confirm=args.yes),
         "blacklist": lambda: jobs.handle_blacklist(args),
         "logs": lambda: jobs.view_logs(args.id, tail=args.tail),
         "attach": lambda: jobs.attach_to_job(cfg, args.id),
         "health": lambda: jobs.show_health(refresh=args.refresh),
+        "get": lambda: jobs.get_job_info(args.job_id),
         "edit": lambda: jobs.edit_job_command(
             args.job_id,
             command=args.new_command,
             priority=args.priority,
+            num_gpus=args.num_gpus,
             bypass_confirm=args.yes,
         ),
     }
@@ -239,10 +253,60 @@ def handle_config(args, cfg: NexusCliConfig) -> None:
 
 
 def handle_env(args) -> None:
-    if hasattr(args, "env_action") and args.env_action == "edit":
-        setup.open_env_editor()
-    else:
+    if not hasattr(args, "env_action") or not args.env_action:
         show_env()
+        return
+
+    if args.env_action == "edit":
+        setup.open_env_editor()
+    elif args.env_action == "set":
+        set_env_var(args)
+    elif args.env_action == "unset":
+        unset_env_var(args)
+
+
+def set_env_var(args) -> None:
+    try:
+        key_value = args.key_value
+        if key_value and "=" in key_value:
+            # KEY=VALUE format
+            key, value = key_value.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+        else:
+            # Just KEY, prompt for value
+            key = key_value.strip() if key_value else ""
+            if not key:
+                key = utils.get_user_input("Environment variable name", required=True)
+            # Get value with masking for sensitive keys
+            is_sensitive = any(s in key.lower() for s in ["key", "token", "secret", "password", "sid", "number"])
+            if is_sensitive:
+                value = utils.get_user_input(f"Value for {key}", required=True, mask_input=True)
+            else:
+                value = utils.get_user_input(f"Value for {key}", required=True)
+        
+        env_vars = setup.load_current_env()
+        env_vars[key] = value
+        setup.save_env_vars(env_vars)
+        
+        print(colored(f"Environment variable '{key}' has been set", "green"))
+    except Exception as e:
+        print(colored(f"Error setting environment variable: {e}", "red"))
+
+
+def unset_env_var(args) -> None:
+    try:
+        key = args.key
+        env_vars = setup.load_current_env()
+        
+        if key in env_vars:
+            del env_vars[key]
+            setup.save_env_vars(env_vars)
+            print(colored(f"Environment variable '{key}' has been removed", "green"))
+        else:
+            print(colored(f"Environment variable '{key}' does not exist", "yellow"))
+    except Exception as e:
+        print(colored(f"Error removing environment variable: {e}", "red"))
 
 
 def handle_jobrc(args) -> None:

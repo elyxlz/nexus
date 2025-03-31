@@ -144,14 +144,19 @@ def ask_yes_no(question: str, default: bool = True) -> bool:
             print(colored("Please answer with 'yes' or 'no'", "yellow"))
 
 
-def get_user_input(prompt: str, default: str = "", required: bool = False) -> str:
+def get_user_input(prompt: str, default: str = "", required: bool = False, mask_input: bool = False) -> str:
     if default:
         default_display = f" [press ENTER for {colored(default, 'cyan')}]"
     else:
         default_display = ""
 
     while True:
-        result = input(f"{colored('?', 'blue', attrs=['bold'])} {prompt}{default_display}: ").strip()
+        if mask_input:
+            import getpass
+            result = getpass.getpass(f"{colored('?', 'blue', attrs=['bold'])} {prompt}{default_display}: ").strip()
+        else:
+            result = input(f"{colored('?', 'blue', attrs=['bold'])} {prompt}{default_display}: ").strip()
+            
         if not result:
             if default:
                 print(colored(f"Using default: {default}", "cyan"))

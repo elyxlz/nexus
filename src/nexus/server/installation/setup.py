@@ -225,7 +225,7 @@ def stop_system_server() -> bool:
 def create_interactive_config(default_config: config.NexusServerConfig) -> config.NexusServerConfig:
     print("\nNexus Server Configuration")
     print("=========================")
-    print("(You can also set these values with environment variables: NS_HOST, NS_PORT, etc.)")
+    print("(You can also set these values with environment variables: e.g pass NS_PORT)")
 
     port_str = input(f"Port [default: {default_config.port}]: ").strip()
     port = int(port_str) if port_str.isdigit() else default_config.port
@@ -603,12 +603,6 @@ def handle_restart_command(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     try:
-        if not args.yes:
-            confirm = input("Are you sure you want to restart the nexus-server? [y/N] ").strip().lower()
-            if confirm != "y":
-                print("Restart cancelled.")
-                return
-
         print("Restarting nexus-server...")
         subprocess.run(["systemctl", "restart", "nexus-server.service"], check=True)
         print("Server restarted successfully.")
@@ -624,12 +618,6 @@ def handle_stop_command(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     try:
-        if not args.yes:
-            confirm = input("Are you sure you want to stop the nexus-server? [y/N] ").strip().lower()
-            if confirm != "y":
-                print("Stop cancelled.")
-                return
-
         print("Stopping nexus-server...")
         subprocess.run(["systemctl", "stop", "nexus-server.service"], check=True)
         print("Server stopped successfully.")
