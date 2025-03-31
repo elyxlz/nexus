@@ -14,6 +14,35 @@ from termcolor import colored
 Color = tp.Literal["grey", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
 Attribute = tp.Literal["bold", "dark", "underline", "blink", "reverse", "concealed"]
 
+# CLI Output Helpers
+def print_header(title: str) -> None:
+    print(colored(title, "blue", attrs=["bold"]))
+    
+def print_item(key: str, value: str | int, color: Color = "cyan") -> None:
+    print(f"{colored(key, color)}: {value}")
+    
+def print_bullet(text: str, color: Color = "blue") -> None:
+    print(f"  {colored('•', color)} {text}")
+    
+def print_error(message: str) -> None:
+    print(colored(f"Error: {message}", "red"))
+    
+def print_warning(message: str) -> None:
+    print(colored(message, "yellow"))
+    
+def print_success(message: str) -> None:
+    print(colored(message, "green"))
+    
+def print_hint(command: str, description: str) -> None:
+    print(f"\nTo {description}: {colored(command, 'green')}")
+
+def format_key_value(key: str, value: str | int, key_color: Color = "cyan") -> str:
+    return f"{colored(key, key_color)}: {value}"
+
+def is_sensitive_key(key: str) -> bool:
+    sensitive_keywords = ["key", "token", "secret", "password", "sid", "number"]
+    return any(keyword in key.lower() for keyword in sensitive_keywords)
+
 
 def generate_git_tag_id() -> str:
     timestamp = str(time.time()).encode()
