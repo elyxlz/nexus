@@ -58,12 +58,17 @@ def show_version() -> None:
 
 def add_job_run_parser(subparsers) -> None:
     run_parser = subparsers.add_parser("run", help="Run a job")
-    run_parser.add_argument("commands", nargs="*", 
-                          help='Command to run, e.g., "python train.py". If not provided, starts an interactive shell.')
-    run_parser.add_argument("-i", "--gpu-idxs", dest="gpu_idxs", 
-                          help="Specific GPU indices to run on (e.g., '0' or '0,1' for multi-GPU)")
-    run_parser.add_argument("-g", "--gpus", type=int, default=1, 
-                          help="Number of GPUs to use (ignored if --gpu-idxs is specified)")
+    run_parser.add_argument(
+        "commands",
+        nargs="*",
+        help='Command to run, e.g., "python train.py". If not provided, starts an interactive shell.',
+    )
+    run_parser.add_argument(
+        "-i", "--gpu-idxs", dest="gpu_idxs", help="Specific GPU indices to run on (e.g., '0' or '0,1' for multi-GPU)"
+    )
+    run_parser.add_argument(
+        "-g", "--gpus", type=int, default=1, help="Number of GPUs to use (ignored if --gpu-idxs is specified)"
+    )
     run_parser.add_argument("-n", "--notify", nargs="+", help="Additional notification types for this job")
     run_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
     run_parser.add_argument("--interactive", action="store_true", help="Start an interactive shell session on GPU(s)")
@@ -83,10 +88,14 @@ def add_job_management_parsers(subparsers) -> None:
     subparsers.add_parser("queue", help="Show pending jobs (queued)")
 
     # Kill jobs
-    kill_parser = subparsers.add_parser("kill", 
-                                      help="Kill running job(s) by GPU index, job ID, or regex (latest job if no arguments)")
-    kill_parser.add_argument("targets", nargs="*", 
-                           help="List of GPU indices, job IDs, or command regex patterns (optional, kills latest job if omitted)")
+    kill_parser = subparsers.add_parser(
+        "kill", help="Kill running job(s) by GPU index, job ID, or regex (latest job if no arguments)"
+    )
+    kill_parser.add_argument(
+        "targets",
+        nargs="*",
+        help="List of GPU indices, job IDs, or command regex patterns (optional, kills latest job if omitted)",
+    )
     kill_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     # Remove jobs
@@ -111,12 +120,14 @@ def add_job_monitoring_parsers(subparsers) -> None:
 
     # Attach command
     attach_parser = subparsers.add_parser("attach", help="Attach to a running job's screen session")
-    attach_parser.add_argument("id", nargs="?", help="Job ID or GPU index to attach to (optional, last job ran if omitted)")
+    attach_parser.add_argument(
+        "id", nargs="?", help="Job ID or GPU index to attach to (optional, last job ran if omitted)"
+    )
 
     # History command
     history_parser = subparsers.add_parser("history", help="Show completed, failed, or killed jobs")
     history_parser.add_argument("pattern", nargs="?", help="Filter jobs by command regex pattern")
-    
+
     # Get command
     get_parser = subparsers.add_parser("get", help="Get detailed information about a job")
     get_parser.add_argument("job_id", help="Job ID to get information about")
@@ -136,10 +147,10 @@ def add_config_parsers(subparsers) -> None:
     env_parser = subparsers.add_parser("env", help="Display or edit environment variables")
     env_subparsers = env_parser.add_subparsers(dest="env_action", help="Environment actions")
     env_subparsers.add_parser("edit", help="Edit environment variables in editor")
-    
+
     env_set_parser = env_subparsers.add_parser("set", help="Set an environment variable")
     env_set_parser.add_argument("key_value", nargs="?", help="KEY=VALUE format or just KEY to be prompted for value")
-    
+
     env_unset_parser = env_subparsers.add_parser("unset", help="Remove an environment variable")
     env_unset_parser.add_argument("key", help="Environment variable to remove")
 
@@ -271,7 +282,7 @@ def main() -> None:
 
     # Extract command name from args
     command_name = args.command[0] if isinstance(args.command, list) else args.command
-    
+
     # Try to dispatch to non-API commands first
     no_api_handlers = get_command_handlers(args, cfg, parser)
     if dispatch_command(command_name, no_api_handlers):
@@ -292,7 +303,7 @@ def handle_resource(resource_type: str, args, cfg: NexusCliConfig | None = None)
     """Generic handler for config, env, and jobrc resources."""
     action_attr = f"{resource_type}_action"
     resource_has_action = hasattr(args, action_attr) and getattr(args, action_attr) is not None
-    
+
     if not resource_has_action:
         # Show the resource if no action specified
         if resource_type == "config" and cfg is not None:
@@ -302,10 +313,10 @@ def handle_resource(resource_type: str, args, cfg: NexusCliConfig | None = None)
         elif resource_type == "jobrc":
             show_jobrc()
         return
-        
+
     # Handle the action
     action = getattr(args, action_attr)
-    
+
     if action == "edit":
         if resource_type == "config":
             setup.open_config_editor()
@@ -334,12 +345,12 @@ def parse_env_key_value(key_value: str | None) -> tuple[str, str]:
         # KEY=VALUE format
         key, value = key_value.split("=", 1)
         return key.strip(), value.strip()
-    
+
     # Just KEY or empty, prompt for values
     key = key_value.strip() if key_value else ""
     if not key:
         key = utils.get_user_input("Environment variable name", required=True)
-    
+
     # Get value with masking for sensitive keys
     mask_input = utils.is_sensitive_key(key)
     value = utils.get_user_input(f"Value for {key}", required=True, mask_input=mask_input)
@@ -361,7 +372,7 @@ def unset_env_var(args) -> None:
     try:
         key = args.key
         env_vars = setup.load_current_env()
-        
+
         if key in env_vars:
             del env_vars[key]
             setup.save_env_vars(env_vars)

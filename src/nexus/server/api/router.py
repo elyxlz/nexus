@@ -185,7 +185,7 @@ async def update_job_endpoint(
 
     if job_update.priority is not None:
         update_fields["priority"] = job_update.priority
-        
+
     if job_update.num_gpus is not None:
         update_fields["num_gpus"] = job_update.num_gpus
 
