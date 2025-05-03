@@ -2,7 +2,6 @@
 
 ### 🟢 Easy
 
-- [ ] Display memory usage in `nx health`
 - [ ] Support `{RANDINT}` syntax in commands
 - [ ] Put git token authentication and cloning stuff inside job script so that we get logs
 - [ ] Command autocomplete
