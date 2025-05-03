@@ -22,7 +22,6 @@ def app_client() -> Iterator[TestClient]:
         refresh_rate=1,
         port=54324,
         node_name="test_node",
-        log_level="debug",
         mock_gpus=True,
     )
 
