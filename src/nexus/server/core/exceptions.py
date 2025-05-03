@@ -1,4 +1,5 @@
 import functools
+import inspect
 import typing as tp
 from collections import abc
 
@@ -93,57 +94,17 @@ class NotificationError(NexusServerError):
 T = tp.TypeVar("T")
 P = tp.ParamSpec("P")  # This captures the parameter specification of the wrapped function
 
-
-def handle_exception(
+def _create_exception_handler(
     source_exception: type[Exception],
     target_exception: type[NexusServerError] | None = None,
     message: str = "An error occurred",
     reraise: bool = True,
     default_return: tp.Any = None,
-) -> abc.Callable[[abc.Callable[P, T]], abc.Callable[P, T]]:  # Note the P here
-    def decorator(func: abc.Callable[P, T]) -> abc.Callable[P, T]:  # And here
+    is_async: bool = False,
+):
+    def decorator(func):
         @functools.wraps(func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:  # And here
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                if isinstance(e, source_exception):
-                    error_msg = f"{message}: {str(e)}"
-                    logger.exception(error_msg)
-
-                    if not reraise:
-                        return tp.cast(T, default_return)
-
-                    if target_exception is not None:
-                        new_err_msg = f"{error_msg} (converted from {type(e).__name__})"
-                        raise target_exception(message=new_err_msg) from e
-
-                    raise
-
-                raise
-
-        return wrapper
-
-    return decorator
-
-
-T_co = tp.TypeVar("T_co", covariant=True)
-
-
-def handle_exception_async(
-    source_exception: type[Exception],
-    target_exception: type[NexusServerError] | None = None,
-    message: str = "An error occurred",
-    reraise: bool = True,
-    default_return: tp.Any = None,
-) -> abc.Callable[
-    [abc.Callable[P, abc.Coroutine[tp.Any, tp.Any, T]]], abc.Callable[P, abc.Coroutine[tp.Any, tp.Any, T]]
-]:
-    def decorator(
-        func: abc.Callable[P, abc.Coroutine[tp.Any, tp.Any, T]],
-    ) -> abc.Callable[P, abc.Coroutine[tp.Any, tp.Any, T]]:
-        @functools.wraps(func)
-        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        async def async_wrapper(*args, **kwargs):
             try:
                 return await func(*args, **kwargs)
             except Exception as e:
@@ -152,16 +113,58 @@ def handle_exception_async(
                     logger.exception(error_msg)
 
                     if not reraise:
-                        return tp.cast(T, default_return)
+                        return tp.cast(tp.Any, default_return)
 
                     if target_exception is not None:
                         new_err_msg = f"{error_msg} (converted from {type(e).__name__})"
                         raise target_exception(message=new_err_msg) from e
 
                     raise
-
                 raise
 
-        return wrapper
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                if isinstance(e, source_exception):
+                    error_msg = f"{message}: {str(e)}"
+                    logger.exception(error_msg)
 
+                    if not reraise:
+                        return tp.cast(tp.Any, default_return)
+
+                    if target_exception is not None:
+                        new_err_msg = f"{error_msg} (converted from {type(e).__name__})"
+                        raise target_exception(message=new_err_msg) from e
+
+                    raise
+                raise
+
+        return async_wrapper if is_async else sync_wrapper
     return decorator
+
+
+def handle_exception(
+    source_exception: type[Exception],
+    target_exception: type[NexusServerError] | None = None,
+    message: str = "An error occurred",
+    reraise: bool = True,
+    default_return: tp.Any = None,
+) -> tp.Callable[[tp.Callable[P, T]], tp.Callable[P, T]]:
+    def decorator(func: tp.Callable[P, T]) -> tp.Callable[P, T]:
+        is_async = inspect.iscoroutinefunction(func)
+        handler = _create_exception_handler(
+            source_exception=source_exception,
+            target_exception=target_exception,
+            message=message,
+            reraise=reraise,
+            default_return=default_return,
+            is_async=is_async
+        )
+        return handler(func)
+    return decorator
+
+
+# For backward compatibility
+handle_exception_async = handle_exception

@@ -7,9 +7,10 @@ __all__ = ["format_runtime", "format_timestamp", "calculate_runtime", "format_jo
 
 
 def format_runtime(seconds: float) -> str:
-    m, s = divmod(int(seconds), 60)
-    h, m = divmod(m, 60)
-    return f"{h}h {m}m {s}s"
+    delta = dt.timedelta(seconds=int(seconds))
+    hours, remainder = divmod(delta.seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours}h {minutes}m {seconds}s"
 
 
 def format_timestamp(timestamp: float | None) -> str:

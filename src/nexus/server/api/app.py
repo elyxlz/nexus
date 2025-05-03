@@ -29,49 +29,40 @@ def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
         allow_headers=["*"],
     )
 
-    @app.exception_handler(exc.NexusServerError)
-    async def nexus_exception_handler(request: fa.Request, error: exc.NexusServerError):
-        status_code = getattr(error, "STATUS_CODE", 500)
-        logger.error(f"API error: {error.code} - {error.message}")
-        return JSONResponse(
-            status_code=status_code,
-            content={
-                "error": error.code,
-                "message": error.message,
+    def _register_handler(app: fa.FastAPI, exc_cls: type, default_status: int = 500, log_level: str = "error"):
+        @app.exception_handler(exc_cls)
+        async def handler(request: fa.Request, error: Exception):
+            if isinstance(error, ValidationError):
+                errors = error.errors()
+                error_details = ", ".join([f"{e['loc'][-1]}: {e['msg']}" for e in errors])
+                message = error_details
+                code = "VALIDATION_ERROR"
+                status_code = default_status
+                extra = {"detail": errors}
+            else:
+                status_code = getattr(error, "STATUS_CODE", default_status)
+                code = getattr(error, "code", exc_cls.__name__)
+                message = getattr(error, "message", str(error))
+                extra = {}
+
+            if log_level == "error":
+                logger.error(f"API error: {code} - {message}")
+            else:
+                logger.warning(f"{exc_cls.__name__}: {code} - {message}")
+                
+            content = {
+                "error": code,
+                "message": message,
                 "status_code": status_code,
-            },
-        )
-
-    @app.exception_handler(exc.NotFoundError)
-    async def not_found_exception_handler(request: fa.Request, error: exc.NotFoundError):
-        logger.warning(f"Not found error: {error.code} - {error.message}")
-        return JSONResponse(
-            status_code=404,
-            content={"error": error.code, "message": error.message, "status_code": 404},
-        )
-
-    @app.exception_handler(exc.InvalidRequestError)
-    async def invalid_request_exception_handler(request: fa.Request, error: exc.InvalidRequestError):
-        logger.warning(f"Invalid request error: {error.code} - {error.message}")
-        return JSONResponse(
-            status_code=400,
-            content={"error": error.code, "message": error.message, "status_code": 400},
-        )
-
-    @app.exception_handler(ValidationError)
-    async def validation_exception_handler(request: fa.Request, error: ValidationError):
-        errors = error.errors()
-        error_details = ", ".join([f"{e['loc'][-1]}: {e['msg']}" for e in errors])
-        logger.warning(f"Validation error: {error_details}")
-        return JSONResponse(
-            status_code=422,
-            content={
-                "error": "VALIDATION_ERROR",
-                "message": error_details,
-                "status_code": 422,
-                "detail": errors,
-            },
-        )
+                **extra
+            }
+            
+            return JSONResponse(status_code=status_code, content=content)
+            
+    _register_handler(app, exc.NexusServerError, 500, "error")
+    _register_handler(app, exc.NotFoundError, 404, "warning")
+    _register_handler(app, exc.InvalidRequestError, 400, "warning")
+    _register_handler(app, ValidationError, 422, "warning")
 
     @contextlib.asynccontextmanager
     async def lifespan(app: fa.FastAPI):

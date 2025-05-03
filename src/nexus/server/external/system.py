@@ -11,7 +11,7 @@ import speedtest
 HealthStatus = tp.Literal["healthy", "under_load", "unhealthy"]
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class DiskStats:
     total: int
     used: int
@@ -19,14 +19,14 @@ class DiskStats:
     percent_used: float
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class NetworkStats:
     download_speed: float
     upload_speed: float
     ping: float
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class SystemStats:
     cpu_percent: float
     memory_percent: float
@@ -34,7 +34,7 @@ class SystemStats:
     load_avg: list[float]
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class CachedValue:
     value: tp.Any
     timestamp: datetime
@@ -44,7 +44,7 @@ class CachedValue:
         return datetime.now() - self.timestamp > self.ttl
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class HealthCheckResult:
     status: HealthStatus
     score: float

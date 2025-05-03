@@ -6,14 +6,14 @@ from nexus.server.core import exceptions as exc
 from nexus.server.core import schemas
 from nexus.server.utils import logger
 
-__all__ = ["GpuInfo", "get_gpus", "is_gpu_available"]
+__all__ = ["GpuInfo", "get_gpus", "is_gpu_available", "get_available_gpus"]
 
 _nvidia_smi_cache = {"timestamp": 0.0, "output": "", "processes": {}}
 
 CACHE_TTL = 5
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class GpuInfo:
     index: int
     name: str
@@ -184,3 +184,31 @@ def get_gpus(running_jobs: list[schemas.Job], blacklisted_gpus: list[int], mock_
         logger.warning("No GPUs detected on the system")
 
     return gpus
+
+
+def get_available_gpus(
+    running_jobs: list[schemas.Job], 
+    blacklisted_gpus: list[int], 
+    mock_gpus: bool,
+    ignore_blacklist: bool = False,
+    required_gpu_idxs: list[int] | None = None,
+) -> list[GpuInfo]:
+    all_gpus = get_gpus(
+        running_jobs=running_jobs,
+        blacklisted_gpus=blacklisted_gpus,
+        mock_gpus=mock_gpus,
+    )
+    
+    available_gpus = [g for g in all_gpus if is_gpu_available(g, ignore_blacklist=ignore_blacklist)]
+    
+    if required_gpu_idxs:
+        available_gpu_idxs = [g.index for g in available_gpus]
+        if all(idx in available_gpu_idxs for idx in required_gpu_idxs):
+            specific_gpus = [g for g in all_gpus if g.index in required_gpu_idxs]
+            return specific_gpus
+        
+        unavailable_gpus = [idx for idx in required_gpu_idxs if idx not in available_gpu_idxs]
+        logger.debug(f"Required GPU indices {required_gpu_idxs}, but indices {unavailable_gpus} are unavailable")
+        return []
+    
+    return available_gpus

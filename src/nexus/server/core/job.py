@@ -5,9 +5,11 @@ import hashlib
 import os
 import pathlib as pl
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import time
 
 import base58
@@ -68,7 +70,6 @@ def _setup_github_auth(dir_path: pl.Path, git_token: str) -> pl.Path | None:
     return _create_git_token_helper(dir_path, git_token=git_token)
 
 
-import pathlib as pl
 
 
 def _build_script_content(
@@ -81,23 +82,22 @@ def _build_script_content(
     git_token: str | None = None,
     jobrc: str | None = None,
 ) -> str:
-    script_lines = [
-        "#!/bin/bash",
-        "set -e",
-        "export GIT_TERMINAL_PROMPT=0",
-    ]
     clone_url = git_repo_url
     if git_token and git_repo_url.startswith("https://"):
         clone_url = git_repo_url.replace("https://", f"https://{git_token}@")
-    if askpass_path:
-        script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
-    script_lines.append(
-        f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet '{clone_url}' '{job_repo_dir}'"
-    )
-    script_lines.append(f"cd '{job_repo_dir}'")
+    
+    askpass_export = f'export GIT_ASKPASS="{askpass_path}"' if askpass_path else ""
     prefix = jobrc.strip() + "\n" if jobrc and jobrc.strip() else ""
-    script_lines.append(f'script -q -e -f -c "{prefix}{command}" "{log_file}"')
-    return "\n".join(script_lines)
+    
+    return textwrap.dedent(f"""
+        #!/bin/bash
+        set -e
+        export GIT_TERMINAL_PROMPT=0
+        {askpass_export}
+        git clone --depth 1 --single-branch --no-tags --branch {shlex.quote(git_tag)} --quiet {shlex.quote(clone_url)} {shlex.quote(str(job_repo_dir))}
+        cd {shlex.quote(str(job_repo_dir))}
+        script -q -e -f -c "{prefix}{command}" {shlex.quote(str(log_file))}
+    """).strip()
 
 
 @exc.handle_exception(PermissionError, exc.JobError, message="Failed to create job script")

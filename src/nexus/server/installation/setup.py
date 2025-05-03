@@ -23,7 +23,7 @@ SYSTEMD_SERVICE_FILENAME = "nexus-server.service"
 MARKER_SYSTEM = SYSTEM_SERVER_DIR / "nexus_server.json"
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class InstallationInfo:
     version: str
     install_date: str
@@ -700,39 +700,83 @@ Configuration can also be set using environment variables (prefix=NS_):
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
-    install_parser = subparsers.add_parser("install", help="Install Nexus server")
-    install_parser.add_argument("--config", help="Path to config file for non-interactive setup")
-    install_parser.add_argument("--no-interactive", action="store_true", help="Skip interactive configuration")
-    install_parser.add_argument("--force", action="store_true", help="Force installation even if already installed")
-    install_parser.add_argument("--no-start", action="store_true", help="Don't start server after installation")
+    # Define commands with their arguments
+    command_specs = [
+        {
+            "name": "install", 
+            "help": "Install Nexus server",
+            "args": [
+                {"name": "--config", "help": "Path to config file for non-interactive setup"},
+                {"name": "--no-interactive", "action": "store_true", "help": "Skip interactive configuration"},
+                {"name": "--force", "action": "store_true", "help": "Force installation even if already installed"},
+                {"name": "--no-start", "action": "store_true", "help": "Don't start server after installation"},
+            ]
+        },
+        {
+            "name": "uninstall", 
+            "help": "Uninstall Nexus server",
+            "args": [
+                {"name": "--keep-config", "action": "store_true", "help": "Keep configuration files when uninstalling"},
+                {"name": "--force", "action": "store_true", "help": "Force uninstallation even if not installed"},
+                {"name": "--yes", "aliases": ["-y"], "action": "store_true", 
+                 "help": "Automatically terminate running processes without prompting"},
+            ]
+        },
+        {
+            "name": "config", 
+            "help": "Manage Nexus server configuration",
+            "args": [
+                {"name": "--edit", "action": "store_true", "help": "Edit configuration in text editor"},
+            ]
+        },
+    ]
 
-    uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall Nexus server")
-    uninstall_parser.add_argument(
-        "--keep-config", action="store_true", help="Keep configuration files when uninstalling"
-    )
-    uninstall_parser.add_argument("--force", action="store_true", help="Force uninstallation even if not installed")
-    uninstall_parser.add_argument(
-        "--yes", "-y", action="store_true", help="Automatically terminate running processes without prompting"
-    )
-
-    config_parser = subparsers.add_parser("config", help="Manage Nexus server configuration")
-    config_parser.add_argument("--edit", action="store_true", help="Edit configuration in text editor")
-
-    subparsers.add_parser("status", help="Show Nexus server status")
-
-    # Server management commands
-    logs_parser = subparsers.add_parser("logs", help="View server logs")
-    logs_parser.add_argument("-f", "--follow", action="store_true", help="Follow log output")
-    logs_parser.add_argument("-u", "--unit", action="store_true", help="Use journalctl unit filter")
-    logs_parser.add_argument("-n", "--lines", type=int, default=50, help="Number of log lines to show")
-
-    restart_parser = subparsers.add_parser("restart", help="Restart the server")
-    restart_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
-
-    stop_parser = subparsers.add_parser("stop", help="Stop the server")
-    stop_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
-
-    subparsers.add_parser("start", help="Start the server")
+    # Define more commands with their arguments
+    command_specs.extend([
+        {
+            "name": "status", 
+            "help": "Show Nexus server status",
+            "args": []
+        },
+        {
+            "name": "logs", 
+            "help": "View server logs",
+            "args": [
+                {"name": "-f", "aliases": ["--follow"], "action": "store_true", "help": "Follow log output"},
+                {"name": "-u", "aliases": ["--unit"], "action": "store_true", "help": "Use journalctl unit filter"},
+                {"name": "-n", "aliases": ["--lines"], "type": int, "default": 50, "help": "Number of log lines to show"},
+            ]
+        },
+        {
+            "name": "restart", 
+            "help": "Restart the server",
+            "args": [
+                {"name": "-y", "aliases": ["--yes"], "action": "store_true", "help": "Skip confirmation prompt"},
+            ]
+        },
+        {
+            "name": "stop", 
+            "help": "Stop the server",
+            "args": [
+                {"name": "-y", "aliases": ["--yes"], "action": "store_true", "help": "Skip confirmation prompt"},
+            ]
+        },
+        {
+            "name": "start", 
+            "help": "Start the server",
+            "args": []
+        },
+    ])
+    
+    # Create subparsers based on command specs
+    for cmd_spec in command_specs:
+        cmd_parser = subparsers.add_parser(cmd_spec["name"], help=cmd_spec["help"])
+        for arg in cmd_spec.get("args", []):
+            kwargs = {k: v for k, v in arg.items() if k not in ("name", "aliases")}
+            if "aliases" in arg:
+                cmd_parser.add_argument(arg["name"], *arg["aliases"], **kwargs)
+            else:
+                cmd_parser.add_argument(arg["name"], **kwargs)
 
     return parser
 

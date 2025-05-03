@@ -72,6 +72,61 @@ def _parse_json(json_obj: str | None) -> dict[str, str]:
     return json.loads(json_obj)
 
 
+_JOB_COLS = (
+    "id", "command", "git_repo_url", "git_tag", "git_branch", "status", "created_at", "priority",
+    "num_gpus", "started_at", "completed_at", "gpu_idxs", "exit_code", "error_message", 
+    "wandb_url", "user", "marked_for_kill", "dir", "node_name",
+    "pid", "jobrc", "env", "integrations", "notifications", "notification_messages", "ignore_blacklist",
+    "screen_session_name"
+)
+
+_INSERT_SQL = f"""
+    INSERT INTO jobs ({', '.join(_JOB_COLS)})
+    VALUES ({', '.join(['?'] * len(_JOB_COLS))})
+"""
+
+_UPDATE_SQL = f"""
+    UPDATE jobs SET {', '.join(f"{col} = ?" for col in _JOB_COLS[1:])}
+    WHERE id = ?
+"""
+
+def _job_to_row(job: schemas.Job) -> tuple:
+    env_json = json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env)
+    notification_messages_json = json.dumps(job.notification_messages)
+    notifications_str = ",".join(job.notifications)
+    integrations_str = ",".join(job.integrations)
+    gpu_idxs_str = ",".join([str(i) for i in job.gpu_idxs])
+    
+    return (
+        job.id,
+        job.command,
+        job.git_repo_url,
+        job.git_tag,
+        job.git_branch,
+        job.status,
+        job.created_at,
+        job.priority,
+        job.num_gpus,
+        job.started_at,
+        job.completed_at,
+        gpu_idxs_str,
+        job.exit_code,
+        job.error_message,
+        job.wandb_url,
+        job.user,
+        int(job.marked_for_kill),
+        str(job.dir) if job.dir else None,
+        job.node_name,
+        job.pid,
+        job.jobrc,
+        env_json,
+        integrations_str,
+        notifications_str,
+        notification_messages_json,
+        int(job.ignore_blacklist),
+        job.screen_session_name,
+    )
+
 def _row_to_job(row: sqlite3.Row) -> schemas.Job:
     return schemas.Job(
         id=row["id"],
@@ -217,124 +272,16 @@ def create_connection(db_path: str) -> sqlite3.Connection:
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add job to database")
 def add_job(conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
-    env_json = json.dumps(job.env)
-    notification_messages_json = json.dumps(job.notification_messages)
-    notifications_str = ",".join(job.notifications)
-    integrations_str = ",".join(job.integrations)
-    gpu_idxs_str = ",".join([str(i) for i in job.gpu_idxs])
-
-    cur.execute(
-        """
-        INSERT INTO jobs (
-            id, command, git_repo_url, git_tag, git_branch, status, created_at, priority,
-            num_gpus, started_at, completed_at, gpu_idxs, exit_code, error_message, 
-            wandb_url, user, marked_for_kill, dir, node_name,
-            pid, jobrc, env, integrations, notifications, notification_messages, ignore_blacklist,
-            screen_session_name
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """,
-        (
-            job.id,
-            job.command,
-            job.git_repo_url,
-            job.git_tag,
-            job.git_branch,
-            job.status,
-            job.created_at,
-            job.priority,
-            job.num_gpus,
-            job.started_at,
-            job.completed_at,
-            gpu_idxs_str,
-            job.exit_code,
-            job.error_message,
-            job.wandb_url,
-            job.user,
-            int(job.marked_for_kill),
-            str(job.dir) if job.dir else None,
-            job.node_name,
-            job.pid,
-            job.jobrc,
-            env_json,
-            integrations_str,
-            notifications_str,
-            notification_messages_json,
-            int(job.ignore_blacklist),
-            job.screen_session_name,
-        ),
-    )
+    cur.execute(_INSERT_SQL, _job_to_row(job))
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to update job")
 def update_job(conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur = conn.cursor()
-
-    env_json = json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env)
-    notification_messages_json = json.dumps(job.notification_messages)
-    notifications_str = ",".join(job.notifications)
-    integrations_str = ",".join(job.integrations)
-    gpu_idxs_str = ",".join([str(i) for i in job.gpu_idxs])
-
-    cur.execute(
-        """
-        UPDATE jobs SET 
-            command = ?,
-            git_repo_url = ?,
-            git_tag = ?,
-            git_branch = ?,
-            status = ?,
-            created_at = ?,
-            priority = ?,
-            num_gpus = ?,
-            started_at = ?,
-            completed_at = ?,
-            gpu_idxs = ?,
-            exit_code = ?,
-            error_message = ?,
-            wandb_url = ?,
-            user = ?,
-            marked_for_kill = ?,
-            dir = ?,
-            pid = ?,
-            jobrc = ?,
-            env = ?,
-            integrations = ?,
-            notifications = ?,
-            notification_messages = ?,
-            ignore_blacklist = ?,
-            screen_session_name = ?
-        WHERE id = ?
-    """,
-        (
-            job.command,
-            job.git_repo_url,
-            job.git_tag,
-            job.git_branch,
-            job.status,
-            job.created_at,
-            job.priority,
-            job.num_gpus,
-            job.started_at,
-            job.completed_at,
-            gpu_idxs_str,
-            job.exit_code,
-            job.error_message,
-            job.wandb_url,
-            job.user,
-            int(job.marked_for_kill),
-            str(job.dir) if job.dir else None,
-            job.pid,
-            job.jobrc,
-            env_json,
-            integrations_str,
-            notifications_str,
-            notification_messages_json,
-            int(job.ignore_blacklist),
-            job.screen_session_name,
-            job.id,
-        ),
-    )
+    row_data = _job_to_row(job)
+    # For UPDATE we need id at the end for WHERE clause
+    update_params = row_data[1:] + (row_data[0],)
+    cur.execute(_UPDATE_SQL, update_params)
 
     if cur.rowcount == 0:
         raise exc.JobNotFoundError(message="Job not found")
