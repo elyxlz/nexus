@@ -388,7 +388,7 @@ def handle_jobrc(args) -> None:
 
 
 def handle_setup(args) -> None:
-    if hasattr(args, "non_interactive") and args.non_interactive:
+    if args.non_interactive:
         setup.setup_non_interactive()
     else:
         setup.setup_wizard()

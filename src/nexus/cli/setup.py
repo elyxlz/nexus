@@ -146,7 +146,6 @@ def setup_notifications(cfg: config.NexusCliConfig) -> tuple[config.NexusCliConf
 
         updated_config = cfg.copy(update={"default_notifications": default_notifications})
         config.save_config(updated_config)
-        print(colored("Notification preferences saved!", "green"))
 
     # Set default integrations
     default_integrations: list[IntegrationType] = []
@@ -160,7 +159,6 @@ def setup_notifications(cfg: config.NexusCliConfig) -> tuple[config.NexusCliConf
 
         updated_config = cfg.copy(update={"default_integrations": default_integrations})
         config.save_config(updated_config)
-        print(colored("Integration preferences saved!", "green"))
 
     # Add Git token for private repositories
     if utils.ask_yes_no("Do you work with private Git repositories?", default=False):
@@ -176,7 +174,6 @@ def setup_notifications(cfg: config.NexusCliConfig) -> tuple[config.NexusCliConf
         env_vars["GIT_TOKEN"] = git_token
 
         save_env_vars(env_vars)
-        print(colored("Git token saved!", "green"))
 
     if utils.ask_yes_no("Would you like to add any additional environment variables?", default=True):
         # Save current env vars before opening editor
@@ -202,7 +199,6 @@ def setup_non_interactive() -> None:
         cfg = config.load_config()
 
     config.save_config(cfg)
-    print(colored("Configuration saved immediately!", "green"))
 
     env_vars = load_current_env()
 
@@ -241,7 +237,6 @@ def setup_wizard() -> None:
     )
 
     config.save_config(cfg)
-    print(colored("Basic configuration saved!", "green"))
 
     cfg, env_vars = setup_notifications(cfg)
 
