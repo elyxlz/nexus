@@ -143,6 +143,11 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         for notification_type in configured_notifications:
             if utils.ask_yes_no(f"Enable {notification_type} notifications by default?"):
                 default_notifications.append(notification_type)
+        
+        # Save after notifications configuration
+        updated_config = config.copy(update={"default_notifications": default_notifications})
+        config.save_config(updated_config)
+        print(colored("Notification preferences saved!", "green"))
 
     # Set default integrations
     default_integrations: list[IntegrationType] = []
@@ -153,6 +158,11 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         for integration_type in configured_integrations:
             if utils.ask_yes_no(f"Enable {integration_type} integration by default?"):
                 default_integrations.append(integration_type)
+        
+        # Save after integrations configuration
+        updated_config = config.copy(update={"default_integrations": default_integrations})
+        config.save_config(updated_config)
+        print(colored("Integration preferences saved!", "green"))
 
     # Add Git token for private repositories
     if utils.ask_yes_no("Do you work with private Git repositories?", default=False):
@@ -166,6 +176,10 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
             required=True,
         )
         env_vars["GIT_TOKEN"] = git_token
+        
+        # Save environment variables immediately after Git token setup
+        save_env_vars(env_vars)
+        print(colored("Git token saved!", "green"))
 
     if utils.ask_yes_no("Would you like to add any additional environment variables?", default=True):
         # Save current env vars before opening editor
@@ -190,12 +204,14 @@ def setup_non_interactive() -> None:
         config.create_default_config()
         cfg = config.load_config()
 
+    # Save config immediately
+    config.save_config(cfg)
+    print(colored("Configuration saved immediately!", "green"))
+    
     env_vars = load_current_env()
 
     create_default_env()
     save_env_vars(env_vars)
-
-    config.save_config(cfg)
 
     print(colored("Non-interactive setup complete!", "green", attrs=["bold"]))
     print(f"Configuration saved to: {config.get_config_path()}")
@@ -227,6 +243,10 @@ def setup_wizard() -> None:
             }
         ),
     )
+    
+    # Save configuration immediately after basic setup
+    config.save_config(cfg)
+    print(colored("Basic configuration saved!", "green"))
 
     cfg, env_vars = setup_notifications(cfg)
 
