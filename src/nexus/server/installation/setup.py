@@ -232,16 +232,11 @@ def create_interactive_config(default_config: config.NexusServerConfig) -> confi
 
     node_name = input(f"Node name [default: {default_config.node_name}]: ").strip() or default_config.node_name
 
-    log_level = (
-        input(f"Log level (debug/info/warning/error) [default: {default_config.log_level}]: ").strip()
-        or default_config.log_level
-    )
-
     return config.NexusServerConfig(
         server_dir=default_config.server_dir,
         port=port,
         node_name=node_name,
-        log_level=log_level,
+        log_level=default_config.log_level,
     )
 
 
