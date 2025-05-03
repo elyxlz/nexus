@@ -28,7 +28,6 @@ def server_config() -> NexusServerConfig:
         refresh_rate=1,
         port=54325,
         node_name="test_persistence_node",
-        log_level="debug",
         mock_gpus=True,
     )
 
