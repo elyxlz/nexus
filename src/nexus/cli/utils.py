@@ -165,15 +165,25 @@ def confirm_action(action_description: str, bypass: bool = False) -> bool:
         return True
 
     options = f"[{colored('y', 'green')}/{colored('N', 'red')}]"
-    response = input(f"\n{colored('?', 'blue', attrs=['bold'])} {action_description} {options} [press ENTER for {colored('NO', 'red')}]: ").lower().strip()
+    response = (
+        input(
+            f"\n{colored('?', 'blue', attrs=['bold'])} {action_description} {options} [press ENTER for {colored('NO', 'red')}]: "
+        )
+        .lower()
+        .strip()
+    )
     print()  # newline
     return response == "y"
 
 
 def ask_yes_no(question: str, default: bool = True) -> bool:
     default_text = "YES" if default else "NO"
-    options = f"[{colored('y', 'green')}/{colored('n', 'red')}]" 
-    default_prompt = f"[press ENTER for {colored(default_text, 'cyan')}, type {colored('n', 'red')} for no]" if default else f"[press ENTER for {colored(default_text, 'cyan')}, type {colored('y', 'green')} for yes]"
+    options = f"[{colored('y', 'green')}/{colored('n', 'red')}]"
+    default_prompt = (
+        f"[press ENTER for {colored(default_text, 'cyan')}, type {colored('n', 'red')} for no]"
+        if default
+        else f"[press ENTER for {colored(default_text, 'cyan')}, type {colored('y', 'green')} for yes]"
+    )
     prompt = f"{colored('?', 'blue', attrs=['bold'])} {question} {options} {default_prompt}: "
 
     while True:
