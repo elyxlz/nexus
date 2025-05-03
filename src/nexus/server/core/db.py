@@ -20,6 +20,8 @@ __all__ = [
     "add_blacklisted_gpu",
     "remove_blacklisted_gpu",
     "list_blacklisted_gpus",
+    "add_artifact",
+    "get_artifact",
     "safe_transaction",
 ]
 
@@ -31,8 +33,8 @@ def _create_tables(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS jobs (
             id TEXT PRIMARY KEY,
             command TEXT,
+            artifact_id TEXT NOT NULL,
             git_repo_url TEXT,
-            git_tag TEXT,
             git_branch TEXT,
             status TEXT,
             created_at REAL,
@@ -63,6 +65,14 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             gpu_idx INTEGER PRIMARY KEY
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS artifacts (
+            id TEXT PRIMARY KEY,
+            size INTEGER NOT NULL,
+            created_at REAL NOT NULL,
+            data BLOB NOT NULL
+        )
+    """)
     conn.commit()
 
 
@@ -78,8 +88,8 @@ def _parse_json(json_obj: str | None) -> dict[str, str]:
 _DB_COLS = [
     "id",
     "command",
+    "artifact_id",
     "git_repo_url",
-    "git_tag",
     "git_branch",
     "status",
     "created_at",
@@ -113,8 +123,8 @@ def _job_to_row(job: schemas.Job) -> tuple:
     return (
         job.id,
         job.command,
+        job.artifact_id,
         job.git_repo_url,
-        job.git_tag,
         job.git_branch,
         job.status,
         job.created_at,
@@ -146,8 +156,8 @@ def _row_to_job(row: sqlite3.Row) -> schemas.Job:
         id=row["id"],
         command=row["command"],
         user=row["user"],
+        artifact_id=row["artifact_id"],
         git_repo_url=row["git_repo_url"],
-        git_tag=row["git_tag"],
         git_branch=row["git_branch"],
         priority=row["priority"],
         num_gpus=row["num_gpus"],
@@ -371,3 +381,25 @@ def safe_transaction(func: tp.Callable[..., tp.Any]) -> tp.Callable[..., tp.Any]
             raise
 
     return wrapper
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add artifact to database")
+def add_artifact(conn: sqlite3.Connection, artifact_id: str, data: bytes) -> None:
+    cur = conn.cursor()
+    size = len(data)
+    created_at = time.time()
+    cur.execute(
+        "INSERT INTO artifacts (id, size, created_at, data) VALUES (?, ?, ?, ?)",
+        (artifact_id, size, created_at, data),
+    )
+    conn.commit()
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to retrieve artifact")
+def get_artifact(conn: sqlite3.Connection, artifact_id: str) -> bytes:
+    cur = conn.cursor()
+    cur.execute("SELECT data FROM artifacts WHERE id = ?", (artifact_id,))
+    row = cur.fetchone()
+    if not row:
+        raise exc.JobError(message=f"Artifact not found: {artifact_id}")
+    return row["data"]

@@ -69,9 +69,7 @@ def run_job(
                 if integration_type not in integrations:
                     integrations.append(integration_type)
 
-        git_tag_id = utils.generate_git_tag_id()
         branch_name = utils.get_current_git_branch()
-        tag_name = f"nexus-{git_tag_id}"
         git_repo_url = None
 
         is_git_repo = True
@@ -88,15 +86,19 @@ def run_job(
             raise
 
         if is_git_repo:
-            try:
-                subprocess.run(["git", "tag", tag_name], check=True)
-                subprocess.run(["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL)
-            except subprocess.CalledProcessError as e:
-                subprocess.run(["git", "tag", "-d", tag_name], check=False)
-                raise RuntimeError(f"Failed to create/push git tag: {e}")
-
+            # Ensure the repo is clean
+            utils.ensure_clean_repo()
+            
+            # Get git repo URL for metadata
             result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
             git_repo_url = result.stdout.strip() or "unknown-url"
+            
+            # Create and upload git bundle
+            print(colored("Creating git bundle...", "blue"))
+            artifact_data = utils.create_git_bundle()
+            print(colored("Uploading git bundle...", "blue"))
+            artifact_id = api_client.upload_artifact(artifact_data)
+            print(colored(f"Artifact uploaded with ID: {artifact_id}", "green"))
 
         env_vars = setup.load_current_env()
 
@@ -129,8 +131,8 @@ def run_job(
         job_request = {
             "command": command,
             "user": user,
+            "artifact_id": artifact_id,
             "git_repo_url": git_repo_url,
-            "git_tag": tag_name,
             "git_branch": branch_name,
             "num_gpus": gpus_count,
             "priority": 0,
@@ -241,10 +243,9 @@ def add_jobs(
 
             notifications = [n for n in notifications if n not in invalid_notifications]
 
-        git_tag_id = utils.generate_git_tag_id()
         branch_name = utils.get_current_git_branch()
-        tag_name = f"nexus-{git_tag_id}"
         git_repo_url = None
+        artifact_id = None
 
         # Check if we're in a git repository
         is_git_repo = True
@@ -262,15 +263,19 @@ def add_jobs(
             raise
 
         if is_git_repo:
-            try:
-                subprocess.run(["git", "tag", tag_name], check=True)
-                subprocess.run(["git", "push", "origin", tag_name], check=True, stdout=subprocess.DEVNULL)
-            except subprocess.CalledProcessError as e:
-                subprocess.run(["git", "tag", "-d", tag_name], check=False)
-                raise RuntimeError(f"Failed to create/push git tag: {e}")
-
+            # Ensure the repo is clean
+            utils.ensure_clean_repo()
+            
+            # Get git repo URL for metadata
             result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
             git_repo_url = result.stdout.strip() or "unknown-url"
+            
+            # Create and upload git bundle
+            print(colored("Creating git bundle...", "blue"))
+            artifact_data = utils.create_git_bundle()
+            print(colored("Uploading git bundle...", "blue"))
+            artifact_id = api_client.upload_artifact(artifact_data)
+            print(colored(f"Artifact uploaded with ID: {artifact_id}", "green"))
 
         jobrc_content = None
         jobrc_path = setup.get_jobrc_path()
@@ -283,8 +288,8 @@ def add_jobs(
             job_request = {
                 "command": cmd,
                 "user": user,
+                "artifact_id": artifact_id,
                 "git_repo_url": git_repo_url,
-                "git_tag": tag_name,
                 "git_branch": branch_name,
                 "num_gpus": num_gpus,
                 "priority": priority,

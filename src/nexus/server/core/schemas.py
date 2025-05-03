@@ -19,9 +19,9 @@ class Job:
     id: str
     command: str
     user: str
-    git_repo_url: str
-    git_tag: str
-    git_branch: str
+    artifact_id: str
+    git_repo_url: str | None
+    git_branch: str | None
     priority: int
     num_gpus: int
     node_name: str

@@ -90,7 +90,7 @@ async def _for_queued_jobs(ctx: context.NexusServerContext):
         return
 
     try:
-        started = await job.async_start_job(job=_job, gpu_idxs=gpu_idxs, server_dir=ctx.config.server_dir)
+        started = await job.async_start_job(job=_job, gpu_idxs=gpu_idxs, ctx=ctx)
         db.update_job(conn=ctx.db, job=started)
         logger.info(format.format_job_action(started, action="started"))
 

@@ -74,11 +74,8 @@ import pathlib as pl
 def _build_script_content(
     log_file: pl.Path,
     job_repo_dir: pl.Path,
-    git_repo_url: str,
-    git_tag: str,
+    bundle_path: pl.Path,
     command: str,
-    askpass_path: pl.Path | None,
-    git_token: str | None = None,
     jobrc: str | None = None,
 ) -> str:
     script_lines = [
@@ -86,16 +83,11 @@ def _build_script_content(
         "set -e",
         "export GIT_TERMINAL_PROMPT=0",
     ]
-    clone_url = git_repo_url
-    if git_token and git_repo_url.startswith("https://"):
-        clone_url = git_repo_url.replace("https://", f"https://{git_token}@")
-    if askpass_path:
-        script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
 
     script_lines.append('script -q -e -f -c "')
 
     script_lines.append(
-        f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} '{clone_url}' '{job_repo_dir}'"
+        f"git clone {bundle_path} {job_repo_dir}"
     )
     script_lines.append(f"cd '{job_repo_dir}'")
 
@@ -119,15 +111,12 @@ def _create_job_script(
     job_dir: pl.Path,
     log_file: pl.Path,
     job_repo_dir: pl.Path,
-    git_repo_url: str,
-    git_tag: str,
+    bundle_path: pl.Path,
     command: str,
-    askpass_path: pl.Path | None,
     jobrc: str | None = None,
-    git_token: str | None = None,
 ) -> pl.Path:
     script_content = _build_script_content(
-        log_file, job_repo_dir, git_repo_url, git_tag, command, askpass_path, git_token=git_token, jobrc=jobrc
+        log_file, job_repo_dir, bundle_path, command, jobrc=jobrc
     )
     return _write_job_script(job_dir, script_content=script_content)
 
@@ -208,9 +197,7 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
 
 def create_job(
     command: str,
-    git_repo_url: str,
-    git_tag: str,
-    git_branch: str,
+    artifact_id: str,
     user: str,
     node_name: str,
     num_gpus: int,
@@ -219,6 +206,8 @@ def create_job(
     priority: int,
     integrations: list[schemas.IntegrationType],
     notifications: list[schemas.NotificationType],
+    git_repo_url: str | None = None,
+    git_branch: str | None = None,
     gpu_idxs: list[int] | None = None,
     ignore_blacklist: bool = False,
 ) -> schemas.Job:
@@ -228,8 +217,8 @@ def create_job(
         status="queued",
         created_at=dt.datetime.now().timestamp(),
         user=user,
+        artifact_id=artifact_id,
         git_repo_url=git_repo_url,
-        git_tag=git_tag,
         git_branch=git_branch,
         node_name=node_name,
         priority=priority,
@@ -254,7 +243,7 @@ def create_job(
 
 
 @exc.handle_exception(Exception, exc.JobError, message="Failed to start job")
-async def async_start_job(job: schemas.Job, gpu_idxs: list[int], server_dir: pl.Path | None) -> schemas.Job:
+async def async_start_job(job: schemas.Job, gpu_idxs: list[int], ctx) -> schemas.Job:
     job_dir = pl.Path(tempfile.mkdtemp(prefix=f"nexus-job-{job.id}-"))
     job_dir.mkdir(parents=True, exist_ok=True)
     job = dc.replace(job, dir=job_dir)
@@ -262,7 +251,7 @@ async def async_start_job(job: schemas.Job, gpu_idxs: list[int], server_dir: pl.
     if job.dir is None:
         raise exc.JobError(message=f"Job directory not set for job {job.id}")
 
-    log_file, job_repo_dir, env, askpass_path, script_path = await prepare_job_environment(job, gpu_idxs)
+    log_file, job_repo_dir, env, script_path = await prepare_job_environment(job, gpu_idxs, ctx)
     session_name = _get_job_session_name(job.id)
 
     pid = await _launch_screen_process(session_name, str(script_path), env)
@@ -378,30 +367,29 @@ def get_queue(queued_jobs: list[schemas.Job]) -> list[schemas.Job]:
 
 
 async def prepare_job_environment(
-    job: schemas.Job, gpu_idxs: list[int]
-) -> tuple[pl.Path, pl.Path, dict[str, str], pl.Path | None, pl.Path]:
+    job: schemas.Job, gpu_idxs: list[int], ctx
+) -> tuple[pl.Path, pl.Path, dict[str, str], pl.Path]:
     if job.dir is None:
         raise exc.JobError(message="Job directory not set")
 
+    if not job.artifact_id:
+        raise exc.JobError(message="Missing artifact_id for job")
+
     log_file, job_repo_dir = await asyncio.to_thread(_create_directories, job.dir)
     env = await asyncio.to_thread(_build_environment, gpu_idxs, job.env)
-    env["NEXUS_GIT_TAG"] = job.git_tag
-
-    git_token = job.env.get("GIT_TOKEN")
-    askpass_path = None
-    if git_token:
-        askpass_path = await asyncio.to_thread(_setup_github_auth, job.dir, git_token)
+    
+    # Get artifact data and write to bundle file
+    artifact_bytes = db.get_artifact(ctx.db, job.artifact_id)
+    bundle_path = job.dir / "code.bundle"
+    await asyncio.to_thread(lambda: bundle_path.write_bytes(artifact_bytes))
 
     script_path = await asyncio.to_thread(
         _create_job_script,
         job.dir,
         log_file,
         job_repo_dir,
-        job.git_repo_url,
-        job.git_tag,
+        bundle_path,
         job.command,
-        askpass_path,
         job.jobrc,
-        git_token,
     )
-    return log_file, job_repo_dir, env, askpass_path, script_path
+    return log_file, job_repo_dir, env, script_path

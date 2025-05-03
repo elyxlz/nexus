@@ -1,7 +1,9 @@
 import dataclasses as dc
 import getpass
 import importlib.metadata
+import os
 
+import base58
 import fastapi as fa
 
 from nexus.server.api import models
@@ -63,11 +65,24 @@ async def list_jobs_endpoint(
 
 
 @db.safe_transaction
+@router.post("/v1/artifacts", response_model=models.ArtifactUploadResponse, status_code=201)
+async def upload_artifact(request: fa.Request, ctx: context.NexusServerContext = fa.Depends(_get_context)):
+    raw = await request.body()
+    if not raw:
+        raise exc.InvalidRequestError("Empty artifact upload")
+    artifact_id = base58.b58encode(os.urandom(6)).decode()
+    db.add_artifact(ctx.db, artifact_id, raw)
+    return models.ArtifactUploadResponse(data=artifact_id)
+
+
+@db.safe_transaction
 @router.post("/v1/jobs", response_model=schemas.Job, status_code=201)
 async def create_job_endpoint(
     job_request: models.JobRequest, ctx: context.NexusServerContext = fa.Depends(_get_context)
 ):
-    norm_url = git.normalize_git_url(job_request.git_repo_url)
+    git_repo_url = None
+    if job_request.git_repo_url:
+        git_repo_url = git.normalize_git_url(job_request.git_repo_url)
 
     priority = job_request.priority if not job_request.run_immediately else 9999
     ignore_blacklist = job_request.run_immediately
@@ -104,9 +119,7 @@ async def create_job_endpoint(
 
     j = job.create_job(
         command=job_request.command,
-        git_repo_url=norm_url,
-        git_tag=job_request.git_tag,
-        git_branch=job_request.git_branch,
+        artifact_id=job_request.artifact_id,
         user=job_request.user,
         num_gpus=job_request.num_gpus,
         priority=priority,
@@ -116,6 +129,8 @@ async def create_job_endpoint(
         integrations=job_request.integrations,
         notifications=job_request.notifications,
         node_name=ctx.config.node_name,
+        git_repo_url=git_repo_url,
+        git_branch=job_request.git_branch,
         ignore_blacklist=ignore_blacklist,
     )
 

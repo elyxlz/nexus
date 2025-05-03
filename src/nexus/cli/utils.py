@@ -5,6 +5,7 @@ import pathlib as pl
 import random
 import re
 import subprocess
+import tempfile
 import time
 import typing as tp
 
@@ -87,6 +88,21 @@ def get_current_git_branch() -> str:
         return result.stdout.strip()
     except subprocess.CalledProcessError:
         return "unknown-branch"
+
+
+def ensure_clean_repo() -> None:
+    out = subprocess.check_output(["git", "status", "--porcelain"]).decode().strip()
+    if out:
+        raise RuntimeError("Refusing to submit: working tree has uncommitted changes.")
+
+
+def create_git_bundle() -> bytes:
+    bundle = tempfile.NamedTemporaryFile(suffix=".bundle", delete=False)
+    subprocess.run(["git", "bundle", "create", bundle.name, "HEAD", "--depth=1"], check=True)
+    with open(bundle.name, "rb") as f:
+        data = f.read()
+    os.unlink(bundle.name)
+    return data
 
 
 # Time Utilities
