@@ -31,6 +31,20 @@ def run_job(
         elif num_gpus:
             gpu_info = f" using {colored(str(num_gpus), 'cyan')} GPU(s)"
 
+        # Check health status and warn if degraded or unhealthy
+        try:
+            health = api_client.get_detailed_health()
+            health_status = health.get("status", "unknown")
+            if health_status == "degraded":
+                print(colored("\n⚠️  WARNING: System health is degraded! This may impact job performance.", "yellow", attrs=["bold"]))
+                print(colored("     Run 'nx health' for details and recommendations.", "yellow"))
+            elif health_status == "unhealthy":
+                print(colored("\n⚠️  WARNING: System health is UNHEALTHY! Jobs may fail or perform poorly.", "red", attrs=["bold"]))
+                print(colored("     Run 'nx health' for details. Consider addressing issues before submitting jobs.", "red"))
+        except Exception:
+            # Silently fail if health check fails - we don't want to break job submission
+            pass
+
         if interactive:
             command = "bash"  # Use bash for interactive mode
             print(f"\n{colored('Starting interactive session:', 'blue', attrs=['bold'])}")
@@ -185,6 +199,20 @@ def add_jobs(
         expanded_commands = utils.expand_job_commands(commands, repeat=repeat)
         if not expanded_commands:
             return
+
+        # Check health status and warn if degraded or unhealthy
+        try:
+            health = api_client.get_detailed_health()
+            health_status = health.get("status", "unknown")
+            if health_status == "degraded":
+                print(colored("\n⚠️  WARNING: System health is degraded! This may impact job performance.", "yellow", attrs=["bold"]))
+                print(colored("     Run 'nx health' for details and recommendations.", "yellow"))
+            elif health_status == "unhealthy":
+                print(colored("\n⚠️  WARNING: System health is UNHEALTHY! Jobs may fail or perform poorly.", "red", attrs=["bold"]))
+                print(colored("     Run 'nx health' for details. Consider addressing issues before submitting jobs.", "red"))
+        except Exception:
+            # Silently fail if health check fails - we don't want to break job submission
+            pass
 
         print(f"\n{colored('Adding the following jobs:', 'blue', attrs=['bold'])}")
         for cmd in expanded_commands:
@@ -741,6 +769,13 @@ def show_health(refresh: bool = False) -> None:
         status_color = "green" if status == "healthy" else "yellow" if status == "degraded" else "red"
         print(f"  {colored('•', 'blue')} Status: {colored(status, status_color)}")
 
+        # Display warning for degraded or unhealthy status
+        if status == "degraded":
+            print(colored("\n⚠️  WARNING: System health is degraded! This may impact job performance.", "yellow", attrs=["bold"]))
+        elif status == "unhealthy":
+            print(colored("\n⚠️  WARNING: System health is UNHEALTHY! Jobs may fail or perform poorly.", "red", attrs=["bold"]))
+            print(colored("     Consider addressing the issues below before submitting new jobs.", "red"))
+
         if health.get("score") is not None:
             score = health.get("score", 0)
             score_color = "green" if score > 0.8 else "yellow" if score > 0.5 else "red"
@@ -1021,6 +1056,20 @@ def print_status() -> None:
                     "yellow",
                 )
             )
+
+        # Check health status and display warning if needed
+        try:
+            health = api_client.get_detailed_health()
+            health_status = health.get("status", "unknown")
+            if health_status == "degraded":
+                print(colored("\n⚠️  WARNING: System health is degraded! This may impact job performance.", "yellow", attrs=["bold"]))
+                print(colored("     Run 'nx health' for details and recommendations.", "yellow"))
+            elif health_status == "unhealthy":
+                print(colored("\n⚠️  WARNING: System health is UNHEALTHY! Jobs may fail or perform poorly.", "red", attrs=["bold"]))
+                print(colored("     Run 'nx health' for details. Consider addressing issues before submitting new jobs.", "red"))
+        except Exception:
+            # Silently fail if health check fails - we don't want to break status display
+            pass
 
         queued = status.get("queued_jobs", 0)
         running = status.get("running_jobs", 0)
