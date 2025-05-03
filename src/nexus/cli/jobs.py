@@ -316,13 +316,19 @@ def show_queue() -> None:
         total_jobs = len(jobs)
         for idx, job in enumerate(reversed(jobs), 1):
             created_time = utils.format_timestamp(job.get("created_at"))
-            priority_str = (
-                f" (Priority: {colored(str(job.get('priority', 0)), 'cyan')})" if job.get("priority", 0) != 0 else ""
-            )
+            
+            # Get priority and number of GPUs requested
+            priority = job.get('priority', 0)
+            num_gpus = job.get('num_gpus', 1)
+            
+            # Build info strings conditionally
+            priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
+            gpu_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})" if num_gpus > 1 else ""
+            
             print(
                 f"{total_jobs - idx + 1}. {colored(job['id'], 'magenta')} - "
                 f"{colored(job['command'], 'white')} "
-                f"(Added: {colored(created_time, 'cyan')}){priority_str}"
+                f"(Added: {colored(created_time, 'cyan')}){priority_str}{gpu_str}"
             )
 
         print(f"\n{colored('Total queued jobs:', 'blue', attrs=['bold'])} {colored(str(total_jobs), 'cyan')}")
@@ -1048,8 +1054,12 @@ def print_status() -> None:
                 runtime = utils.calculate_runtime(job)
                 runtime_str = utils.format_runtime(runtime)
                 start_time = utils.format_timestamp(job.get("started_at"))
+                
+                # Get number of GPUs used by the job
+                job_gpu_count = job.get('num_gpus', 1)
+                gpu_count_str = f" ({job_gpu_count} GPUs)" if job_gpu_count > 1 else ""
 
-                print(f"{gpu_info}{colored(job_id, 'magenta')}")
+                print(f"{gpu_info}{colored(job_id, 'magenta')}{gpu_count_str}")
                 print(f"  Command: {colored(job.get('command', ''), 'white', attrs=['bold'])}")
                 print(f"  Time: {colored(runtime_str, 'cyan')} (Started: {colored(start_time, 'cyan')})")
                 if job.get("wandb_url"):
