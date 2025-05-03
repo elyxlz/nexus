@@ -1,40 +1,40 @@
-## Immediate TODO
+## 🚧 Nexus TODO
 
-- [ ] Press Enter for yes, but how to say no in setup?
-- [ ] remove log level from config
-- [ ] filter by users or not
-- [ ] put nexus job id in tmpdir
-- [ ] history fked on hermes?
-- [ ] save config immedietly as i make a change in nx setup
-- [ ] show num of gpus in queue
-- [ ] cleanup git functions
-- [ ] cleanup git tags optional
-- [ ] dependent jobs (a after b is done)
-- [ ] nicer error messages on the cli instead of showing apierror
-- [ ] better secrets management
-- [ ] multi node and auth with dht and dqlite
-- [ ] cpu only jobs
-- [ ] documentation
-- [ ] job execution isolation
-- [ ] resources available per job
-- [ ] make a new linux user per nexus user
-- [ ] when job fails to start get better error message
-- [ ] cant push git tag when repo isnt mine
-- [ ] warn user when health is low
-- [ ] degraded -> under load
-- [ ] memory use in health
-- [ ] fix wandb searching
-- [ ] specify ranodm integer with {RANDINT}
-- [ ] lags a bit when killing a job and stufff
-- [ ] dont automatically put priority on multi gpu jobs
-- [ ] weired bug when i nx remove, repeats jobs:
-    The following jobs will be removed from queue:
-      • Job 7fnz1k | Command: NAME='canvas-lora-v1' uv run torchrun --nproc_per_... | Queued: 2025-04-14 11:58:24 | User: kale
-      • Job 5yzzry | Command: uv run main.py apollo/splitter_rockets/brahms | Queued: 2025-04-14 11:55:43 | User: elyx
-      • Job 7fnz1k | Command: NAME='canvas-lora-v1' uv run torchrun --nproc_per_... | Queued: 2025-04-14 11:58:24 | User: kale
-      • Job 5yzzry | Command: uv run main.py apollo/splitter_rockets/brahms | Queued: 2025-04-14 11:55:43 | User: elyx
-      • Job 7fnz1k | Command: NAME='canvas-lora-v1' uv run torchrun --nproc_per_... | Queued: 2025-04-14 11:58:24 | User: kale
-      • Job 5yzzry | Command: uv run main.py apollo/splitter_rockets/brahms | Queued: 2025-04-14 11:55:43 | User: elyx
-      • Job 5yzzry | Command: uv run main.py apollo/splitter_rockets/brahms | Queued: 2025-04-14 11:55:43 | User: elyx
+### 🟢 Easy
 
-- [ ] command autocomplete
+- [ ] Improve setup messaging: clarify how to say **no** when pressing Enter implies yes
+- [ ] Remove `log_level` from config
+- [ ] Save config immediately during `nx setup`
+- [ ] Show number of GPUs requested in `nx queue`
+- [ ] Put Nexus job ID in `tmpdir`
+- [ ] Warn user when health is low
+- [ ] Rename "degraded" → "under load"
+- [ ] Display memory usage in `nx health`
+- [ ] Fix `wandb` search fallback
+- [ ] Support `{RANDINT}` syntax in commands
+- [ ] Avoid auto-priority on multi-GPU jobs
+- [ ] Improve startup failure error messages
+- [ ] Better CLI error messages (avoid raw APIError)
+- [ ] Command autocomplete
+
+### 🟡 Medium
+
+- [ ] Filter job history/queue by user
+- [ ] History list broken on Hermes (possibly time-related)
+- [ ] Git: clean up helper functions
+- [ ] Git: make tagging optional
+- [ ] Gracefully skip pushing tag if repo isn't owned
+- [ ] Bug: `nx remove` repeats jobs multiple times
+- [ ] Kill job responsiveness: reduce lag when killing/refreshing
+- [ ] Support CPU-only jobs
+- [ ] Track per-job resource allocation in metadata
+- [ ] Documentation
+
+### 🔴 Hard
+
+- [ ] Dependent jobs (run job B after job A completes)
+- [ ] Better secrets management (e.g., encrypted `.env`)
+- [ ] Multi-node support (DHT + DQLite for coordination/auth)
+- [ ] Full job execution isolation (process/network/filesystem)
+- [ ] Create a dedicated Linux user per Nexus user
+
