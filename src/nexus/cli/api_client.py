@@ -177,12 +177,14 @@ def remove_queued_jobs(job_ids: list[str]) -> dict:
 
 
 @handle_api_errors
-def edit_job(job_id: str, command: str | None = None, priority: int | None = None) -> dict:
+def edit_job(job_id: str, command: str | None = None, priority: int | None = None, num_gpus: int | None = None) -> dict:
     update_data = {}
     if command is not None:
         update_data["command"] = command
     if priority is not None:
         update_data["priority"] = priority
+    if num_gpus is not None:
+        update_data["num_gpus"] = num_gpus
 
     response = requests.patch(f"{get_api_base_url()}/jobs/{job_id}", json=update_data)
     response.raise_for_status()

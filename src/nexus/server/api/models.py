@@ -130,6 +130,7 @@ class ServerActionResponse(FrozenBaseModel):
 class JobUpdateRequest(FrozenBaseModel):
     command: str | None = None
     priority: int | None = None
+    num_gpus: int | None = None
 
 
 class JobListRequest(FrozenBaseModel):
