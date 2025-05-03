@@ -70,64 +70,106 @@ def _create_tables(conn: sqlite3.Connection) -> None:
 def _parse_json(json_obj: str | None) -> dict[str, str]:
     if not json_obj:
         return {}
+    if isinstance(json_obj, float | int | bool):
+        return {}
     return json.loads(json_obj)
 
 
-_JOB_COLS = tuple(f.name for f in dc.fields(schemas.Job))
-_INSERT_SQL = f"INSERT INTO jobs VALUES ({','.join(['?'] * len(_JOB_COLS))})"
+_DB_COLS = [
+    "id",
+    "command",
+    "git_repo_url",
+    "git_tag",
+    "git_branch",
+    "status",
+    "created_at",
+    "priority",
+    "num_gpus",
+    "env",
+    "node_name",
+    "jobrc",
+    "integrations",
+    "notifications",
+    "notification_messages",
+    "pid",
+    "dir",
+    "started_at",
+    "gpu_idxs",
+    "wandb_url",
+    "marked_for_kill",
+    "completed_at",
+    "exit_code",
+    "error_message",
+    "user",
+    "ignore_blacklist",
+    "screen_session_name",
+]
 
-_UPDATE_SQL = f"""
-    UPDATE jobs SET {", ".join(f"{col} = ?" for col in _JOB_COLS[1:])}
-    WHERE id = ?
-"""
+_INSERT_SQL = f"INSERT INTO jobs VALUES ({','.join(['?'] * len(_DB_COLS))})"
+_UPDATE_SQL = f"UPDATE jobs SET {', '.join(f'{col} = ?' for col in _DB_COLS[1:])} WHERE id = ?"
 
 
 def _job_to_row(job: schemas.Job) -> tuple:
-    d = dc.asdict(job)
-    d.update(
-        {
-            "gpu_idxs": ",".join(map(str, job.gpu_idxs)),
-            "integrations": ",".join(job.integrations),
-            "notifications": ",".join(job.notifications),
-            "marked_for_kill": int(job.marked_for_kill),
-            "ignore_blacklist": int(job.ignore_blacklist),
-            "dir": str(job.dir) if job.dir else None,
-            "env": json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env),
-            "notification_messages": json.dumps(job.notification_messages),
-        }
+    return (
+        job.id,
+        job.command,
+        job.git_repo_url,
+        job.git_tag,
+        job.git_branch,
+        job.status,
+        job.created_at,
+        job.priority,
+        job.num_gpus,
+        json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env),
+        job.node_name,
+        job.jobrc,
+        ",".join(job.integrations),
+        ",".join(job.notifications),
+        json.dumps(job.notification_messages),
+        job.pid,
+        str(job.dir) if job.dir else None,
+        job.started_at,
+        ",".join(map(str, job.gpu_idxs)),
+        job.wandb_url,
+        int(job.marked_for_kill),
+        job.completed_at,
+        job.exit_code,
+        job.error_message,
+        job.user,
+        int(job.ignore_blacklist),
+        job.screen_session_name,
     )
-    return tuple(d[c] for c in _JOB_COLS)
 
 
 def _row_to_job(row: sqlite3.Row) -> schemas.Job:
     return schemas.Job(
         id=row["id"],
         command=row["command"],
+        user=row["user"],
         git_repo_url=row["git_repo_url"],
         git_tag=row["git_tag"],
         git_branch=row["git_branch"],
-        status=row["status"],
-        created_at=row["created_at"],
         priority=row["priority"],
         num_gpus=row["num_gpus"],
-        started_at=row["started_at"],
-        completed_at=row["completed_at"],
         node_name=row["node_name"],
-        gpu_idxs=[int(i) for i in row["gpu_idxs"].split(",")] if row["gpu_idxs"] else [],
-        exit_code=row["exit_code"],
-        error_message=row["error_message"],
-        wandb_url=row["wandb_url"],
-        user=row["user"],
-        marked_for_kill=bool(row["marked_for_kill"]) if row["marked_for_kill"] is not None else False,
-        ignore_blacklist=bool(row["ignore_blacklist"]),
-        dir=pl.Path(row["dir"]) if row["dir"] else None,
-        pid=row["pid"],
         env=_parse_json(json_obj=row["env"]),
         jobrc=row["jobrc"],
-        integrations=row["integrations"].split(",") if row["integrations"] else [],
         notifications=row["notifications"].split(",") if row["notifications"] else [],
+        integrations=row["integrations"].split(",") if row["integrations"] else [],
+        status=row["status"],
+        created_at=row["created_at"],
         notification_messages=_parse_json(json_obj=row["notification_messages"]),
+        pid=row["pid"],
+        dir=pl.Path(row["dir"]) if row["dir"] else None,
+        started_at=row["started_at"],
+        gpu_idxs=[int(i) for i in row["gpu_idxs"].split(",")] if row["gpu_idxs"] else [],
+        wandb_url=row["wandb_url"],
+        marked_for_kill=bool(row["marked_for_kill"]) if row["marked_for_kill"] is not None else False,
+        ignore_blacklist=bool(row["ignore_blacklist"]),
         screen_session_name=row["screen_session_name"] if "screen_session_name" in row.keys() else None,
+        completed_at=row["completed_at"],
+        exit_code=row["exit_code"],
+        error_message=row["error_message"],
     )
 
 
@@ -243,6 +285,9 @@ def create_connection(db_path: str) -> sqlite3.Connection:
 @exc.handle_exception(sqlite3.IntegrityError, exc.JobError, message="Job already exists")
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add job to database")
 def add_job(conn: sqlite3.Connection, job: schemas.Job) -> None:
+    if job.status != "queued":
+        job = dc.replace(job, status="queued")
+
     cur = conn.cursor()
     cur.execute(_INSERT_SQL, _job_to_row(job))
 

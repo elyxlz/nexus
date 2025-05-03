@@ -96,6 +96,7 @@ P = tp.ParamSpec("P")  # This captures the parameter specification of the wrappe
 def handle_exception(source_exception, target_exception=None, *, message="error", reraise=True, default_return=None):
     def deco(fn):
         if inspect.iscoroutinefunction(fn):
+
             async def run(*a, **k):
                 try:
                     return await fn(*a, **k)
@@ -105,8 +106,10 @@ def handle_exception(source_exception, target_exception=None, *, message="error"
                     if not reraise:
                         return default_return
                     raise (target_exception or type(e))(message=full) from e
+
             return run
         else:
+
             def run(*a, **k):
                 try:
                     return fn(*a, **k)
@@ -116,6 +119,7 @@ def handle_exception(source_exception, target_exception=None, *, message="error"
                     if not reraise:
                         return default_return
                     raise (target_exception or type(e))(message=full) from e
+
             return run
 
     return deco

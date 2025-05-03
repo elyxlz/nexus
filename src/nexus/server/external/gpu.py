@@ -13,7 +13,7 @@ _nvidia_smi_cache = {"timestamp": 0.0, "output": "", "processes": {}}
 CACHE_TTL = 5
 
 
-@dc.dataclass(frozen=True, slots=True)
+@dc.dataclass(frozen=True)
 class GpuInfo:
     index: int
     name: str
@@ -100,19 +100,20 @@ def _get_mock_gpus(running_jobs: list[schemas.Job], blacklisted_gpus: list[int])
     ]
 
     for gpu in mock_gpus:
-        logger.debug(f"Mock GPU {gpu.index} availability: {is_gpu_available(gpu)}")
+        # Check basic availability without required param during init
+        basic_availability = not gpu.is_blacklisted and gpu.running_job_id is None and gpu.process_count == 0
+        logger.debug(f"Mock GPU {gpu.index} availability: {basic_availability}")
 
     logger.debug(f"Total mock GPUs generated: {len(mock_gpus)}")
     return mock_gpus
 
 
 def is_gpu_available(gpu_info: GpuInfo, ignore_blacklist: bool = False, required: list[int] | None = None) -> bool:
-    blacklist_check = True if ignore_blacklist else not gpu_info.is_blacklisted
     return (
-        blacklist_check
+        (ignore_blacklist or not gpu_info.is_blacklisted)
         and gpu_info.running_job_id is None
         and gpu_info.process_count == 0
-        and (required is None or gpu_info.index in required)
+        and (not required or not len(required) or gpu_info.index in required)
     )
 
 

@@ -104,7 +104,6 @@ async def create_job_endpoint(
                 message=f"Requested {job_request.num_gpus} GPUs but only {len(available_gpus)} are available"
             )
 
-    # Create job with correct status="queued"
     j = job.create_job(
         command=job_request.command,
         git_repo_url=norm_url,
@@ -124,8 +123,9 @@ async def create_job_endpoint(
 
     db.add_job(conn=ctx.db, job=j)
     logger.info(format.format_job_action(j, action="added"))
-    logger.info(f"Added new job: {j.id}")
-    return j
+
+    # Fetch the job from the database to ensure consistency
+    return db.get_job(conn=ctx.db, job_id=j.id)
 
 
 @router.get("/v1/jobs/{job_id}", response_model=schemas.Job)
