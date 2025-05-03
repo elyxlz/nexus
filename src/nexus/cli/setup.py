@@ -50,7 +50,7 @@ def save_env_vars(env_vars: dict[str, str]) -> None:
             f.write(f"{key}={value}\n")
 
 
-def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliConfig, dict[str, str]]:
+def setup_notifications(cfg: config.NexusCliConfig) -> tuple[config.NexusCliConfig, dict[str, str]]:
     print(colored("\nNotification and Integration Setup", "blue", attrs=["bold"]))
     print("Nexus can notify you when your jobs complete or fail, and integrate with various services.")
 
@@ -145,7 +145,7 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
                 default_notifications.append(notification_type)
 
         # Save after notifications configuration
-        updated_config = config.copy(update={"default_notifications": default_notifications})
+        updated_config = cfg.copy(update={"default_notifications": default_notifications})
         config.save_config(updated_config)
         print(colored("Notification preferences saved!", "green"))
 
@@ -160,7 +160,7 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
                 default_integrations.append(integration_type)
 
         # Save after integrations configuration
-        updated_config = config.copy(update={"default_integrations": default_integrations})
+        updated_config = cfg.copy(update={"default_integrations": default_integrations})
         config.save_config(updated_config)
         print(colored("Integration preferences saved!", "green"))
 
@@ -190,10 +190,10 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         # Reload env vars after editing
         env_vars = load_current_env()
 
-    config = config.copy(
+    cfg = cfg.copy(
         update={"default_notifications": default_notifications, "default_integrations": default_integrations}
     )
-    return config, env_vars
+    return cfg, env_vars
 
 
 def setup_non_interactive() -> None:
