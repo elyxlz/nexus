@@ -31,6 +31,10 @@ def run_job(
         elif num_gpus:
             gpu_info = f" using {colored(str(num_gpus), 'cyan')} GPU(s)"
 
+        health = api_client.get_detailed_health(refresh=False)
+        if health.get("status") == "unhealthy":
+            utils.print_health_warning()
+
         if interactive:
             command = "bash"  # Use bash for interactive mode
             print(f"\n{colored('Starting interactive session:', 'blue', attrs=['bold'])}")
@@ -186,6 +190,10 @@ def add_jobs(
         if not expanded_commands:
             return
 
+        health = api_client.get_detailed_health(refresh=False)
+        if health.get("status") == "unhealthy":
+            utils.print_health_warning()
+
         print(f"\n{colored('Adding the following jobs:', 'blue', attrs=['bold'])}")
         for cmd in expanded_commands:
             priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
@@ -316,13 +324,18 @@ def show_queue() -> None:
         total_jobs = len(jobs)
         for idx, job in enumerate(reversed(jobs), 1):
             created_time = utils.format_timestamp(job.get("created_at"))
-            priority_str = (
-                f" (Priority: {colored(str(job.get('priority', 0)), 'cyan')})" if job.get("priority", 0) != 0 else ""
-            )
+
+            priority = job.get("priority")
+            num_gpus = job.get("num_gpus")
+            assert priority is not None and num_gpus is not None
+
+            priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
+            gpu_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})" if num_gpus > 1 else ""
+
             print(
                 f"{total_jobs - idx + 1}. {colored(job['id'], 'magenta')} - "
                 f"{colored(job['command'], 'white')} "
-                f"(Added: {colored(created_time, 'cyan')}){priority_str}"
+                f"(Added: {colored(created_time, 'cyan')}){priority_str}{gpu_str}"
             )
 
         print(f"\n{colored('Total queued jobs:', 'blue', attrs=['bold'])} {colored(str(total_jobs), 'cyan')}")
@@ -352,7 +365,6 @@ def show_history(regex: str | None = None) -> None:
                 print(colored(f"Invalid regex pattern: {e}", "red"))
                 return
 
-        # Filter out jobs without a completed_at timestamp and ensure we can sort them
         valid_jobs = [j for j in jobs if j.get("completed_at") is not None]
         if not valid_jobs:
             print(colored("No jobs with valid completion times found", "yellow"))
@@ -741,6 +753,9 @@ def show_health(refresh: bool = False) -> None:
         status_color = "green" if status == "healthy" else "yellow" if status == "degraded" else "red"
         print(f"  {colored('•', 'blue')} Status: {colored(status, status_color)}")
 
+        if status == "unhealthy":
+            utils.print_health_warning()
+
         if health.get("score") is not None:
             score = health.get("score", 0)
             score_color = "green" if score > 0.8 else "yellow" if score > 0.5 else "red"
@@ -861,23 +876,17 @@ def get_job_info(job_id: str) -> None:
             print(colored(f"Job {job_id} not found", "red"))
             return
 
-        # Map job status to appropriate termcolor colors
         color_map = {"queued": "yellow", "running": "green", "completed": "blue", "failed": "red", "killed": "red"}
-        # Using type assertion to handle the case where status might not be in map
         status_color = color_map.get(job["status"], "white")
 
-        # Helper for formatting timestamps
         def format_time(ts) -> str:
             return utils.format_timestamp(ts) if ts else "N/A"
 
-        # Calculate runtime
         runtime = utils.calculate_runtime(job)
         runtime_str = utils.format_runtime(runtime) if runtime else "N/A"
 
-        # Title with job ID and status
         print(f"\n{colored('Job Details:', 'blue', attrs=['bold'])}")
         print(f"  {colored('•', 'blue')} ID: {colored(job_id, 'magenta')}")
-        # Cast to Color type to satisfy type checker
         status_color_typed: utils.Color = (
             "yellow"
             if status_color == "yellow"
@@ -891,18 +900,15 @@ def get_job_info(job_id: str) -> None:
         )
         print(f"  {colored('•', 'blue')} Status: {colored(job['status'].upper(), status_color_typed)}")
 
-        # Basic job information
         print(f"\n{colored('Command:', 'blue', attrs=['bold'])}")
         print(f"  {colored(job['command'], 'white')}")
 
-        # User and scheduling info
         print(f"\n{colored('User & Scheduling:', 'blue', attrs=['bold'])}")
         print(f"  {colored('•', 'blue')} User: {colored(job['user'], 'cyan')}")
         print(f"  {colored('•', 'blue')} Priority: {colored(str(job['priority']), 'cyan')}")
         print(f"  {colored('•', 'blue')} Node: {colored(job['node_name'], 'cyan')}")
         print(f"  {colored('•', 'blue')} Created: {colored(format_time(job.get('created_at')), 'cyan')}")
 
-        # GPU information
         print(f"\n{colored('GPU Information:', 'blue', attrs=['bold'])}")
         print(f"  {colored('•', 'blue')} Number of GPUs: {colored(str(job['num_gpus']), 'cyan')}")
         if job["gpu_idxs"]:
@@ -910,13 +916,11 @@ def get_job_info(job_id: str) -> None:
         if job.get("ignore_blacklist"):
             print(f"  {colored('•', 'blue')} Blacklist: {colored('Ignored', 'yellow')}")
 
-        # Git information
         print(f"\n{colored('Git Information:', 'blue', attrs=['bold'])}")
         print(f"  {colored('•', 'blue')} Repository: {colored(job['git_repo_url'], 'cyan')}")
         print(f"  {colored('•', 'blue')} Branch: {colored(job['git_branch'], 'cyan')}")
         print(f"  {colored('•', 'blue')} Tag: {colored(job['git_tag'], 'cyan')}")
 
-        # Execution information if running/completed
         if job["status"] in ["running", "completed", "failed", "killed"]:
             print(f"\n{colored('Execution Information:', 'blue', attrs=['bold'])}")
             print(f"  {colored('•', 'blue')} Started: {colored(format_time(job.get('started_at')), 'cyan')}")
@@ -936,7 +940,6 @@ def get_job_info(job_id: str) -> None:
                 if job.get("error_message"):
                     print(f"  {colored('•', 'blue')} Error: {colored(job['error_message'], 'red')}")
 
-        # Integration information
         if job.get("integrations"):
             print(f"\n{colored('Integrations:', 'blue', attrs=['bold'])}")
             for integration in job["integrations"]:
@@ -944,7 +947,6 @@ def get_job_info(job_id: str) -> None:
                 if integration == "wandb" and job.get("wandb_url"):
                     print(f"    - URL: {colored(job['wandb_url'], 'yellow')}")
 
-        # Notification information
         if job.get("notifications"):
             print(f"\n{colored('Notifications:', 'blue', attrs=['bold'])}")
             for notification in job["notifications"]:
@@ -952,7 +954,6 @@ def get_job_info(job_id: str) -> None:
                 if job.get("notification_messages") and notification in job.get("notification_messages", {}):
                     print(f"    - Last Message: {job['notification_messages'][notification]}")
 
-        # Display action hints based on status
         print(f"\n{colored('Actions:', 'blue', attrs=['bold'])}")
         if job["status"] == "queued":
             print(f"  {colored('•', 'blue')} View in Queue: {colored('nx queue', 'green')}")
@@ -1022,6 +1023,10 @@ def print_status() -> None:
                 )
             )
 
+        health = api_client.get_detailed_health(refresh=False)
+        if health.get("status") == "unhealthy":
+            utils.print_health_warning()
+
         queued = status.get("queued_jobs", 0)
         running = status.get("running_jobs", 0)
         completed = status.get("completed_jobs", 0)
@@ -1049,7 +1054,10 @@ def print_status() -> None:
                 runtime_str = utils.format_runtime(runtime)
                 start_time = utils.format_timestamp(job.get("started_at"))
 
-                print(f"{gpu_info}{colored(job_id, 'magenta')}")
+                job_gpu_count = job.get("num_gpus", 1)
+                gpu_count_str = f" ({job_gpu_count} GPUs)" if job_gpu_count > 1 else ""
+
+                print(f"{gpu_info}{colored(job_id, 'magenta')}{gpu_count_str}")
                 print(f"  Command: {colored(job.get('command', ''), 'white', attrs=['bold'])}")
                 print(f"  Time: {colored(runtime_str, 'cyan')} (Started: {colored(start_time, 'cyan')})")
                 if job.get("wandb_url"):
@@ -1071,7 +1079,6 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None
         user = cfg.user or "anonymous"
 
         if target is None:
-            # Find the most recent running job started by the current user
             running_jobs = api_client.get_jobs("running")
             user_jobs = [j for j in running_jobs if j.get("user") == user]
 
@@ -1079,13 +1086,11 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None
                 print(colored(f"No running jobs found for user '{user}'", "yellow"))
                 return
 
-            # Filter for jobs with valid started_at timestamps
             valid_jobs = [j for j in user_jobs if j.get("started_at") is not None]
             if not valid_jobs:
                 print(colored(f"No running jobs with valid start times found for user '{user}'", "yellow"))
                 return
 
-            # Sort by started_at (newest first)
             valid_jobs.sort(key=lambda x: x.get("started_at", 0), reverse=True)
             target = valid_jobs[0]["id"]
             print(colored(f"Attaching to most recent job: {target}", "blue"))
@@ -1124,15 +1129,12 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None
         print(colored("Press Ctrl+A Ctrl+D to detach from the screen session", "blue"))
         time.sleep(1)
 
-        # Save starting job status
         job_id = job["id"]
         starting_status = job["status"]
 
-        # Attach to the screen session
         current_user_exit_code = os.system(f"screen -r {screen_session_name}")
 
         if current_user_exit_code != 0:
-            # Try with sudo if direct access fails
             exit_code = os.system(f"sudo -u nexus screen -r {screen_session_name}")
 
             if exit_code != 0:
@@ -1144,25 +1146,20 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None
                 print(f"  3. You can always view job logs with: nx logs {job_id}")
                 return
 
-        # After returning from screen, check if job status has changed
         try:
             updated_job = api_client.get_job(job_id)
             if updated_job and updated_job["status"] != starting_status:
-                # Job status changed, show logs automatically
                 status_color = "green" if updated_job["status"] == "completed" else "red"
                 print(colored(f"\nJob {job_id} has {updated_job['status']}. Displaying logs:", status_color))
 
-                # Show exit code if available
                 if updated_job.get("exit_code") is not None:
                     exit_code_color = "green" if updated_job["exit_code"] == 0 else "red"
                     print(colored(f"Exit code: {updated_job['exit_code']}", exit_code_color))
 
-                # Calculate and show runtime
                 runtime = utils.calculate_runtime(updated_job)
                 runtime_str = utils.format_runtime(runtime) if runtime else "N/A"
                 print(colored(f"Runtime: {runtime_str}", "cyan"))
 
-                # Display logs
                 logs = api_client.get_job_logs(job_id, last_n_lines=1000) or ""
                 if logs:
                     print("\n" + logs)

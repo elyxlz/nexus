@@ -127,14 +127,21 @@ def handle_exception(
     return decorator
 
 
+T_co = tp.TypeVar("T_co", covariant=True)
+
+
 def handle_exception_async(
     source_exception: type[Exception],
     target_exception: type[NexusServerError] | None = None,
     message: str = "An error occurred",
     reraise: bool = True,
     default_return: tp.Any = None,
-) -> abc.Callable[[abc.Callable[P, tp.Awaitable[T]]], abc.Callable[P, tp.Awaitable[T]]]:
-    def decorator(func: abc.Callable[P, tp.Awaitable[T]]) -> abc.Callable[P, tp.Awaitable[T]]:
+) -> abc.Callable[
+    [abc.Callable[P, abc.Coroutine[tp.Any, tp.Any, T]]], abc.Callable[P, abc.Coroutine[tp.Any, tp.Any, T]]
+]:
+    def decorator(
+        func: abc.Callable[P, abc.Coroutine[tp.Any, tp.Any, T]],
+    ) -> abc.Callable[P, abc.Coroutine[tp.Any, tp.Any, T]]:
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             try:
