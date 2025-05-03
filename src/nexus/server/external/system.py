@@ -176,12 +176,29 @@ def get_health_status(score: float) -> HealthStatus:
         return "unhealthy"
 
 
-def check_health(force_refresh: bool = False) -> HealthCheckResult:
-    disk_stats = check_disk_space(force_refresh=force_refresh)
-    network_stats = check_network_speed(force_refresh=force_refresh)
-    system_stats = check_system_stats(force_refresh=force_refresh)
+def _calculate_health_result() -> HealthCheckResult:
+    disk_stats = check_disk_space()
+    network_stats = check_network_speed()
+    system_stats = check_system_stats()
 
     score = calculate_health_score(disk_stats, network_stats, system_stats)
     status = get_health_status(score)
 
     return HealthCheckResult(status=status, score=score, disk=disk_stats, network=network_stats, system=system_stats)
+
+
+def check_health(force_refresh: bool = False) -> HealthCheckResult:
+    # Use a longer TTL for the final health result to avoid slow calls when not refreshing
+    # This means health checks will be cached longer than individual components
+    if force_refresh and "health_result" in _cache:
+        del _cache["health_result"]
+        # Also clear component caches when full refresh is requested
+        if "disk_space" in _cache:
+            del _cache["disk_space"]
+        if "network_speed" in _cache:
+            del _cache["network_speed"]
+        if "system_stats" in _cache:
+            del _cache["system_stats"]
+    
+    # Cache the full health result for 10 minutes
+    return _get_cached(key="health_result", default_factory=_calculate_health_result, ttl=timedelta(minutes=10))
