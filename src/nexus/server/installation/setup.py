@@ -700,83 +700,42 @@ Configuration can also be set using environment variables (prefix=NS_):
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
-    # Define commands with their arguments
-    command_specs = [
-        {
-            "name": "install", 
-            "help": "Install Nexus server",
-            "args": [
-                {"name": "--config", "help": "Path to config file for non-interactive setup"},
-                {"name": "--no-interactive", "action": "store_true", "help": "Skip interactive configuration"},
-                {"name": "--force", "action": "store_true", "help": "Force installation even if already installed"},
-                {"name": "--no-start", "action": "store_true", "help": "Don't start server after installation"},
-            ]
-        },
-        {
-            "name": "uninstall", 
-            "help": "Uninstall Nexus server",
-            "args": [
-                {"name": "--keep-config", "action": "store_true", "help": "Keep configuration files when uninstalling"},
-                {"name": "--force", "action": "store_true", "help": "Force uninstallation even if not installed"},
-                {"name": "--yes", "aliases": ["-y"], "action": "store_true", 
-                 "help": "Automatically terminate running processes without prompting"},
-            ]
-        },
-        {
-            "name": "config", 
-            "help": "Manage Nexus server configuration",
-            "args": [
-                {"name": "--edit", "action": "store_true", "help": "Edit configuration in text editor"},
-            ]
-        },
-    ]
-
-    # Define more commands with their arguments
-    command_specs.extend([
-        {
-            "name": "status", 
-            "help": "Show Nexus server status",
-            "args": []
-        },
-        {
-            "name": "logs", 
-            "help": "View server logs",
-            "args": [
-                {"name": "-f", "aliases": ["--follow"], "action": "store_true", "help": "Follow log output"},
-                {"name": "-u", "aliases": ["--unit"], "action": "store_true", "help": "Use journalctl unit filter"},
-                {"name": "-n", "aliases": ["--lines"], "type": int, "default": 50, "help": "Number of log lines to show"},
-            ]
-        },
-        {
-            "name": "restart", 
-            "help": "Restart the server",
-            "args": [
-                {"name": "-y", "aliases": ["--yes"], "action": "store_true", "help": "Skip confirmation prompt"},
-            ]
-        },
-        {
-            "name": "stop", 
-            "help": "Stop the server",
-            "args": [
-                {"name": "-y", "aliases": ["--yes"], "action": "store_true", "help": "Skip confirmation prompt"},
-            ]
-        },
-        {
-            "name": "start", 
-            "help": "Start the server",
-            "args": []
-        },
-    ])
+    # Command specifications using tuples for compact definition
+    _CMDS = (
+        ("install", "Install Nexus server", (
+            ("--config", {"help": "Path to config file for non-interactive setup"}),
+            ("--no-interactive", {"action": "store_true", "help": "Skip interactive configuration"}),
+            ("--force", {"action": "store_true", "help": "Force installation even if already installed"}),
+            ("--no-start", {"action": "store_true", "help": "Don't start server after installation"}),
+        )),
+        ("uninstall", "Uninstall Nexus server", (
+            ("--keep-config", {"action": "store_true", "help": "Keep configuration files when uninstalling"}),
+            ("--force", {"action": "store_true", "help": "Force uninstallation even if not installed"}),
+            ("-y", {"aliases": ["--yes"], "action": "store_true", "help": "Auto-terminate processes without prompting"}),
+        )),
+        ("config", "Manage Nexus server configuration", (
+            ("--edit", {"action": "store_true", "help": "Edit configuration in text editor"}),
+        )),
+        ("status", "Show Nexus server status", ()),
+        ("logs", "View server logs", (
+            ("-f", {"aliases": ["--follow"], "action": "store_true", "help": "Follow log output"}),
+            ("-u", {"aliases": ["--unit"], "action": "store_true", "help": "Use journalctl unit filter"}),
+            ("-n", {"aliases": ["--lines"], "type": int, "default": 50, "help": "Number of log lines to show"}),
+        )),
+        ("restart", "Restart the server", (("-y", {"aliases": ["--yes"], "action": "store_true", "help": "Skip confirmation"}),)),
+        ("stop", "Stop the server", (("-y", {"aliases": ["--yes"], "action": "store_true", "help": "Skip confirmation"}),)),
+        ("start", "Start the server", ()),
+    )
     
     # Create subparsers based on command specs
-    for cmd_spec in command_specs:
-        cmd_parser = subparsers.add_parser(cmd_spec["name"], help=cmd_spec["help"])
-        for arg in cmd_spec.get("args", []):
-            kwargs = {k: v for k, v in arg.items() if k not in ("name", "aliases")}
-            if "aliases" in arg:
-                cmd_parser.add_argument(arg["name"], *arg["aliases"], **kwargs)
+    for name, help_, args in _CMDS:
+        cmd_parser = subparsers.add_parser(name, help=help_)
+        for flag, kwargs in args:
+            if "aliases" in kwargs:
+                aliases = kwargs.pop("aliases")
+                cmd_parser.add_argument(flag, *aliases, **kwargs)
             else:
-                cmd_parser.add_argument(arg["name"], **kwargs)
+                cmd_parser.add_argument(flag, **kwargs)
 
     return parser
 

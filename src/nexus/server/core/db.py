@@ -1,5 +1,8 @@
+import dataclasses as dc
 import functools
+import inspect
 import json
+import operator
 import pathlib as pl
 import re
 import sqlite3
@@ -72,13 +75,7 @@ def _parse_json(json_obj: str | None) -> dict[str, str]:
     return json.loads(json_obj)
 
 
-_JOB_COLS = (
-    "id", "command", "git_repo_url", "git_tag", "git_branch", "status", "created_at", "priority",
-    "num_gpus", "started_at", "completed_at", "gpu_idxs", "exit_code", "error_message", 
-    "wandb_url", "user", "marked_for_kill", "dir", "node_name",
-    "pid", "jobrc", "env", "integrations", "notifications", "notification_messages", "ignore_blacklist",
-    "screen_session_name"
-)
+_JOB_COLS = tuple(f.name for f in dc.fields(schemas.Job))
 
 _INSERT_SQL = f"""
     INSERT INTO jobs ({', '.join(_JOB_COLS)})
@@ -91,41 +88,32 @@ _UPDATE_SQL = f"""
 """
 
 def _job_to_row(job: schemas.Job) -> tuple:
-    env_json = json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env)
-    notification_messages_json = json.dumps(job.notification_messages)
-    notifications_str = ",".join(job.notifications)
-    integrations_str = ",".join(job.integrations)
-    gpu_idxs_str = ",".join([str(i) for i in job.gpu_idxs])
+    # First build a dict with all values converted to DB-friendly format
+    result = {}
     
-    return (
-        job.id,
-        job.command,
-        job.git_repo_url,
-        job.git_tag,
-        job.git_branch,
-        job.status,
-        job.created_at,
-        job.priority,
-        job.num_gpus,
-        job.started_at,
-        job.completed_at,
-        gpu_idxs_str,
-        job.exit_code,
-        job.error_message,
-        job.wandb_url,
-        job.user,
-        int(job.marked_for_kill),
-        str(job.dir) if job.dir else None,
-        job.node_name,
-        job.pid,
-        job.jobrc,
-        env_json,
-        integrations_str,
-        notifications_str,
-        notification_messages_json,
-        int(job.ignore_blacklist),
-        job.screen_session_name,
-    )
+    # Convert lists to strings
+    result["gpu_idxs"] = ",".join(str(i) for i in job.gpu_idxs)
+    result["integrations"] = ",".join(job.integrations)
+    result["notifications"] = ",".join(job.notifications)
+    
+    # Convert booleans to integers
+    result["marked_for_kill"] = int(job.marked_for_kill)
+    result["ignore_blacklist"] = int(job.ignore_blacklist)
+    
+    # Convert Path to string
+    result["dir"] = str(job.dir) if job.dir else None
+    
+    # Convert dicts to JSON
+    result["env"] = json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env)
+    result["notification_messages"] = json.dumps(job.notification_messages)
+    
+    # Add all fields directly from job
+    for field in _JOB_COLS:
+        if field not in result:
+            result[field] = getattr(job, field)
+    
+    # Return values in same order as _JOB_COLS
+    return tuple(result[col] for col in _JOB_COLS)
 
 def _row_to_job(row: sqlite3.Row) -> schemas.Job:
     return schemas.Job(

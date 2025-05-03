@@ -29,35 +29,20 @@ def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
         allow_headers=["*"],
     )
 
-    def _register_handler(app: fa.FastAPI, exc_cls: type, default_status: int = 500, log_level: str = "error"):
+    def _register_handler(app, exc_cls, status, *, level="warning"):
         @app.exception_handler(exc_cls)
-        async def handler(request: fa.Request, error: Exception):
-            if isinstance(error, ValidationError):
-                errors = error.errors()
-                error_details = ", ".join([f"{e['loc'][-1]}: {e['msg']}" for e in errors])
-                message = error_details
-                code = "VALIDATION_ERROR"
-                status_code = default_status
-                extra = {"detail": errors}
+        async def _h(_, err):
+            if isinstance(err, ValidationError):
+                detail = err.errors()
+                code, msg, sc = "VALIDATION_ERROR", ", ".join(f"{e['loc'][-1]}: {e['msg']}" for e in detail), status
+                body = {"detail": detail}
             else:
-                status_code = getattr(error, "STATUS_CODE", default_status)
-                code = getattr(error, "code", exc_cls.__name__)
-                message = getattr(error, "message", str(error))
-                extra = {}
+                sc = getattr(err, "STATUS_CODE", status)
+                code, msg = getattr(err, "code", exc_cls.__name__), getattr(err, "message", str(err))
+                body = {}
 
-            if log_level == "error":
-                logger.error(f"API error: {code} - {message}")
-            else:
-                logger.warning(f"{exc_cls.__name__}: {code} - {message}")
-                
-            content = {
-                "error": code,
-                "message": message,
-                "status_code": status_code,
-                **extra
-            }
-            
-            return JSONResponse(status_code=status_code, content=content)
+            getattr(logger, level)(f"{code} – {msg}")
+            return JSONResponse(status_code=sc, content={"error": code, "message": msg, "status_code": sc, **body})
             
     _register_handler(app, exc.NexusServerError, 500, "error")
     _register_handler(app, exc.NotFoundError, 404, "warning")

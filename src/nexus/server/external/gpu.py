@@ -193,22 +193,18 @@ def get_available_gpus(
     ignore_blacklist: bool = False,
     required_gpu_idxs: list[int] | None = None,
 ) -> list[GpuInfo]:
-    all_gpus = get_gpus(
-        running_jobs=running_jobs,
-        blacklisted_gpus=blacklisted_gpus,
-        mock_gpus=mock_gpus,
-    )
-    
+    all_gpus = get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted_gpus, mock_gpus=mock_gpus)
     available_gpus = [g for g in all_gpus if is_gpu_available(g, ignore_blacklist=ignore_blacklist)]
     
-    if required_gpu_idxs:
-        available_gpu_idxs = [g.index for g in available_gpus]
-        if all(idx in available_gpu_idxs for idx in required_gpu_idxs):
-            specific_gpus = [g for g in all_gpus if g.index in required_gpu_idxs]
-            return specific_gpus
+    if not required_gpu_idxs:
+        return available_gpus
         
-        unavailable_gpus = [idx for idx in required_gpu_idxs if idx not in available_gpu_idxs]
-        logger.debug(f"Required GPU indices {required_gpu_idxs}, but indices {unavailable_gpus} are unavailable")
+    # Quick check if all required GPUs are available
+    available_indices = {g.index for g in available_gpus}
+    if not all(idx in available_indices for idx in required_gpu_idxs):
+        unavailable = [idx for idx in required_gpu_idxs if idx not in available_indices]
+        logger.debug(f"Required GPU indices {required_gpu_idxs}, but {unavailable} unavailable")
         return []
     
-    return available_gpus
+    # Return only the GPUs that were specifically requested
+    return [g for g in all_gpus if g.index in required_gpu_idxs]

@@ -70,8 +70,6 @@ def _setup_github_auth(dir_path: pl.Path, git_token: str) -> pl.Path | None:
     return _create_git_token_helper(dir_path, git_token=git_token)
 
 
-
-
 def _build_script_content(
     log_file: pl.Path,
     job_repo_dir: pl.Path,
@@ -91,12 +89,11 @@ def _build_script_content(
     
     return textwrap.dedent(f"""
         #!/bin/bash
-        set -e
         export GIT_TERMINAL_PROMPT=0
         {askpass_export}
-        git clone --depth 1 --single-branch --no-tags --branch {shlex.quote(git_tag)} --quiet {shlex.quote(clone_url)} {shlex.quote(str(job_repo_dir))}
-        cd {shlex.quote(str(job_repo_dir))}
-        script -q -e -f -c "{prefix}{command}" {shlex.quote(str(log_file))}
+        git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet {shlex.quote(clone_url)} {job_repo_dir}
+        cd {job_repo_dir}
+        script -q -e -f -c "{prefix}{command}" {log_file}
     """).strip()
 
 
