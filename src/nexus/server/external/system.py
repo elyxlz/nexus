@@ -64,7 +64,7 @@ def check_disk_space(path: str = "/", force_refresh: bool = False) -> DiskStats:
     if force_refresh and "disk_space" in _cache:
         del _cache["disk_space"]
 
-    return _get_cached(key="disk_space", default_factory=lambda: measure_disk_space(path), ttl=timedelta(minutes=15))
+    return _get_cached(key="disk_space", default_factory=lambda: measure_disk_space(path), ttl=timedelta(minutes=30))
 
 
 def measure_network_speed() -> NetworkStats:
@@ -113,7 +113,7 @@ def check_network_speed(force_refresh: bool = False) -> NetworkStats:
     if force_refresh and "network_speed" in _cache:
         del _cache["network_speed"]
 
-    return _get_cached(key="network_speed", default_factory=measure_network_speed, ttl=timedelta(minutes=30))
+    return _get_cached(key="network_speed", default_factory=measure_network_speed, ttl=timedelta(minutes=60))
 
 
 def measure_system_stats() -> SystemStats:
@@ -129,7 +129,7 @@ def check_system_stats(force_refresh: bool = False) -> SystemStats:
     if force_refresh and "system_stats" in _cache:
         del _cache["system_stats"]
 
-    return _get_cached(key="system_stats", default_factory=measure_system_stats, ttl=timedelta(minutes=2))
+    return _get_cached(key="system_stats", default_factory=measure_system_stats, ttl=timedelta(minutes=1))
 
 
 def calculate_health_score(
