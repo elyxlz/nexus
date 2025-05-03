@@ -37,7 +37,6 @@ class SingleFieldResponse(FrozenBaseModel, tp.Generic[T]):
     data: T
 
 
-# Only keep aliases actually used by router endpoints
 JobLogsResponse = SingleFieldResponse[str]
 ServerLogsResponse = SingleFieldResponse[str]
 ServerActionResponse = SingleFieldResponse[str]

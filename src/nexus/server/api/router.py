@@ -78,7 +78,6 @@ async def create_job_endpoint(
         blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
 
         if gpu_idxs_list:
-            # First check if all requested GPUs exist
             all_gpus = gpu.get_gpus(
                 running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
             )
@@ -87,7 +86,6 @@ async def create_job_endpoint(
                 missing = set(gpu_idxs_list) - {g.index for g in requested_gpus}
                 raise exc.GPUError(message=f"Requested GPUs not found: {missing}")
 
-        # Check for availability of GPUs
         all_gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
         available_gpus = [
             g
@@ -124,7 +122,6 @@ async def create_job_endpoint(
     db.add_job(conn=ctx.db, job=j)
     logger.info(format.format_job_action(j, action="added"))
 
-    # Fetch the job from the database to ensure consistency
     return db.get_job(conn=ctx.db, job_id=j.id)
 
 

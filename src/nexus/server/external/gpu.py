@@ -100,7 +100,6 @@ def _get_mock_gpus(running_jobs: list[schemas.Job], blacklisted_gpus: list[int])
     ]
 
     for gpu in mock_gpus:
-        # Check basic availability without required param during init
         basic_availability = not gpu.is_blacklisted and gpu.running_job_id is None and gpu.process_count == 0
         logger.debug(f"Mock GPU {gpu.index} availability: {basic_availability}")
 
