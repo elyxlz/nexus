@@ -40,6 +40,11 @@ def print_success(message: str) -> None:
     print(colored(message, "green"))
 
 
+def print_health_warning() -> None:
+    print(colored("\n⚠️  WARNING: System health is UNHEALTHY! Jobs may fail or perform poorly.", "red", attrs=["bold"]))
+    print(colored("     Run 'nx health' for details. Consider addressing issues before submitting jobs.", "red"))
+
+
 def print_hint(command: str, description: str) -> None:
     print(f"\nTo {description}: {colored(command, 'green')}")
 
