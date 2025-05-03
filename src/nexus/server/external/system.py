@@ -196,5 +196,5 @@ def check_health(force_refresh: bool = False) -> HealthCheckResult:
             del _cache["network_speed"]
         if "system_stats" in _cache:
             del _cache["system_stats"]
-    
+
     return _get_cached(key="health_result", default_factory=_calculate_health_result, ttl=timedelta(minutes=5))
