@@ -249,7 +249,8 @@ def create_job(
 
 @exc.handle_exception_async(Exception, exc.JobError, message="Failed to start job")
 async def async_start_job(job: schemas.Job, gpu_idxs: list[int], server_dir: pl.Path | None) -> schemas.Job:
-    job_dir = pl.Path(tempfile.mkdtemp())
+    # Create a temporary directory with job ID in the name
+    job_dir = pl.Path(tempfile.mkdtemp(prefix=f"nexus-job-{job.id}-"))
     job_dir.mkdir(parents=True, exist_ok=True)
     job = dc.replace(job, dir=job_dir)
 
