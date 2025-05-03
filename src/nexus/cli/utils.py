@@ -2,6 +2,7 @@ import hashlib
 import itertools
 import os
 import pathlib as pl
+import random
 import re
 import subprocess
 import time
@@ -142,18 +143,31 @@ def expand_job_commands(commands: list[str], repeat: int = 1) -> list[str]:
     expanded_commands = []
 
     for command in commands:
-        # For example, "python train.py --model={gpt2,bert}"
         if "{" in command and "}" in command:
-            param_str = re.findall(r"\{([^}]+)\}", command)
-            if not param_str:
-                expanded_commands.append(command)
-                continue
-            params = [p.strip().split(",") for p in param_str]
-            for combo in itertools.product(*[[v.strip() for v in param] for param in params]):
+            # Handle RANDINT special case
+            randint_matches = re.findall(r"\{RANDINT(?::(\d+)(?:,(\d+))?)?\}", command)
+            if randint_matches:
                 temp_cmd = command
-                for value in combo:
-                    temp_cmd = re.sub(r"\{[^}]+\}", value, temp_cmd, count=1)
+                for min_str, max_str in randint_matches:
+                    min_val = int(min_str) if min_str else 0
+                    max_val = int(max_str) if max_str else 100
+                    rand_val = str(random.randint(min_val, max_val))
+                    temp_cmd = re.sub(r"\{RANDINT(?::\d+(?:,\d+)?)?\}", rand_val, temp_cmd, count=1)
                 expanded_commands.append(temp_cmd)
+            # Handle normal parameter expansion
+            elif re.search(r"\{[^}]+\}", command):
+                param_str = re.findall(r"\{([^}]+)\}", command)
+                if not param_str:
+                    expanded_commands.append(command)
+                    continue
+                params = [p.strip().split(",") for p in param_str]
+                for combo in itertools.product(*[[v.strip() for v in param] for param in params]):
+                    temp_cmd = command
+                    for value in combo:
+                        temp_cmd = re.sub(r"\{[^}]+\}", value, temp_cmd, count=1)
+                    expanded_commands.append(temp_cmd)
+            else:
+                expanded_commands.append(command)
         else:
             expanded_commands.append(command)
 

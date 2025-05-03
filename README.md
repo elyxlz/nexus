@@ -2,8 +2,6 @@
 
 ### 🟢 Easy
 
-- [ ] Display memory usage in `nx health`
-- [ ] Support `{RANDINT}` syntax in commands
 - [ ] Command autocomplete
 - [ ] Fix `wandb` search fallback
 
