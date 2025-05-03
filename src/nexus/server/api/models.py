@@ -1,18 +1,20 @@
 import pydantic as pyd
+import typing as tp
 import typing_extensions as tpe
 
 from nexus.server.core import schemas
 
 __all__ = [
+    "SingleFieldResponse",
     "JobRequest",
     "JobUpdateRequest",
     "JobListRequest",
-    "ServerLogsResponse",
     "JobLogsResponse",
+    "ServerLogsResponse",
+    "ServerActionResponse",
     "GpuActionResponse",
     "GpuStatusResponse",
     "ServerStatusResponse",
-    "ServerActionResponse",
     "HealthResponse",
 ]
 
@@ -26,6 +28,26 @@ REQUIRED_ENV_VARS = {
 
 class FrozenBaseModel(pyd.BaseModel):
     model_config = pyd.ConfigDict(frozen=True)
+
+
+T = tp.TypeVar("T")
+
+
+class SingleFieldResponse(FrozenBaseModel, tp.Generic[T]):
+    data: T
+
+
+JobLogsResponse = SingleFieldResponse[str]
+ServerLogsResponse = SingleFieldResponse[str]
+ServerActionResponse = SingleFieldResponse[str]
+
+
+def _check_required_vars(kinds: tp.Sequence[str], env: dict[str, str], for_type: str = "") -> None:
+    for kind in kinds:
+        for key in REQUIRED_ENV_VARS[kind]:
+            if key not in env:
+                suffix = f" for {kind} {for_type}" if for_type else f" for {kind}"
+                raise ValueError(f"Missing required environment variable {key}{suffix}")
 
 
 class JobRequest(FrozenBaseModel):
@@ -45,27 +67,9 @@ class JobRequest(FrozenBaseModel):
 
     @pyd.model_validator(mode="after")
     def check_requirements(self) -> tpe.Self:
-        for integration_type in self.integrations:
-            for key in REQUIRED_ENV_VARS[integration_type]:
-                if key not in self.env:
-                    raise ValueError(f"Missing required environment variable {key} for {integration_type} integration")
-
-        for notification_type in self.notifications:
-            for key in REQUIRED_ENV_VARS[notification_type]:
-                if key not in self.env:
-                    raise ValueError(
-                        f"Missing required environment variable {key} for {notification_type} notifications"
-                    )
-
+        _check_required_vars(self.integrations, self.env, "integration")
+        _check_required_vars(self.notifications, self.env, "notifications")
         return self
-
-
-class ServerLogsResponse(FrozenBaseModel):
-    logs: str
-
-
-class JobLogsResponse(FrozenBaseModel):
-    logs: str
 
 
 class GpuActionError(FrozenBaseModel):
@@ -121,10 +125,6 @@ class HealthResponse(FrozenBaseModel):
     disk: DiskStatsResponse | None = None
     network: NetworkStatsResponse | None = None
     system: SystemStatsResponse | None = None
-
-
-class ServerActionResponse(FrozenBaseModel):
-    status: str
 
 
 class JobUpdateRequest(FrozenBaseModel):

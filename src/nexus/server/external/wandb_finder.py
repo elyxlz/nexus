@@ -11,7 +11,7 @@ from nexus.server.utils import logger
 __all__ = ["find_wandb_run_by_nexus_id"]
 
 
-@exc.handle_exception_async(wandb.errors.CommError, exc.WandBError, message="W&B API communication error")
+@exc.handle_exception(wandb.errors.CommError, exc.WandBError, message="W&B API communication error")
 async def _check_project_for_run(project, run_id: str, api) -> str:
     logger.debug(f"Checking project {project.name} for run {run_id}")
     loop = asyncio.get_running_loop()
@@ -21,7 +21,7 @@ async def _check_project_for_run(project, run_id: str, api) -> str:
     return url
 
 
-@exc.handle_exception_async(OSError, exc.WandBError, message="Error reading W&B metadata files", reraise=False)
+@exc.handle_exception(OSError, exc.WandBError, message="Error reading W&B metadata files", reraise=False)
 async def _find_run_id_from_metadata(dirs: list[str], nexus_job_id: str) -> str | None:
     logger.debug(f"Searching for nexus job ID {nexus_job_id} in directories: {dirs}")
     loop = asyncio.get_running_loop()
@@ -47,7 +47,7 @@ async def _find_run_id_from_metadata(dirs: list[str], nexus_job_id: str) -> str 
 ####################
 
 
-@exc.handle_exception_async(wandb.errors.Error, exc.WandBError, message="W&B API error", reraise=False)
+@exc.handle_exception(wandb.errors.Error, exc.WandBError, message="W&B API error", reraise=False)
 async def find_wandb_run_by_nexus_id(job: schemas.Job, api_timeout: int = 2) -> str | None:
     nexus_job_id = job.id
     dirs = [str(job.dir)] if job.dir else []

@@ -22,7 +22,6 @@ class NexusServerConfig(pyds.BaseSettings):
     refresh_rate: int = pyd.Field(default=3)
     port: int = pyd.Field(default=54323)
     node_name: str = pyd.Field(default="test_node")
-    log_level: str = pyd.Field(default="info")
     mock_gpus: bool = pyd.Field(default=False)
 
     @classmethod

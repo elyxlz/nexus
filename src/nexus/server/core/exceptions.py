@@ -1,6 +1,5 @@
-import functools
+import inspect
 import typing as tp
-from collections import abc
 
 from nexus.server.utils import logger
 
@@ -20,7 +19,6 @@ __all__ = [
     "InvalidRequestError",
     "InvalidJobStateError",
     "handle_exception",
-    "handle_exception_async",
 ]
 
 
@@ -94,74 +92,33 @@ T = tp.TypeVar("T")
 P = tp.ParamSpec("P")  # This captures the parameter specification of the wrapped function
 
 
-def handle_exception(
-    source_exception: type[Exception],
-    target_exception: type[NexusServerError] | None = None,
-    message: str = "An error occurred",
-    reraise: bool = True,
-    default_return: tp.Any = None,
-) -> abc.Callable[[abc.Callable[P, T]], abc.Callable[P, T]]:  # Note the P here
-    def decorator(func: abc.Callable[P, T]) -> abc.Callable[P, T]:  # And here
-        @functools.wraps(func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:  # And here
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                if isinstance(e, source_exception):
-                    error_msg = f"{message}: {str(e)}"
-                    logger.exception(error_msg)
+def handle_exception(source_exception, target_exception=None, *, message="error", reraise=True, default_return=None):
+    def deco(fn):
+        if inspect.iscoroutinefunction(fn):
 
+            async def wrapped_async(*a, **k):
+                try:
+                    return await fn(*a, **k)
+                except source_exception as e:
+                    full = f"{message}: {e}"
+                    logger.exception(full)
                     if not reraise:
-                        return tp.cast(T, default_return)
+                        return default_return
+                    raise (target_exception or type(e))(message=full) from e
 
-                    if target_exception is not None:
-                        new_err_msg = f"{error_msg} (converted from {type(e).__name__})"
-                        raise target_exception(message=new_err_msg) from e
+            return wrapped_async
+        else:
 
-                    raise
-
-                raise
-
-        return wrapper
-
-    return decorator
-
-
-T_co = tp.TypeVar("T_co", covariant=True)
-
-
-def handle_exception_async(
-    source_exception: type[Exception],
-    target_exception: type[NexusServerError] | None = None,
-    message: str = "An error occurred",
-    reraise: bool = True,
-    default_return: tp.Any = None,
-) -> abc.Callable[
-    [abc.Callable[P, abc.Coroutine[tp.Any, tp.Any, T]]], abc.Callable[P, abc.Coroutine[tp.Any, tp.Any, T]]
-]:
-    def decorator(
-        func: abc.Callable[P, abc.Coroutine[tp.Any, tp.Any, T]],
-    ) -> abc.Callable[P, abc.Coroutine[tp.Any, tp.Any, T]]:
-        @functools.wraps(func)
-        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            try:
-                return await func(*args, **kwargs)
-            except Exception as e:
-                if isinstance(e, source_exception):
-                    error_msg = f"{message}: {str(e)}"
-                    logger.exception(error_msg)
-
+            def wrapped_sync(*a, **k):
+                try:
+                    return fn(*a, **k)
+                except source_exception as e:
+                    full = f"{message}: {e}"
+                    logger.exception(full)
                     if not reraise:
-                        return tp.cast(T, default_return)
+                        return default_return
+                    raise (target_exception or type(e))(message=full) from e
 
-                    if target_exception is not None:
-                        new_err_msg = f"{error_msg} (converted from {type(e).__name__})"
-                        raise target_exception(message=new_err_msg) from e
+            return wrapped_sync
 
-                    raise
-
-                raise
-
-        return wrapper
-
-    return decorator
+    return deco

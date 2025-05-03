@@ -76,20 +76,27 @@ async def create_job_endpoint(
     if job_request.run_immediately:
         running_jobs = db.list_jobs(conn=ctx.db, status="running")
         blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
-        all_gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
-
-        available_gpus = [g for g in all_gpus if gpu.is_gpu_available(g, ignore_blacklist=ignore_blacklist)]
 
         if gpu_idxs_list:
+            all_gpus = gpu.get_gpus(
+                running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
+            )
             requested_gpus = [g for g in all_gpus if g.index in gpu_idxs_list]
             if len(requested_gpus) != len(gpu_idxs_list):
                 missing = set(gpu_idxs_list) - {g.index for g in requested_gpus}
                 raise exc.GPUError(message=f"Requested GPUs not found: {missing}")
-            if any(not gpu.is_gpu_available(g, ignore_blacklist=ignore_blacklist) for g in requested_gpus):
-                unavailable = [
-                    g.index for g in requested_gpus if not gpu.is_gpu_available(g, ignore_blacklist=ignore_blacklist)
-                ]
-                raise exc.GPUError(message=f"Requested GPUs are not available: {unavailable}")
+
+        all_gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
+        available_gpus = [
+            g
+            for g in all_gpus
+            if gpu.is_gpu_available(
+                g, ignore_blacklist=ignore_blacklist, required=gpu_idxs_list if gpu_idxs_list else None
+            )
+        ]
+
+        if gpu_idxs_list and not available_gpus:
+            raise exc.GPUError(message=f"Requested GPUs are not available: {gpu_idxs_list}")
         elif job_request.num_gpus > len(available_gpus):
             raise exc.GPUError(
                 message=f"Requested {job_request.num_gpus} GPUs but only {len(available_gpus)} are available"
@@ -114,8 +121,8 @@ async def create_job_endpoint(
 
     db.add_job(conn=ctx.db, job=j)
     logger.info(format.format_job_action(j, action="added"))
-    logger.info(f"Added new job: {j.id}")
-    return j
+
+    return db.get_job(conn=ctx.db, job_id=j.id)
 
 
 @router.get("/v1/jobs/{job_id}", response_model=schemas.Job)
@@ -132,7 +139,7 @@ async def get_job_logs_endpoint(
     _job = db.get_job(conn=ctx.db, job_id=job_id)
     logs = await job.async_get_job_logs(job_dir=_job.dir, last_n_lines=last_n_lines) or ""
     logger.info(f"Retrieved logs for job {job_id}, size: {len(logs)} characters")
-    return models.JobLogsResponse(logs=logs)
+    return models.JobLogsResponse(data=logs)
 
 
 @db.safe_transaction

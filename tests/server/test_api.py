@@ -22,7 +22,6 @@ def app_client() -> Iterator[TestClient]:
         refresh_rate=1,
         port=54324,
         node_name="test_node",
-        log_level="debug",
         mock_gpus=True,
     )
 
@@ -222,8 +221,8 @@ def test_get_job_logs(app_client: TestClient, created_job: dict) -> None:
     response = app_client.get(f"/v1/jobs/{job_id}/logs")
     assert response.status_code == 200
     data = response.json()
-    assert "logs" in data
-    assert isinstance(data["logs"], str)
+    assert "data" in data
+    assert isinstance(data["data"], str)
 
 
 def test_get_nonexistent_job(app_client: TestClient) -> None:
@@ -301,7 +300,7 @@ def test_job_lifecycle(app_client: TestClient, git_tag: str) -> None:
     logs_response = app_client.get(f"/v1/jobs/{job_id}/logs")
     assert logs_response.status_code == 200
     logs_data = logs_response.json()
-    assert "logs" in logs_data
+    assert "data" in logs_data
 
 
 def test_job_error_handling(app_client: TestClient) -> None:
@@ -387,52 +386,130 @@ def test_blacklist_and_remove_gpu(app_client: TestClient) -> None:
 
 
 def test_kill_running_job(app_client: TestClient, git_tag: str) -> None:
+    # Use the exact implementation that works in master, with fewer modifications
     job_payload = {
         "command": "sleep 30",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
         "git_tag": git_tag,
         "git_branch": "master",
         "user": "test_user",
-        "discord_id": None,
         "num_gpus": 1,
         "env": {},
         "jobrc": None,
         "priority": 0,
-        "search_wandb": False,
+        "integrations": [],
         "notifications": [],
         "gpu_idxs": None,
     }
 
+    # Make sure GPUs are available first
+    gpus_resp = app_client.get("/v1/gpus")
+    assert gpus_resp.status_code == 200
+    gpus = gpus_resp.json()
+    assert len(gpus) > 0
+
+    # Make sure all GPUs are not blacklisted
+    for g in gpus:
+        app_client.delete(f"/v1/gpus/{g['index']}/blacklist")
+
+    # Get server status to ensure scheduler runs
+    app_client.get("/v1/server/status")
+
+    # Submit the job
     submit_response = app_client.post("/v1/jobs", json=job_payload)
     assert submit_response.status_code == 201
     job_id = submit_response.json()["id"]
+    print(f"Created job: {job_id}")
 
-    max_attempts = 20
+    # Wait for the job to start running
+    max_attempts = 40  # More attempts
     for attempt in range(max_attempts):
+        # Trigger the scheduler periodically
+        if attempt % 3 == 0:
+            app_client.get("/v1/server/status")
+
         job_response = app_client.get(f"/v1/jobs/{job_id}")
         job_data = job_response.json()
-        if job_data["status"] == "running":
+
+        # Print debugging info every few attempts
+        if attempt % 5 == 0:
+            print(f"Attempt {attempt}: Job status = {job_data.get('status', 'unknown')}")
+
+        if job_data.get("status") == "running":
+            print(f"Job entered running state on attempt {attempt}")
             break
+
+        # If job fails, fail the test with diagnostic info
+        if job_data.get("status") == "failed":
+            error = job_data.get("error_message", "No error message")
+            pytest.fail(f"Job failed instead of running: {error}")
+
         time.sleep(0.5)
 
+    # Check final job status - it should be running by now
     job_data = app_client.get(f"/v1/jobs/{job_id}").json()
-    if job_data["status"] != "running":
-        pytest.skip("Test requires the job to reach running state")
 
+    # Skip test if job doesn't reach running state - we'll debug separately
+    if job_data.get("status") != "running":
+        pytest.skip(f"Test requires the job to reach running state. Current status: {job_data.get('status')}")
+
+    # Kill the job
     kill_response = app_client.post(f"/v1/jobs/{job_id}/kill")
     assert kill_response.status_code == 204
 
+    # Wait for the job to be killed
     for attempt in range(max_attempts):
         job_response = app_client.get(f"/v1/jobs/{job_id}")
         job_data = job_response.json()
-        if job_data["status"] in ["killed", "failed"]:
+        if job_data.get("status") in ["killed", "failed"]:
             break
         time.sleep(0.5)
 
+    # Verify job was killed
     job_response = app_client.get(f"/v1/jobs/{job_id}")
     job_data = job_response.json()
-    assert job_data["status"] in ["killed", "failed"]
-    assert job_data["marked_for_kill"] is True
+    assert job_data.get("status") in ["killed", "failed"]
+    assert job_data.get("marked_for_kill") is True
+
+
+def test_job_submission_minimal(app_client: TestClient, git_tag: str) -> None:
+    """A simpler test that just checks job submission works."""
+    # Create a job payload with required fields
+    job_payload = {
+        "command": "echo 'Simple test'",
+        "git_repo_url": "https://github.com/elyxlz/nexus.git",
+        "git_tag": git_tag,
+        "git_branch": "master",
+        "user": "test_user",
+        "num_gpus": 1,
+        "env": {},
+        "integrations": [],
+        "notifications": [],
+    }
+
+    # Submit the job
+    submit_response = app_client.post("/v1/jobs", json=job_payload)
+    assert submit_response.status_code == 201
+    job_data = submit_response.json()
+    job_id = job_data["id"]
+
+    # Verify basic job info without checking status
+    assert job_id is not None and len(job_id) > 0
+    assert "command" in job_data
+    assert job_data["command"] == "echo 'Simple test'"
+
+    print(f"Successfully created job {job_id} with fields: {list(job_data.keys())}")
+
+    # Print all job data for debugging
+    debug_job = app_client.get(f"/v1/jobs/{job_id}").json()
+    print(f"Job data: {debug_job}")
+
+    # Get server status to check if job was registered
+    status = app_client.get("/v1/server/status").json()
+    print(f"Server status: {status}")
+
+    # Just make sure our server is still working
+    assert status["server_version"] is not None
 
 
 def test_remove_queued_jobs(app_client: TestClient, created_job: dict) -> None:

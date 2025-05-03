@@ -100,15 +100,20 @@ def _get_mock_gpus(running_jobs: list[schemas.Job], blacklisted_gpus: list[int])
     ]
 
     for gpu in mock_gpus:
-        logger.debug(f"Mock GPU {gpu.index} availability: {is_gpu_available(gpu)}")
+        basic_availability = not gpu.is_blacklisted and gpu.running_job_id is None and gpu.process_count == 0
+        logger.debug(f"Mock GPU {gpu.index} availability: {basic_availability}")
 
     logger.debug(f"Total mock GPUs generated: {len(mock_gpus)}")
     return mock_gpus
 
 
-def is_gpu_available(gpu_info: GpuInfo, ignore_blacklist: bool = False) -> bool:
-    blacklist_check = True if ignore_blacklist else not gpu_info.is_blacklisted
-    return blacklist_check and gpu_info.running_job_id is None and gpu_info.process_count == 0
+def is_gpu_available(gpu_info: GpuInfo, ignore_blacklist: bool = False, required: list[int] | None = None) -> bool:
+    return (
+        (ignore_blacklist or not gpu_info.is_blacklisted)
+        and gpu_info.running_job_id is None
+        and gpu_info.process_count == 0
+        and (not required or not len(required) or gpu_info.index in required)
+    )
 
 
 @exc.handle_exception(ValueError, exc.GPUError, message="Error parsing GPU pmon line", reraise=False)

@@ -23,7 +23,7 @@ SYSTEMD_SERVICE_FILENAME = "nexus-server.service"
 MARKER_SYSTEM = SYSTEM_SERVER_DIR / "nexus_server.json"
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class InstallationInfo:
     version: str
     install_date: str
@@ -236,7 +236,6 @@ def create_interactive_config(default_config: config.NexusServerConfig) -> confi
         server_dir=default_config.server_dir,
         port=port,
         node_name=node_name,
-        log_level=default_config.log_level,
     )
 
 

@@ -105,7 +105,7 @@ def get_job_logs(job_id: str, last_n_lines: int | None = None) -> str:
         params["last_n_lines"] = last_n_lines
     response = requests.get(f"{get_api_base_url()}/jobs/{job_id}/logs", params=params)
     response.raise_for_status()
-    return response.json().get("logs", "")
+    return response.json().get("data", "")
 
 
 @handle_api_errors
