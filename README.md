@@ -3,7 +3,6 @@
 ### 🟢 Easy
 
 - [ ] Support `{RANDINT}` syntax in commands
-- [ ] Put git token authentication and cloning stuff inside job script so that we get logs
 - [ ] Command autocomplete
 - [ ] Fix `wandb` search fallback
 
@@ -15,7 +14,6 @@
 - [ ] Git: make tagging optional
 - [ ] Gracefully skip pushing tag if repo isn't owned
 - [ ] Bug: `nx remove` repeats jobs multiple times
-- [ ] Kill job responsiveness: reduce lag when killing/refreshing
 - [ ] Support CPU-only jobs
 - [ ] Track per-job resource allocation in metadata
 - [ ] Documentation

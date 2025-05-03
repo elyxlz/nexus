@@ -342,7 +342,7 @@ async def async_get_job_logs(job_dir: pl.Path | None, last_n_lines: int | None =
     if not logs.exists():
         return None
 
-    return _read_log_file(logs, last_n_lines)
+    return await asyncio.to_thread(_read_log_file, logs, last_n_lines)
 
 
 @exc.handle_exception(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
