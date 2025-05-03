@@ -29,7 +29,7 @@ def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
         allow_headers=["*"],
     )
 
-    def _register_handler(app, exc_cls, status, *, level="warning"):
+    def _register_handler(app: fa.FastAPI, exc_cls: type, status: int, *, level: str = "warning"):
         @app.exception_handler(exc_cls)
         async def _h(_, err):
             if isinstance(err, ValidationError):
@@ -43,11 +43,11 @@ def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
 
             getattr(logger, level)(f"{code} – {msg}")
             return JSONResponse(status_code=sc, content={"error": code, "message": msg, "status_code": sc, **body})
-            
-    _register_handler(app, exc.NexusServerError, 500, "error")
-    _register_handler(app, exc.NotFoundError, 404, "warning")
-    _register_handler(app, exc.InvalidRequestError, 400, "warning")
-    _register_handler(app, ValidationError, 422, "warning")
+
+    _register_handler(app, exc.NexusServerError, 500, level="error")
+    _register_handler(app, exc.NotFoundError, 404, level="warning")
+    _register_handler(app, exc.InvalidRequestError, 400, level="warning")
+    _register_handler(app, ValidationError, 422, level="warning")
 
     @contextlib.asynccontextmanager
     async def lifespan(app: fa.FastAPI):

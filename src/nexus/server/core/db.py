@@ -1,8 +1,6 @@
 import dataclasses as dc
 import functools
-import inspect
 import json
-import operator
 import pathlib as pl
 import re
 import sqlite3
@@ -76,44 +74,30 @@ def _parse_json(json_obj: str | None) -> dict[str, str]:
 
 
 _JOB_COLS = tuple(f.name for f in dc.fields(schemas.Job))
-
-_INSERT_SQL = f"""
-    INSERT INTO jobs ({', '.join(_JOB_COLS)})
-    VALUES ({', '.join(['?'] * len(_JOB_COLS))})
-"""
+_INSERT_SQL = f"INSERT INTO jobs VALUES ({','.join(['?'] * len(_JOB_COLS))})"
 
 _UPDATE_SQL = f"""
-    UPDATE jobs SET {', '.join(f"{col} = ?" for col in _JOB_COLS[1:])}
+    UPDATE jobs SET {", ".join(f"{col} = ?" for col in _JOB_COLS[1:])}
     WHERE id = ?
 """
 
+
 def _job_to_row(job: schemas.Job) -> tuple:
-    # First build a dict with all values converted to DB-friendly format
-    result = {}
-    
-    # Convert lists to strings
-    result["gpu_idxs"] = ",".join(str(i) for i in job.gpu_idxs)
-    result["integrations"] = ",".join(job.integrations)
-    result["notifications"] = ",".join(job.notifications)
-    
-    # Convert booleans to integers
-    result["marked_for_kill"] = int(job.marked_for_kill)
-    result["ignore_blacklist"] = int(job.ignore_blacklist)
-    
-    # Convert Path to string
-    result["dir"] = str(job.dir) if job.dir else None
-    
-    # Convert dicts to JSON
-    result["env"] = json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env)
-    result["notification_messages"] = json.dumps(job.notification_messages)
-    
-    # Add all fields directly from job
-    for field in _JOB_COLS:
-        if field not in result:
-            result[field] = getattr(job, field)
-    
-    # Return values in same order as _JOB_COLS
-    return tuple(result[col] for col in _JOB_COLS)
+    d = dc.asdict(job)
+    d.update(
+        {
+            "gpu_idxs": ",".join(map(str, job.gpu_idxs)),
+            "integrations": ",".join(job.integrations),
+            "notifications": ",".join(job.notifications),
+            "marked_for_kill": int(job.marked_for_kill),
+            "ignore_blacklist": int(job.ignore_blacklist),
+            "dir": str(job.dir) if job.dir else None,
+            "env": json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env),
+            "notification_messages": json.dumps(job.notification_messages),
+        }
+    )
+    return tuple(d[c] for c in _JOB_COLS)
+
 
 def _row_to_job(row: sqlite3.Row) -> schemas.Job:
     return schemas.Job(

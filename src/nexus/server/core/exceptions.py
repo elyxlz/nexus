@@ -1,7 +1,5 @@
-import functools
 import inspect
 import typing as tp
-from collections import abc
 
 from nexus.server.utils import logger
 
@@ -94,36 +92,22 @@ class NotificationError(NexusServerError):
 T = tp.TypeVar("T")
 P = tp.ParamSpec("P")  # This captures the parameter specification of the wrapped function
 
-def handle_exception(
-    source_exception: type[Exception],
-    target_exception: type[NexusServerError] | None = None,
-    message: str = "An error occurred",
-    reraise: bool = True,
-    default_return: tp.Any = None,
-) -> tp.Callable[[tp.Callable[P, T]], tp.Callable[P, T]]:
-    def decorator(func: tp.Callable[P, T]) -> tp.Callable[P, T]:
-        @functools.wraps(func)
-        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+
+def handle_exception(source_exception, target_exception=None, *, message="error", reraise=True, default_return=None):
+    def deco(fn):
+        async def run(*a, **k):
             try:
-                return await func(*args, **kwargs) if inspect.iscoroutinefunction(func) else func(*args, **kwargs)
-            except Exception as e:
-                if not isinstance(e, source_exception):
-                    raise
-                    
-                error_msg = f"{message}: {str(e)}"
-                logger.exception(error_msg)
-
+                return await fn(*a, **k) if inspect.iscoroutinefunction(fn) else fn(*a, **k)
+            except source_exception as e:
+                full = f"{message}: {e}"
+                logger.exception(full)
                 if not reraise:
-                    return tp.cast(T, default_return)
+                    return default_return
+                raise (target_exception or type(e))(message=full) from e
 
-                if target_exception is not None:
-                    new_err_msg = f"{error_msg} (converted from {type(e).__name__})"
-                    raise target_exception(message=new_err_msg) from e
+        return run
 
-                raise
-                
-        return wrapper
-    return decorator
+    return deco
 
 
 # For backward compatibility

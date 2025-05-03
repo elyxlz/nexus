@@ -6,11 +6,11 @@ from nexus.server.core import schemas
 
 __all__ = [
     "SingleFieldResponse",
-    "JobRequest", 
+    "JobRequest",
     "JobUpdateRequest",
     "JobListRequest",
     "JobLogsResponse",
-    "GpuActionResponse", 
+    "GpuActionResponse",
     "GpuStatusResponse",
     "ServerStatusResponse",
     "HealthResponse",
@@ -29,14 +29,17 @@ class FrozenBaseModel(pyd.BaseModel):
 
 
 T = tp.TypeVar("T")
+
+
 class SingleFieldResponse(FrozenBaseModel, tp.Generic[T]):
     data: T
+
 
 # Only keep aliases actually used by router endpoints
 JobLogsResponse = SingleFieldResponse[str]
 
 
-def _check_required_vars(kinds: list[str], env: dict[str, str], for_type: str = "") -> None:
+def _check_required_vars(kinds: tp.Sequence[str], env: dict[str, str], for_type: str = "") -> None:
     for kind in kinds:
         for key in REQUIRED_ENV_VARS[kind]:
             if key not in env:

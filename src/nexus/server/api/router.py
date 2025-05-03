@@ -76,24 +76,27 @@ async def create_job_endpoint(
     if job_request.run_immediately:
         running_jobs = db.list_jobs(conn=ctx.db, status="running")
         blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
-        
+
         if gpu_idxs_list:
             # First check if all requested GPUs exist
-            all_gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
+            all_gpus = gpu.get_gpus(
+                running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
+            )
             requested_gpus = [g for g in all_gpus if g.index in gpu_idxs_list]
             if len(requested_gpus) != len(gpu_idxs_list):
                 missing = set(gpu_idxs_list) - {g.index for g in requested_gpus}
                 raise exc.GPUError(message=f"Requested GPUs not found: {missing}")
-        
+
         # Check for availability of GPUs
-        available_gpus = gpu.get_available_gpus(
-            running_jobs=running_jobs,
-            blacklisted_gpus=blacklisted,
-            mock_gpus=ctx.config.mock_gpus,
-            ignore_blacklist=ignore_blacklist,
-            required_gpu_idxs=gpu_idxs_list if gpu_idxs_list else None,
-        )
-        
+        all_gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
+        available_gpus = [
+            g
+            for g in all_gpus
+            if gpu.is_gpu_available(
+                g, ignore_blacklist=ignore_blacklist, required=gpu_idxs_list if gpu_idxs_list else None
+            )
+        ]
+
         if gpu_idxs_list and not available_gpus:
             raise exc.GPUError(message=f"Requested GPUs are not available: {gpu_idxs_list}")
         elif job_request.num_gpus > len(available_gpus):

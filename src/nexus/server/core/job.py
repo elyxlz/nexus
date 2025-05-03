@@ -5,7 +5,6 @@ import hashlib
 import os
 import pathlib as pl
 import re
-import shlex
 import shutil
 import subprocess
 import tempfile
@@ -83,15 +82,15 @@ def _build_script_content(
     clone_url = git_repo_url
     if git_token and git_repo_url.startswith("https://"):
         clone_url = git_repo_url.replace("https://", f"https://{git_token}@")
-    
-    askpass_export = f'export GIT_ASKPASS="{askpass_path}"' if askpass_path else ""
+
+    askpass = f'export GIT_ASKPASS="{askpass_path}"' if askpass_path else ""
     prefix = jobrc.strip() + "\n" if jobrc and jobrc.strip() else ""
-    
+
     return textwrap.dedent(f"""
         #!/bin/bash
         export GIT_TERMINAL_PROMPT=0
-        {askpass_export}
-        git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet {shlex.quote(clone_url)} {job_repo_dir}
+        {askpass}
+        git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet {clone_url} {job_repo_dir}
         cd {job_repo_dir}
         script -q -e -f -c "{prefix}{command}" {log_file}
     """).strip()

@@ -700,42 +700,46 @@ Configuration can also be set using environment variables (prefix=NS_):
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
-    # Command specifications using tuples for compact definition
-    _CMDS = (
-        ("install", "Install Nexus server", (
+    # Command specifications using declarative map
+    for name, opts in {
+        "install": [
             ("--config", {"help": "Path to config file for non-interactive setup"}),
             ("--no-interactive", {"action": "store_true", "help": "Skip interactive configuration"}),
             ("--force", {"action": "store_true", "help": "Force installation even if already installed"}),
             ("--no-start", {"action": "store_true", "help": "Don't start server after installation"}),
-        )),
-        ("uninstall", "Uninstall Nexus server", (
+        ],
+        "uninstall": [
             ("--keep-config", {"action": "store_true", "help": "Keep configuration files when uninstalling"}),
             ("--force", {"action": "store_true", "help": "Force uninstallation even if not installed"}),
-            ("-y", {"aliases": ["--yes"], "action": "store_true", "help": "Auto-terminate processes without prompting"}),
-        )),
-        ("config", "Manage Nexus server configuration", (
+            (
+                "-y",
+                {"aliases": ["--yes"], "action": "store_true", "help": "Auto-terminate processes without prompting"},
+            ),
+        ],
+        "config": [
             ("--edit", {"action": "store_true", "help": "Edit configuration in text editor"}),
-        )),
-        ("status", "Show Nexus server status", ()),
-        ("logs", "View server logs", (
+        ],
+        "status": [],
+        "logs": [
             ("-f", {"aliases": ["--follow"], "action": "store_true", "help": "Follow log output"}),
             ("-u", {"aliases": ["--unit"], "action": "store_true", "help": "Use journalctl unit filter"}),
             ("-n", {"aliases": ["--lines"], "type": int, "default": 50, "help": "Number of log lines to show"}),
-        )),
-        ("restart", "Restart the server", (("-y", {"aliases": ["--yes"], "action": "store_true", "help": "Skip confirmation"}),)),
-        ("stop", "Stop the server", (("-y", {"aliases": ["--yes"], "action": "store_true", "help": "Skip confirmation"}),)),
-        ("start", "Start the server", ()),
-    )
-    
-    # Create subparsers based on command specs
-    for name, help_, args in _CMDS:
-        cmd_parser = subparsers.add_parser(name, help=help_)
-        for flag, kwargs in args:
-            if "aliases" in kwargs:
-                aliases = kwargs.pop("aliases")
-                cmd_parser.add_argument(flag, *aliases, **kwargs)
+        ],
+        "restart": [
+            ("-y", {"aliases": ["--yes"], "action": "store_true", "help": "Skip confirmation"}),
+        ],
+        "stop": [
+            ("-y", {"aliases": ["--yes"], "action": "store_true", "help": "Skip confirmation"}),
+        ],
+        "start": [],
+    }.items():
+        p = subparsers.add_parser(name, help=f"{name} command")
+        for flag, kw in opts:
+            if "aliases" in kw:
+                aliases = kw.pop("aliases")
+                p.add_argument(flag, *aliases, **kw)
             else:
-                cmd_parser.add_argument(flag, **kwargs)
+                p.add_argument(flag, **kw)
 
     return parser
 

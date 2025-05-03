@@ -6,7 +6,7 @@ from nexus.server.core import exceptions as exc
 from nexus.server.core import schemas
 from nexus.server.utils import logger
 
-__all__ = ["GpuInfo", "get_gpus", "is_gpu_available", "get_available_gpus"]
+__all__ = ["GpuInfo", "get_gpus", "is_gpu_available"]
 
 _nvidia_smi_cache = {"timestamp": 0.0, "output": "", "processes": {}}
 
@@ -106,9 +106,14 @@ def _get_mock_gpus(running_jobs: list[schemas.Job], blacklisted_gpus: list[int])
     return mock_gpus
 
 
-def is_gpu_available(gpu_info: GpuInfo, ignore_blacklist: bool = False) -> bool:
+def is_gpu_available(gpu_info: GpuInfo, ignore_blacklist: bool = False, required: list[int] | None = None) -> bool:
     blacklist_check = True if ignore_blacklist else not gpu_info.is_blacklisted
-    return blacklist_check and gpu_info.running_job_id is None and gpu_info.process_count == 0
+    return (
+        blacklist_check
+        and gpu_info.running_job_id is None
+        and gpu_info.process_count == 0
+        and (required is None or gpu_info.index in required)
+    )
 
 
 @exc.handle_exception(ValueError, exc.GPUError, message="Error parsing GPU pmon line", reraise=False)
@@ -184,27 +189,3 @@ def get_gpus(running_jobs: list[schemas.Job], blacklisted_gpus: list[int], mock_
         logger.warning("No GPUs detected on the system")
 
     return gpus
-
-
-def get_available_gpus(
-    running_jobs: list[schemas.Job], 
-    blacklisted_gpus: list[int], 
-    mock_gpus: bool,
-    ignore_blacklist: bool = False,
-    required_gpu_idxs: list[int] | None = None,
-) -> list[GpuInfo]:
-    all_gpus = get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted_gpus, mock_gpus=mock_gpus)
-    available_gpus = [g for g in all_gpus if is_gpu_available(g, ignore_blacklist=ignore_blacklist)]
-    
-    if not required_gpu_idxs:
-        return available_gpus
-        
-    # Quick check if all required GPUs are available
-    available_indices = {g.index for g in available_gpus}
-    if not all(idx in available_indices for idx in required_gpu_idxs):
-        unavailable = [idx for idx in required_gpu_idxs if idx not in available_indices]
-        logger.debug(f"Required GPU indices {required_gpu_idxs}, but {unavailable} unavailable")
-        return []
-    
-    # Return only the GPUs that were specifically requested
-    return [g for g in all_gpus if g.index in required_gpu_idxs]
