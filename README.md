@@ -4,7 +4,6 @@
 
 - [ ] Display memory usage in `nx health`
 - [ ] Support `{RANDINT}` syntax in commands
-- [ ] Avoid auto-priority on multi-GPU jobs, keep the same as single gpu jobs
 - [ ] Put git token authentication and cloning stuff inside job script so that we get logs
 - [ ] Command autocomplete
 - [ ] Fix `wandb` search fallback
