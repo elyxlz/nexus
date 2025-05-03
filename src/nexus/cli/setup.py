@@ -144,7 +144,6 @@ def setup_notifications(cfg: config.NexusCliConfig) -> tuple[config.NexusCliConf
             if utils.ask_yes_no(f"Enable {notification_type} notifications by default?"):
                 default_notifications.append(notification_type)
 
-        # Save after notifications configuration
         updated_config = cfg.copy(update={"default_notifications": default_notifications})
         config.save_config(updated_config)
         print(colored("Notification preferences saved!", "green"))
@@ -159,7 +158,6 @@ def setup_notifications(cfg: config.NexusCliConfig) -> tuple[config.NexusCliConf
             if utils.ask_yes_no(f"Enable {integration_type} integration by default?"):
                 default_integrations.append(integration_type)
 
-        # Save after integrations configuration
         updated_config = cfg.copy(update={"default_integrations": default_integrations})
         config.save_config(updated_config)
         print(colored("Integration preferences saved!", "green"))
@@ -177,7 +175,6 @@ def setup_notifications(cfg: config.NexusCliConfig) -> tuple[config.NexusCliConf
         )
         env_vars["GIT_TOKEN"] = git_token
 
-        # Save environment variables immediately after Git token setup
         save_env_vars(env_vars)
         print(colored("Git token saved!", "green"))
 
@@ -204,7 +201,6 @@ def setup_non_interactive() -> None:
         config.create_default_config()
         cfg = config.load_config()
 
-    # Save config immediately
     config.save_config(cfg)
     print(colored("Configuration saved immediately!", "green"))
 
@@ -244,7 +240,6 @@ def setup_wizard() -> None:
         ),
     )
 
-    # Save configuration immediately after basic setup
     config.save_config(cfg)
     print(colored("Basic configuration saved!", "green"))
 
