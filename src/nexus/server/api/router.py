@@ -104,6 +104,7 @@ async def create_job_endpoint(
                 message=f"Requested {job_request.num_gpus} GPUs but only {len(available_gpus)} are available"
             )
 
+    # Create job with correct status="queued"
     j = job.create_job(
         command=job_request.command,
         git_repo_url=norm_url,

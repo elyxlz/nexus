@@ -93,6 +93,8 @@ async def _for_queued_jobs(ctx: context.NexusServerContext):
     available_gpu_idxs = [g.index for g in available_gpus]
 
     if _job.gpu_idxs:
+        if not all(idx in available_gpu_idxs for idx in _job.gpu_idxs):
+            return
         job_gpu_idxs = _job.gpu_idxs
         logger.info(f"Using user-specified GPU indices {job_gpu_idxs} for job {_job.id}")
     elif _job.num_gpus <= len(available_gpu_idxs):

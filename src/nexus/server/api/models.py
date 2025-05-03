@@ -10,6 +10,8 @@ __all__ = [
     "JobUpdateRequest",
     "JobListRequest",
     "JobLogsResponse",
+    "ServerLogsResponse",
+    "ServerActionResponse",
     "GpuActionResponse",
     "GpuStatusResponse",
     "ServerStatusResponse",
@@ -37,6 +39,8 @@ class SingleFieldResponse(FrozenBaseModel, tp.Generic[T]):
 
 # Only keep aliases actually used by router endpoints
 JobLogsResponse = SingleFieldResponse[str]
+ServerLogsResponse = SingleFieldResponse[str]
+ServerActionResponse = SingleFieldResponse[str]
 
 
 def _check_required_vars(kinds: tp.Sequence[str], env: dict[str, str], for_type: str = "") -> None:
