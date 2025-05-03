@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import psutil
 import speedtest
 
-HealthStatus = tp.Literal["healthy", "degraded", "unhealthy"]
+HealthStatus = tp.Literal["healthy", "under_load", "unhealthy"]
 
 
 @dc.dataclass(frozen=True)
@@ -171,7 +171,7 @@ def get_health_status(score: float) -> HealthStatus:
     if score >= 75:
         return "healthy"
     elif score >= 40:
-        return "degraded"
+        return "under_load"
     else:
         return "unhealthy"
 

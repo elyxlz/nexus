@@ -2,20 +2,12 @@
 
 ### 🟢 Easy
 
-- [ ] Improve setup messaging: clarify how to say **no** when pressing Enter implies yes
-- [ ] Remove `log_level` from config
-- [ ] Save config immediately during `nx setup`
-- [ ] Show number of GPUs requested in `nx queue`
-- [ ] Put Nexus job ID in `tmpdir`
-- [ ] Warn user when health is low
-- [ ] Rename "degraded" → "under load"
 - [ ] Display memory usage in `nx health`
-- [ ] Fix `wandb` search fallback
 - [ ] Support `{RANDINT}` syntax in commands
-- [ ] Avoid auto-priority on multi-GPU jobs
-- [ ] Improve startup failure error messages
-- [ ] Better CLI error messages (avoid raw APIError)
+- [ ] Avoid auto-priority on multi-GPU jobs, keep the same as single gpu jobs
+- [ ] Put git token authentication and cloning stuff inside job script so that we get logs
 - [ ] Command autocomplete
+- [ ] Fix `wandb` search fallback
 
 ### 🟡 Medium
 
@@ -37,4 +29,3 @@
 - [ ] Multi-node support (DHT + DQLite for coordination/auth)
 - [ ] Full job execution isolation (process/network/filesystem)
 - [ ] Create a dedicated Linux user per Nexus user
-
