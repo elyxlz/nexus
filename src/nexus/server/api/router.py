@@ -237,6 +237,8 @@ async def health_check_endpoint(
     if not detailed:
         return models.HealthResponse()
 
+    # Only force refresh if explicitly requested, otherwise use cached results
+    # The system module has its own caching mechanism
     health_result = system.check_health(force_refresh=refresh)
     return models.HealthResponse(
         alive=True,
