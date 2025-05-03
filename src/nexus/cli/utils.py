@@ -159,15 +159,17 @@ def confirm_action(action_description: str, bypass: bool = False) -> bool:
     if bypass:
         return True
 
-    response = input(f"\n{colored('?', 'blue', attrs=['bold'])} {action_description} [y/N] ").lower().strip()
+    options = f"[{colored('y', 'green')}/{colored('N', 'red')}]"
+    response = input(f"\n{colored('?', 'blue', attrs=['bold'])} {action_description} {options} [press ENTER for {colored('NO', 'red')}]: ").lower().strip()
     print()  # newline
     return response == "y"
 
 
 def ask_yes_no(question: str, default: bool = True) -> bool:
     default_text = "YES" if default else "NO"
-    default_prompt = f"[press ENTER for {colored(default_text, 'cyan')}]"
-    prompt = f"{colored('?', 'blue', attrs=['bold'])} {question} {default_prompt}: "
+    options = f"[{colored('y', 'green')}/{colored('n', 'red')}]" 
+    default_prompt = f"[press ENTER for {colored(default_text, 'cyan')}, type {colored('n', 'red')} for no]" if default else f"[press ENTER for {colored(default_text, 'cyan')}, type {colored('y', 'green')} for yes]"
+    prompt = f"{colored('?', 'blue', attrs=['bold'])} {question} {options} {default_prompt}: "
 
     while True:
         answer = input(prompt).strip().lower()
@@ -186,7 +188,7 @@ def get_user_input(prompt: str, default: str = "", required: bool = False, mask_
     if default:
         default_display = f" [press ENTER for {colored(default, 'cyan')}]"
     else:
-        default_display = ""
+        default_display = required and " [required]" or ""
 
     while True:
         if mask_input:
