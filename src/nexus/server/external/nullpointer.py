@@ -4,7 +4,7 @@ from nexus.server.core import exceptions as exc
 from nexus.server.utils import logger
 
 
-@exc.handle_exception_async(
+@exc.handle_exception(
     Exception, exc.NotificationError, message="0x0.st upload failed", reraise=False, default_return=None
 )
 async def upload_text_to_nullpointer(text: str, instance_url: str = "https://0x0.st/") -> str | None:

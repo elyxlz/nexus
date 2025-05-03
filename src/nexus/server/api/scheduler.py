@@ -115,14 +115,14 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
     await _for_queued_jobs(ctx)
 
 
-@exc.handle_exception_async(Exception, message="Health check error", reraise=False)
+@exc.handle_exception(Exception, message="Health check error", reraise=False)
 async def check_system_health() -> None:
     health = system.check_health(force_refresh=False)
     if health.status == "unhealthy":
         logger.warning(f"System health is UNHEALTHY: score {health.score}")
 
 
-@exc.handle_exception_async(Exception, message="Scheduler error", reraise=False)
+@exc.handle_exception(Exception, message="Scheduler error", reraise=False)
 async def scheduler_loop(ctx: context.NexusServerContext) -> None:
     while True:
         await update_running_jobs(ctx=ctx)

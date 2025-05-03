@@ -91,12 +91,16 @@ def _build_script_content(
         clone_url = git_repo_url.replace("https://", f"https://{git_token}@")
     if askpass_path:
         script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
-    script_lines.append(
-        f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} --quiet '{clone_url}' '{job_repo_dir}'"
-    )
+    
+    script_lines.append(f'script -q -e -f -c "')
+    
+    script_lines.append(f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} '{clone_url}' '{job_repo_dir}'")
     script_lines.append(f"cd '{job_repo_dir}'")
+    
     prefix = jobrc.strip() + "\n" if jobrc and jobrc.strip() else ""
-    script_lines.append(f'script -q -e -f -c "{prefix}{command}" "{log_file}"')
+    script_lines.append(f"{prefix}{command}")
+    
+    script_lines.append(f'" "{log_file}"')
     return "\n".join(script_lines)
 
 
@@ -134,7 +138,7 @@ def _build_environment(gpu_idxs: list[int], job_env: dict[str, str]) -> dict[str
     return env
 
 
-@exc.handle_exception_async(Exception, message="Error determining exit code", reraise=False, default_return=None)
+@exc.handle_exception(Exception, message="Error determining exit code", reraise=False, default_return=None)
 async def _get_job_exit_code(job_id: str, job_dir: pl.Path | None) -> int | None:
     if job_dir is None:
         logger.warning(f"No directory specified for job {job_id}, cannot determine exit code")
@@ -166,8 +170,8 @@ def _parse_exit_code(last_line: str) -> int:
     return int(match.group(1))
 
 
-@exc.handle_exception_async(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
-@exc.handle_exception_async(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
+@exc.handle_exception(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
+@exc.handle_exception(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
 async def _launch_screen_process(session_name: str, script_path: str, env: dict[str, str]) -> int:
     abs_script_path = pl.Path(script_path).absolute()
 
@@ -247,7 +251,7 @@ def create_job(
     )
 
 
-@exc.handle_exception_async(Exception, exc.JobError, message="Failed to start job")
+@exc.handle_exception(Exception, exc.JobError, message="Failed to start job")
 async def async_start_job(job: schemas.Job, gpu_idxs: list[int], server_dir: pl.Path | None) -> schemas.Job:
     job_dir = pl.Path(tempfile.mkdtemp(prefix=f"nexus-job-{job.id}-"))
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -339,7 +343,7 @@ async def async_get_job_logs(job_dir: pl.Path | None, last_n_lines: int | None =
     return _read_log_file(logs, last_n_lines)
 
 
-@exc.handle_exception_async(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
+@exc.handle_exception(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
 async def kill_job(job: schemas.Job) -> None:
     if job.dir is not None:
         job_dir = str(job.dir)

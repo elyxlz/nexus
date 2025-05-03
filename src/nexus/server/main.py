@@ -15,7 +15,7 @@ def _run_server(server_dir: pl.Path | None) -> None:
 
     setup.display_config(ctx.config)
 
-    uvicorn.run(api_app, host="localhost", port=ctx.config.port, log_level=ctx.config.log_level)
+    uvicorn.run(api_app, host="localhost", port=ctx.config.port)
 
 
 def main() -> None:

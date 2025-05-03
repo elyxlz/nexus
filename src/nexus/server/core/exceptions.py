@@ -19,7 +19,6 @@ __all__ = [
     "InvalidRequestError",
     "InvalidJobStateError",
     "handle_exception",
-    "handle_exception_async",
 ]
 
 
@@ -123,7 +122,3 @@ def handle_exception(source_exception, target_exception=None, *, message="error"
             return wrapped_sync
 
     return deco
-
-
-# For backward compatibility
-handle_exception_async = handle_exception
