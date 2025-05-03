@@ -1,9 +1,11 @@
 import asyncio
 import dataclasses as dc
 import datetime as dt
+import time
+from datetime import datetime, timedelta
 
 from nexus.server.core import context, db, job
-from nexus.server.external import gpu, notifications, wandb_finder
+from nexus.server.external import gpu, notifications, wandb_finder, system
 from nexus.server.utils import format, logger
 
 __all__ = ["scheduler_loop"]
@@ -132,12 +134,42 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
     logger.info(f"Processed jobs from queue; remaining queued jobs: {remaining}")
 
 
+async def perform_autonomous_health_check():
+    """Perform a health check to refresh the cache if needed."""
+    try:
+        # Check if the health result is cached and still valid
+        cache_entry = system._cache.get("health_result")
+        
+        # If no cache or cache is expired, refresh the health check
+        if cache_entry is None or cache_entry.is_expired():
+            logger.info("Performing autonomous health check to refresh cache")
+            health_result = system.check_health(force_refresh=False)
+            
+            # Log a warning if the health status is unhealthy
+            if health_result.status == "unhealthy":
+                logger.warning(f"System health is UNHEALTHY with score {health_result.score}! "
+                              f"Jobs may fail or perform poorly.")
+    except Exception:
+        logger.exception("Autonomous health check encountered an error:")
+
+
 async def scheduler_loop(ctx: context.NexusServerContext):
+    # Initialize last health check time
+    last_health_check = time.time()
+    health_check_interval = 60 * 10  # Check health every 10 minutes
+    
     while True:
         try:
+            # Update jobs first
             await update_running_jobs(ctx=ctx)
             await update_wandb_urls(ctx=ctx)
             await start_queued_jobs(ctx=ctx)
+            
+            # Check if it's time to perform a health check
+            current_time = time.time()
+            if current_time - last_health_check > health_check_interval:
+                await perform_autonomous_health_check()
+                last_health_check = current_time
 
         except Exception:
             logger.exception("Scheduler encountered an error:")
