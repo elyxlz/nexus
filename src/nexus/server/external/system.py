@@ -188,11 +188,8 @@ def _calculate_health_result() -> HealthCheckResult:
 
 
 def check_health(force_refresh: bool = False) -> HealthCheckResult:
-    # Use a longer TTL for the final health result to avoid slow calls when not refreshing
-    # This means health checks will be cached longer than individual components
     if force_refresh and "health_result" in _cache:
         del _cache["health_result"]
-        # Also clear component caches when full refresh is requested
         if "disk_space" in _cache:
             del _cache["disk_space"]
         if "network_speed" in _cache:
@@ -200,5 +197,4 @@ def check_health(force_refresh: bool = False) -> HealthCheckResult:
         if "system_stats" in _cache:
             del _cache["system_stats"]
     
-    # Cache the full health result for 10 minutes
-    return _get_cached(key="health_result", default_factory=_calculate_health_result, ttl=timedelta(minutes=10))
+    return _get_cached(key="health_result", default_factory=_calculate_health_result, ttl=timedelta(minutes=5))
