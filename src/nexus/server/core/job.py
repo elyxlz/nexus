@@ -378,7 +378,6 @@ async def prepare_job_environment(
     log_file, job_repo_dir = await asyncio.to_thread(_create_directories, job.dir)
     env = await asyncio.to_thread(_build_environment, gpu_idxs, job.env)
     
-    # Get artifact data and write to bundle file
     artifact_bytes = db.get_artifact(ctx.db, job.artifact_id)
     bundle_path = job.dir / "code.bundle"
     await asyncio.to_thread(lambda: bundle_path.write_bytes(artifact_bytes))

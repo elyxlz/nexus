@@ -86,14 +86,11 @@ def run_job(
             raise
 
         if is_git_repo:
-            # Ensure the repo is clean
             utils.ensure_clean_repo()
             
-            # Get git repo URL for metadata
             result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
             git_repo_url = result.stdout.strip() or "unknown-url"
             
-            # Create and upload git bundle
             print(colored("Creating git bundle...", "blue"))
             artifact_data = utils.create_git_bundle()
             print(colored("Uploading git bundle...", "blue"))
@@ -263,14 +260,11 @@ def add_jobs(
             raise
 
         if is_git_repo:
-            # Ensure the repo is clean
             utils.ensure_clean_repo()
             
-            # Get git repo URL for metadata
             result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
             git_repo_url = result.stdout.strip() or "unknown-url"
             
-            # Create and upload git bundle
             print(colored("Creating git bundle...", "blue"))
             artifact_data = utils.create_git_bundle()
             print(colored("Uploading git bundle...", "blue"))
