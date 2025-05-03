@@ -19,7 +19,7 @@ _level_map = {
     "info": logging.INFO,
     "warning": logging.WARNING,
     "error": logging.ERROR,
-    "critical": logging.CRITICAL
+    "critical": logging.CRITICAL,
 }
 _log_level = _level_map.get(_env_log_level, logging.INFO)
 _logger.setLevel(_log_level)
