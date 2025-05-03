@@ -700,46 +700,39 @@ Configuration can also be set using environment variables (prefix=NS_):
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
-    # Command specifications using declarative map
-    for name, opts in {
-        "install": [
-            ("--config", {"help": "Path to config file for non-interactive setup"}),
-            ("--no-interactive", {"action": "store_true", "help": "Skip interactive configuration"}),
-            ("--force", {"action": "store_true", "help": "Force installation even if already installed"}),
-            ("--no-start", {"action": "store_true", "help": "Don't start server after installation"}),
-        ],
-        "uninstall": [
-            ("--keep-config", {"action": "store_true", "help": "Keep configuration files when uninstalling"}),
-            ("--force", {"action": "store_true", "help": "Force uninstallation even if not installed"}),
-            (
-                "-y",
-                {"aliases": ["--yes"], "action": "store_true", "help": "Auto-terminate processes without prompting"},
-            ),
-        ],
-        "config": [
-            ("--edit", {"action": "store_true", "help": "Edit configuration in text editor"}),
-        ],
-        "status": [],
-        "logs": [
-            ("-f", {"aliases": ["--follow"], "action": "store_true", "help": "Follow log output"}),
-            ("-u", {"aliases": ["--unit"], "action": "store_true", "help": "Use journalctl unit filter"}),
-            ("-n", {"aliases": ["--lines"], "type": int, "default": 50, "help": "Number of log lines to show"}),
-        ],
-        "restart": [
-            ("-y", {"aliases": ["--yes"], "action": "store_true", "help": "Skip confirmation"}),
-        ],
-        "stop": [
-            ("-y", {"aliases": ["--yes"], "action": "store_true", "help": "Skip confirmation"}),
-        ],
-        "start": [],
-    }.items():
-        p = subparsers.add_parser(name, help=f"{name} command")
-        for flag, kw in opts:
-            if "aliases" in kw:
-                aliases = kw.pop("aliases")
-                p.add_argument(flag, *aliases, **kw)
-            else:
-                p.add_argument(flag, **kw)
+    install_parser = subparsers.add_parser("install", help="Install Nexus server")
+    install_parser.add_argument("--config", help="Path to config file for non-interactive setup")
+    install_parser.add_argument("--no-interactive", action="store_true", help="Skip interactive configuration")
+    install_parser.add_argument("--force", action="store_true", help="Force installation even if already installed")
+    install_parser.add_argument("--no-start", action="store_true", help="Don't start server after installation")
+
+    uninstall_parser = subparsers.add_parser("uninstall", help="Uninstall Nexus server")
+    uninstall_parser.add_argument(
+        "--keep-config", action="store_true", help="Keep configuration files when uninstalling"
+    )
+    uninstall_parser.add_argument("--force", action="store_true", help="Force uninstallation even if not installed")
+    uninstall_parser.add_argument(
+        "--yes", "-y", action="store_true", help="Automatically terminate running processes without prompting"
+    )
+
+    config_parser = subparsers.add_parser("config", help="Manage Nexus server configuration")
+    config_parser.add_argument("--edit", action="store_true", help="Edit configuration in text editor")
+
+    subparsers.add_parser("status", help="Show Nexus server status")
+
+    # Server management commands
+    logs_parser = subparsers.add_parser("logs", help="View server logs")
+    logs_parser.add_argument("-f", "--follow", action="store_true", help="Follow log output")
+    logs_parser.add_argument("-u", "--unit", action="store_true", help="Use journalctl unit filter")
+    logs_parser.add_argument("-n", "--lines", type=int, default=50, help="Number of log lines to show")
+
+    restart_parser = subparsers.add_parser("restart", help="Restart the server")
+    restart_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+
+    stop_parser = subparsers.add_parser("stop", help="Stop the server")
+    stop_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+
+    subparsers.add_parser("start", help="Start the server")
 
     return parser
 
