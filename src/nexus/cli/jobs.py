@@ -31,6 +31,10 @@ def run_job(
         elif num_gpus:
             gpu_info = f" using {colored(str(num_gpus), 'cyan')} GPU(s)"
 
+        health = api_client.get_detailed_health(refresh=False)
+        if health.get("status") == "unhealthy":
+            utils.print_health_warning()
+
         if interactive:
             command = "bash"  # Use bash for interactive mode
             print(f"\n{colored('Starting interactive session:', 'blue', attrs=['bold'])}")
@@ -185,6 +189,10 @@ def add_jobs(
         expanded_commands = utils.expand_job_commands(commands, repeat=repeat)
         if not expanded_commands:
             return
+
+        health = api_client.get_detailed_health(refresh=False)
+        if health.get("status") == "unhealthy":
+            utils.print_health_warning()
 
         print(f"\n{colored('Adding the following jobs:', 'blue', attrs=['bold'])}")
         for cmd in expanded_commands:
@@ -741,6 +749,9 @@ def show_health(refresh: bool = False) -> None:
         status_color = "green" if status == "healthy" else "yellow" if status == "degraded" else "red"
         print(f"  {colored('•', 'blue')} Status: {colored(status, status_color)}")
 
+        if status == "unhealthy":
+            utils.print_health_warning()
+
         if health.get("score") is not None:
             score = health.get("score", 0)
             score_color = "green" if score > 0.8 else "yellow" if score > 0.5 else "red"
@@ -1021,6 +1032,10 @@ def print_status() -> None:
                     "yellow",
                 )
             )
+
+        health = api_client.get_detailed_health(refresh=False)
+        if health.get("status") == "unhealthy":
+            utils.print_health_warning()
 
         queued = status.get("queued_jobs", 0)
         running = status.get("running_jobs", 0)
