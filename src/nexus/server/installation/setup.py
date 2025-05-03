@@ -236,7 +236,6 @@ def create_interactive_config(default_config: config.NexusServerConfig) -> confi
         server_dir=default_config.server_dir,
         port=port,
         node_name=node_name,
-        log_level=default_config.log_level,
     )
 
 
