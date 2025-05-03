@@ -1,9 +1,11 @@
 import asyncio
 import dataclasses as dc
 import datetime as dt
+import time
+from datetime import datetime, timedelta
 
 from nexus.server.core import context, db, job
-from nexus.server.external import gpu, notifications, wandb_finder
+from nexus.server.external import gpu, notifications, wandb_finder, system
 from nexus.server.utils import format, logger
 
 __all__ = ["scheduler_loop"]
@@ -132,14 +134,19 @@ async def start_queued_jobs(ctx: context.NexusServerContext) -> None:
     logger.info(f"Processed jobs from queue; remaining queued jobs: {remaining}")
 
 
+@db.handle_exception_async(Exception, message="Health check encountered an error", reraise=False)
+async def check_system_health():
+    health_result = system.check_health(force_refresh=False)
+    if health_result.status == "unhealthy":
+        logger.warning(f"System health is UNHEALTHY: score {health_result.score}")
+
+
+@db.handle_exception_async(Exception, message="Scheduler encountered an error", reraise=False)
 async def scheduler_loop(ctx: context.NexusServerContext):
     while True:
-        try:
-            await update_running_jobs(ctx=ctx)
-            await update_wandb_urls(ctx=ctx)
-            await start_queued_jobs(ctx=ctx)
-
-        except Exception:
-            logger.exception("Scheduler encountered an error:")
+        await update_running_jobs(ctx=ctx)
+        await update_wandb_urls(ctx=ctx)
+        await start_queued_jobs(ctx=ctx)
+        await check_system_health()
 
         await asyncio.sleep(ctx.config.refresh_rate)
