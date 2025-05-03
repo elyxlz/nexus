@@ -76,7 +76,8 @@ def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app: fa.FastAPI):
         logger.info("Scheduler starting")
-        scheduler_task = asyncio.create_task(scheduler.scheduler_loop(ctx=app.state.ctx))
+        coro = scheduler.scheduler_loop(ctx=app.state.ctx)
+        scheduler_task = asyncio.create_task(coro)
         try:
             yield
         finally:
