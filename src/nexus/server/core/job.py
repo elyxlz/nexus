@@ -366,7 +366,7 @@ def get_queue(queued_jobs: list[schemas.Job]) -> list[schemas.Job]:
     if not queued_jobs:
         return []
 
-    sorted_jobs = sorted(queued_jobs, key=lambda x: (x.priority, x.num_gpus), reverse=True)
+    sorted_jobs = sorted(queued_jobs, key=lambda x: (x.priority), reverse=True)
 
     return sorted_jobs
 
