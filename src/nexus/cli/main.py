@@ -388,11 +388,8 @@ def handle_jobrc(args) -> None:
 
 
 def handle_setup(args) -> None:
-    if hasattr(args, "non_interactive") and args.non_interactive:
-        cfg = config.load_config()
-        config.save_config(cfg)
-        utils.print_success("Configuration initialized from environment variables")
-        print(f"Configuration saved to: {config.get_config_path()}")
+    if args.non_interactive:
+        setup.setup_non_interactive()
     else:
         setup.setup_wizard()
 

@@ -50,7 +50,7 @@ def save_env_vars(env_vars: dict[str, str]) -> None:
             f.write(f"{key}={value}\n")
 
 
-def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliConfig, dict[str, str]]:
+def setup_notifications(cfg: config.NexusCliConfig) -> tuple[config.NexusCliConfig, dict[str, str]]:
     print(colored("\nNotification and Integration Setup", "blue", attrs=["bold"]))
     print("Nexus can notify you when your jobs complete or fail, and integrate with various services.")
 
@@ -144,6 +144,9 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
             if utils.ask_yes_no(f"Enable {notification_type} notifications by default?"):
                 default_notifications.append(notification_type)
 
+        updated_config = cfg.copy(update={"default_notifications": default_notifications})
+        config.save_config(updated_config)
+
     # Set default integrations
     default_integrations: list[IntegrationType] = []
     if configured_integrations:
@@ -153,6 +156,9 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         for integration_type in configured_integrations:
             if utils.ask_yes_no(f"Enable {integration_type} integration by default?"):
                 default_integrations.append(integration_type)
+
+        updated_config = cfg.copy(update={"default_integrations": default_integrations})
+        config.save_config(updated_config)
 
     # Add Git token for private repositories
     if utils.ask_yes_no("Do you work with private Git repositories?", default=False):
@@ -167,6 +173,8 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         )
         env_vars["GIT_TOKEN"] = git_token
 
+        save_env_vars(env_vars)
+
     if utils.ask_yes_no("Would you like to add any additional environment variables?", default=True):
         # Save current env vars before opening editor
         create_default_env()
@@ -176,10 +184,10 @@ def setup_notifications(config: config.NexusCliConfig) -> tuple[config.NexusCliC
         # Reload env vars after editing
         env_vars = load_current_env()
 
-    config = config.copy(
+    cfg = cfg.copy(
         update={"default_notifications": default_notifications, "default_integrations": default_integrations}
     )
-    return config, env_vars
+    return cfg, env_vars
 
 
 def setup_non_interactive() -> None:
@@ -190,12 +198,12 @@ def setup_non_interactive() -> None:
         config.create_default_config()
         cfg = config.load_config()
 
+    config.save_config(cfg)
+
     env_vars = load_current_env()
 
     create_default_env()
     save_env_vars(env_vars)
-
-    config.save_config(cfg)
 
     print(colored("Non-interactive setup complete!", "green", attrs=["bold"]))
     print(f"Configuration saved to: {config.get_config_path()}")
@@ -227,6 +235,8 @@ def setup_wizard() -> None:
             }
         ),
     )
+
+    config.save_config(cfg)
 
     cfg, env_vars = setup_notifications(cfg)
 
