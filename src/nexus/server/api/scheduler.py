@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses as dc
 import datetime as dt
+import typing as tp
 
 from nexus.server.core import context, db, job, exceptions as exc
 from nexus.server.external import gpu, notifications, wandb_finder, system
@@ -22,11 +23,13 @@ async def _for_running(ctx: context.NexusServerContext):
         updated_job = await job.async_end_job(_job=_job, killed=killed)
         await job.async_cleanup_job_repo(job_dir=_job.dir)
 
-        action = updated_job.status if updated_job.status in ["completed", "killed"] else "failed"
-        logger.info(format.format_job_action(updated_job, action=action))
+        job_action: tp.Literal["completed", "failed", "killed"] = "failed"
+        if updated_job.status in ["completed", "killed"]:
+            job_action = tp.cast(tp.Literal["completed", "killed"], updated_job.status)
+        logger.info(format.format_job_action(updated_job, action=job_action))
 
         if _job.notifications:
-            await notifications.notify_job_action(_job=updated_job, action=action)
+            await notifications.notify_job_action(_job=updated_job, action=job_action)
 
         db.update_job(conn=ctx.db, job=updated_job)
 

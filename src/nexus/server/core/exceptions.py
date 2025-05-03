@@ -97,7 +97,7 @@ def handle_exception(source_exception, target_exception=None, *, message="error"
     def deco(fn):
         if inspect.iscoroutinefunction(fn):
 
-            async def run(*a, **k):
+            async def wrapped_async(*a, **k):
                 try:
                     return await fn(*a, **k)
                 except source_exception as e:
@@ -107,10 +107,10 @@ def handle_exception(source_exception, target_exception=None, *, message="error"
                         return default_return
                     raise (target_exception or type(e))(message=full) from e
 
-            return run
+            return wrapped_async
         else:
 
-            def run(*a, **k):
+            def wrapped_sync(*a, **k):
                 try:
                     return fn(*a, **k)
                 except source_exception as e:
@@ -120,7 +120,7 @@ def handle_exception(source_exception, target_exception=None, *, message="error"
                         return default_return
                     raise (target_exception or type(e))(message=full) from e
 
-            return run
+            return wrapped_sync
 
     return deco
 
