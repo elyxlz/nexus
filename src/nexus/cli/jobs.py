@@ -750,7 +750,7 @@ def show_health(refresh: bool = False) -> None:
 
         print(colored("Node Health Status:", "blue", attrs=["bold"]))
         status = health.get("status", "unknown")
-        status_color = "green" if status == "healthy" else "yellow" if status == "degraded" else "red"
+        status_color = "green" if status == "healthy" else "yellow" if status == "under_load" else "red"
         print(f"  {colored('•', 'blue')} Status: {colored(status, status_color)}")
 
         if status == "unhealthy":
