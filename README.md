@@ -2,7 +2,6 @@
 
 ### 🟢 Easy
 
-- [ ] Support `{RANDINT}` syntax in commands
 - [ ] Command autocomplete
 - [ ] Fix `wandb` search fallback
 
