@@ -9,7 +9,7 @@ import fastapi as fa
 from nexus.server.api import models
 from nexus.server.core import context, db, job, schemas
 from nexus.server.core import exceptions as exc
-from nexus.server.external import git, gpu, system
+from nexus.server.external import gpu, system
 from nexus.server.utils import format, logger
 
 __all__ = ["router"]
@@ -86,10 +86,6 @@ async def upload_artifact(request: fa.Request, ctx: context.NexusServerContext =
 async def create_job_endpoint(
     job_request: models.JobRequest, ctx: context.NexusServerContext = fa.Depends(_get_context)
 ):
-    git_repo_url = None
-    if job_request.git_repo_url:
-        git_repo_url = git.normalize_git_url(job_request.git_repo_url)
-
     priority = job_request.priority if not job_request.run_immediately else 9999
     ignore_blacklist = job_request.run_immediately
 
@@ -135,7 +131,7 @@ async def create_job_endpoint(
         integrations=job_request.integrations,
         notifications=job_request.notifications,
         node_name=ctx.config.node_name,
-        git_repo_url=git_repo_url,
+        git_repo_url=job_request.git_repo_url,
         git_branch=job_request.git_branch,
         ignore_blacklist=ignore_blacklist,
     )

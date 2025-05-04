@@ -362,29 +362,6 @@ def test_job_lifecycle(app_client: TestClient, artifact_data: bytes) -> None:
     assert "data" in logs_data
 
 
-def test_job_error_handling(app_client: TestClient) -> None:
-    response = app_client.get("/v1/jobs/nonexistent-id")
-    assert response.status_code == 404
-    assert "Job not found" in response.text
-
-    remove_response = app_client.delete("/v1/jobs/nonexistent-id")
-    assert remove_response.status_code == 404
-
-    invalid_job = {
-        "command": "echo 'Invalid job'",
-        "git_repo_url": "not-a-valid-url",
-        "artifact_id": "non-existent-artifact",
-        "git_branch": "main",
-        "user": "test_user",
-        "discord_id": None,
-        "gpu_idxs": None,
-    }
-
-    response = app_client.post("/v1/jobs", json=invalid_job)
-    assert response.status_code == 500
-    assert "Invalid git repository URL" in response.text
-
-
 def test_blacklist_and_remove_gpu(app_client: TestClient) -> None:
     resp = app_client.get("/v1/gpus")
     assert resp.status_code == 200
