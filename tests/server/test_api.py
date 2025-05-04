@@ -1,3 +1,4 @@
+import os
 import time
 from collections.abc import Iterator
 
@@ -34,6 +35,31 @@ def app_client() -> Iterator[TestClient]:
     with TestClient(_app) as client:
         time.sleep(0.1)
         yield client
+
+
+def test_artifact_size_limit(app_client):
+    max_size_mb = 20
+
+    # Create a test file that exceeds the 20 MB limit
+    size_bytes = (max_size_mb + 1) * 1024 * 1024
+    data = os.urandom(size_bytes)
+
+    # Try to upload the file
+    response = app_client.post("/v1/artifacts", content=data, headers={"Content-Type": "application/octet-stream"})
+
+    # Should return a 400 Bad Request with an error message about size limit
+    assert response.status_code == 400
+    assert "maximum size" in response.json().get("message", "")
+
+    # Now try with a small file (1 MB)
+    small_data = os.urandom(1 * 1024 * 1024)
+    small_response = app_client.post(
+        "/v1/artifacts", content=small_data, headers={"Content-Type": "application/octet-stream"}
+    )
+
+    # Should accept it
+    assert small_response.status_code == 201
+    assert "data" in small_response.json()
 
 
 @pytest.fixture

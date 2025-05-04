@@ -70,6 +70,12 @@ async def upload_artifact(request: fa.Request, ctx: context.NexusServerContext =
     raw = await request.body()
     if not raw:
         raise exc.InvalidRequestError("Empty artifact upload")
+
+    max_size_mb = 20
+    max_size_bytes = max_size_mb * 1024 * 1024
+    if len(raw) > max_size_bytes:
+        raise exc.InvalidRequestError(f"Artifact exceeds maximum size of {max_size_mb} MB")
+
     artifact_id = base58.b58encode(os.urandom(6)).decode()
     db.add_artifact(ctx.db, artifact_id, raw)
     return models.ArtifactUploadResponse(data=artifact_id)
