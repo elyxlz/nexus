@@ -10,8 +10,6 @@ from nexus.server.core.context import NexusServerContext
 from nexus.server.core.db import create_connection
 
 
-
-
 @pytest.fixture
 def artifact_id():
     yield "abc123"

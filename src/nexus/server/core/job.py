@@ -151,7 +151,7 @@ def _parse_exit_code(last_line: str) -> int:
 @exc.handle_exception(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
 async def _launch_screen_process(session_name: str, script_path: str, env: dict[str, str]) -> int:
     abs_script_path = pl.Path(script_path).absolute()
-    
+
     if not abs_script_path.exists():
         raise exc.JobError(message=f"Script path does not exist: {abs_script_path}")
 
@@ -162,23 +162,28 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
             raise exc.JobError(message=f"Script not executable: {abs_script_path}")
 
     process = await asyncio.create_subprocess_exec(
-        "screen", "-dmS", session_name, str(abs_script_path),
-        env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        "screen",
+        "-dmS",
+        session_name,
+        str(abs_script_path),
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
-    
+
     await process.communicate()
     if process.returncode != 0:
         raise exc.JobError(message=f"Screen process exited with code {process.returncode}")
 
     await asyncio.sleep(0.5)
-    
+
     proc = await asyncio.create_subprocess_exec("pgrep", "-f", session_name, stdout=asyncio.subprocess.PIPE)
     stdout, _ = await proc.communicate()
     pids = [p for p in stdout.decode().strip().split("\n") if p]
 
     if pids:
         return int(pids[0])
-        
+
     raise exc.JobError(message=f"Failed to get PID for job in session {session_name}")
 
 
@@ -364,13 +369,12 @@ async def prepare_job_environment(
 
     log_file, job_repo_dir = await asyncio.to_thread(_create_directories, job.dir)
     env = await asyncio.to_thread(_build_environment, gpu_idxs, job.env)
-    
+
     archive_path = job.dir / "code.tar"
     archive_path.write_bytes(db.get_artifact(ctx.db, job.artifact_id))
-    
+
     script_path = await asyncio.to_thread(
-        _create_job_script, job.dir, log_file, job_repo_dir, 
-        archive_path, job.command, job.jobrc
+        _create_job_script, job.dir, log_file, job_repo_dir, archive_path, job.command, job.jobrc
     )
-    
+
     return log_file, job_repo_dir, env, script_path
