@@ -10,9 +10,11 @@ from nexus.server.core.context import NexusServerContext
 from nexus.server.core.db import create_connection
 
 
+
+
 @pytest.fixture
-def git_tag():
-    yield "blabla"
+def artifact_id():
+    yield "abc123"
 
 
 @pytest.fixture
@@ -35,12 +37,12 @@ def app_client() -> Iterator[TestClient]:
 
 
 @pytest.fixture
-def job_payload(git_tag) -> dict:
+def job_payload(artifact_id) -> dict:
     return {
         "command": "echo 'Hello World'",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
-        "git_tag": git_tag,
         "git_branch": "master",
+        "artifact_id": artifact_id,
         "user": "testuser",
         "discord_id": None,
         "num_gpus": 1,
@@ -55,7 +57,34 @@ def job_payload(git_tag) -> dict:
 
 
 @pytest.fixture
-def created_job(app_client: TestClient, job_payload: dict) -> dict:
+def artifact_data():
+    # Create simple tar file data
+    import io
+    import tarfile
+
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w") as tar:
+        # Create a simple file in the archive
+        info = tarfile.TarInfo("README.md")
+        data = b"# Test Repository\nThis is a test tar archive for testing."
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+
+    return output.getvalue()
+
+
+@pytest.fixture
+def uploaded_artifact(app_client: TestClient, artifact_id, artifact_data):
+    # Mock direct artifact insertion in the database since we're not testing the upload API here
+    from nexus.server.core import db
+
+    conn = app_client.app.state.ctx.db
+    db.add_artifact(conn, artifact_id, artifact_data)
+    return artifact_id
+
+
+@pytest.fixture
+def created_job(app_client: TestClient, job_payload: dict, uploaded_artifact) -> dict:
     response = app_client.post("/v1/jobs", json=job_payload)
     assert response.status_code == 201
     job = response.json()
@@ -76,7 +105,13 @@ def test_server_status(app_client: TestClient) -> None:
     assert "server_user" in data
 
 
-def test_add_job(app_client: TestClient, job_payload: dict) -> None:
+def test_add_job(app_client: TestClient, job_payload: dict, artifact_id, artifact_data) -> None:
+    # Add artifact to the database first
+    from nexus.server.core import db
+
+    conn = app_client.app.state.ctx.db
+    db.add_artifact(conn, artifact_id, artifact_data)
+
     response = app_client.post("/v1/jobs", json=job_payload)
     print("Response:", response.status_code, response.text)
     assert response.status_code == 201
@@ -86,7 +121,7 @@ def test_add_job(app_client: TestClient, job_payload: dict) -> None:
     assert job["status"] == "queued"
     assert "id" in job
     assert job["git_repo_url"] == "https://github.com/elyxlz/nexus.git"
-    assert job["git_tag"] == job_payload["git_tag"]
+    assert job["artifact_id"] == job_payload["artifact_id"]
     assert job["user"] == "testuser"
 
 
@@ -128,12 +163,18 @@ def test_list_jobs_by_gpu(app_client: TestClient) -> None:
     assert isinstance(by_gpu_resp.json(), list)
 
 
-def test_list_jobs_with_regex(app_client: TestClient, git_tag: str) -> None:
+def test_list_jobs_with_regex(app_client: TestClient, artifact_id: str, artifact_data: bytes) -> None:
+    # Add artifact to the database first
+    from nexus.server.core import db
+
+    conn = app_client.app.state.ctx.db
+    db.add_artifact(conn, artifact_id, artifact_data)
+
     job_payloads = [
         {
             "command": "python train.py --model=gpt2",
             "git_repo_url": "https://github.com/elyxlz/nexus.git",
-            "git_tag": git_tag,
+            "artifact_id": artifact_id,
             "git_branch": "master",
             "user": "regex_test_user",
             "discord_id": None,
@@ -147,7 +188,7 @@ def test_list_jobs_with_regex(app_client: TestClient, git_tag: str) -> None:
         {
             "command": "python train.py --model=bert",
             "git_repo_url": "https://github.com/elyxlz/nexus.git",
-            "git_tag": git_tag,
+            "artifact_id": artifact_id,
             "git_branch": "master",
             "user": "regex_test_user",
             "discord_id": None,
@@ -161,7 +202,7 @@ def test_list_jobs_with_regex(app_client: TestClient, git_tag: str) -> None:
         {
             "command": "python evaluate.py --model=gpt2",
             "git_repo_url": "https://github.com/elyxlz/nexus.git",
-            "git_tag": git_tag,
+            "artifact_id": artifact_id,
             "git_branch": "master",
             "user": "regex_test_user",
             "discord_id": None,
@@ -212,7 +253,7 @@ def test_get_job_details(app_client: TestClient, created_job: dict) -> None:
     assert job["status"] == "queued"
     assert job["command"] == created_job["command"]
     assert job["git_repo_url"] == created_job["git_repo_url"]
-    assert job["git_tag"] == created_job["git_tag"]
+    assert job["artifact_id"] == created_job["artifact_id"]
     assert job["user"] == created_job["user"]
 
 
@@ -231,16 +272,22 @@ def test_get_nonexistent_job(app_client: TestClient) -> None:
     assert "Job not found: nonexistent" in response.text
 
 
-def test_job_lifecycle(app_client: TestClient, git_tag: str) -> None:
+def test_job_lifecycle(app_client: TestClient, artifact_id: str, artifact_data: bytes) -> None:
     status_response = app_client.get("/v1/server/status")
     attempt = None
     assert status_response.status_code == 200
     assert "gpu_count" in status_response.json()
 
+    # Add artifact to the database first
+    from nexus.server.core import db
+
+    conn = app_client.app.state.ctx.db
+    db.add_artifact(conn, artifact_id, artifact_data)
+
     job_payload = {
         "command": "echo 'Test job lifecycle'",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
-        "git_tag": git_tag,
+        "artifact_id": artifact_id,
         "git_branch": "master",
         "user": "test_user",
         "discord_id": None,
@@ -314,7 +361,7 @@ def test_job_error_handling(app_client: TestClient) -> None:
     invalid_job = {
         "command": "echo 'Invalid job'",
         "git_repo_url": "not-a-valid-url",
-        "git_tag": "main",
+        "artifact_id": "non-existent-artifact",
         "git_branch": "main",
         "user": "test_user",
         "discord_id": None,
@@ -385,12 +432,18 @@ def test_blacklist_and_remove_gpu(app_client: TestClient) -> None:
     assert rem_data2["changed"] is False  # Should not be changed on second removal
 
 
-def test_kill_running_job(app_client: TestClient, git_tag: str) -> None:
+def test_kill_running_job(app_client: TestClient, artifact_id: str, artifact_data: bytes) -> None:
     # Use the exact implementation that works in master, with fewer modifications
+    # Add artifact to the database first
+    from nexus.server.core import db
+
+    conn = app_client.app.state.ctx.db
+    db.add_artifact(conn, artifact_id, artifact_data)
+
     job_payload = {
         "command": "sleep 30",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
-        "git_tag": git_tag,
+        "artifact_id": artifact_id,
         "git_branch": "master",
         "user": "test_user",
         "num_gpus": 1,
@@ -472,14 +525,20 @@ def test_kill_running_job(app_client: TestClient, git_tag: str) -> None:
     assert job_data.get("marked_for_kill") is True
 
 
-def test_job_submission_minimal(app_client: TestClient, git_tag: str) -> None:
+def test_job_submission_minimal(app_client: TestClient, artifact_id: str, artifact_data: bytes) -> None:
     """A simpler test that just checks job submission works."""
+    # Add artifact to the database first
+    from nexus.server.core import db
+
+    conn = app_client.app.state.ctx.db
+    db.add_artifact(conn, artifact_id, artifact_data)
+
     # Create a job payload with required fields
     job_payload = {
         "command": "echo 'Simple test'",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
-        "git_tag": git_tag,
         "git_branch": "master",
+        "artifact_id": artifact_id,
         "user": "test_user",
         "num_gpus": 1,
         "env": {},
@@ -563,11 +622,17 @@ def test_update_queued_job(app_client: TestClient, created_job: dict) -> None:
     assert verified_job["priority"] == 100
 
 
-def test_update_nonqueued_job(app_client: TestClient, git_tag: str) -> None:
+def test_update_nonqueued_job(app_client: TestClient, artifact_id: str, artifact_data: bytes) -> None:
+    # Add artifact to the database first
+    from nexus.server.core import db
+
+    conn = app_client.app.state.ctx.db
+    db.add_artifact(conn, artifact_id, artifact_data)
+
     job_payload = {
         "command": "echo 'Test non-queued update'",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
-        "git_tag": git_tag,
+        "artifact_id": artifact_id,
         "git_branch": "master",
         "user": "test_user",
         "num_gpus": 1,
@@ -599,7 +664,13 @@ def test_update_nonqueued_job(app_client: TestClient, git_tag: str) -> None:
     assert "Cannot update job" in update_response.text
 
 
-def test_job_with_gpu_idxs(app_client: TestClient, git_tag: str) -> None:
+def test_job_with_gpu_idxs(app_client: TestClient, artifact_id: str, artifact_data: bytes) -> None:
+    # Add artifact to the database first
+    from nexus.server.core import db
+
+    conn = app_client.app.state.ctx.db
+    db.add_artifact(conn, artifact_id, artifact_data)
+
     # Get available GPUs
     gpus_resp = app_client.get("/v1/gpus")
     assert gpus_resp.status_code == 200
@@ -612,8 +683,8 @@ def test_job_with_gpu_idxs(app_client: TestClient, git_tag: str) -> None:
     job_payload = {
         "command": "echo 'Testing specific GPU'",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
-        "git_tag": git_tag,
         "git_branch": "master",
+        "artifact_id": artifact_id,
         "user": "test_user",
         "num_gpus": 1,
         "env": {},
@@ -638,7 +709,7 @@ def test_job_with_gpu_idxs(app_client: TestClient, git_tag: str) -> None:
     job_payload = {
         "command": "echo 'Testing ignore blacklist'",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
-        "git_tag": git_tag,
+        "artifact_id": artifact_id,
         "git_branch": "master",
         "user": "test_user",
         "num_gpus": 1,

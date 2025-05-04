@@ -12,6 +12,7 @@ import time
 
 import base58
 
+from nexus.server.core import db
 from nexus.server.core import exceptions as exc
 from nexus.server.core import schemas
 from nexus.server.utils import logger
@@ -74,28 +75,15 @@ import pathlib as pl
 def _build_script_content(
     log_file: pl.Path,
     job_repo_dir: pl.Path,
-    bundle_path: pl.Path,
+    archive_path: pl.Path,
     command: str,
     jobrc: str | None = None,
 ) -> str:
-    script_lines = [
-        "#!/bin/bash",
-        "set -e",
-        "export GIT_TERMINAL_PROMPT=0",
-    ]
-
-    script_lines.append('script -q -e -f -c "')
-
-    script_lines.append(
-        f"git clone {bundle_path} {job_repo_dir}"
-    )
-    script_lines.append(f"cd '{job_repo_dir}'")
-
-    prefix = jobrc.strip() + "\n" if jobrc and jobrc.strip() else ""
-    script_lines.append(f"{prefix}{command}")
-
-    script_lines.append(f'" "{log_file}"')
-    return "\n".join(script_lines)
+    jobrc_cmd = f"{jobrc.strip()} && " if jobrc and jobrc.strip() else ""
+    return f"""#!/bin/bash
+set -e
+script -q -e -f -c "mkdir -p {job_repo_dir} && tar -xf {archive_path} -C {job_repo_dir} && cd '{job_repo_dir}' && {jobrc_cmd}{command}" "{log_file}"
+"""
 
 
 @exc.handle_exception(PermissionError, exc.JobError, message="Failed to create job script")
@@ -111,13 +99,11 @@ def _create_job_script(
     job_dir: pl.Path,
     log_file: pl.Path,
     job_repo_dir: pl.Path,
-    bundle_path: pl.Path,
+    archive_path: pl.Path,
     command: str,
     jobrc: str | None = None,
 ) -> pl.Path:
-    script_content = _build_script_content(
-        log_file, job_repo_dir, bundle_path, command, jobrc=jobrc
-    )
+    script_content = _build_script_content(log_file, job_repo_dir, archive_path, command, jobrc=jobrc)
     return _write_job_script(job_dir, script_content=script_content)
 
 
@@ -165,31 +151,35 @@ def _parse_exit_code(last_line: str) -> int:
 @exc.handle_exception(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
 async def _launch_screen_process(session_name: str, script_path: str, env: dict[str, str]) -> int:
     abs_script_path = pl.Path(script_path).absolute()
+    
+    if not abs_script_path.exists():
+        raise exc.JobError(message=f"Script path does not exist: {abs_script_path}")
+
+    if not os.access(abs_script_path, os.X_OK):
+        try:
+            abs_script_path.chmod(0o755)
+        except Exception:
+            raise exc.JobError(message=f"Script not executable: {abs_script_path}")
 
     process = await asyncio.create_subprocess_exec(
-        "screen",
-        "-dmS",
-        session_name,
-        str(abs_script_path),
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        "screen", "-dmS", session_name, str(abs_script_path),
+        env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
-    await process.wait()
-
-    if process.returncode is not None and process.returncode != 0:
+    
+    await process.communicate()
+    if process.returncode != 0:
         raise exc.JobError(message=f"Screen process exited with code {process.returncode}")
 
-    await asyncio.sleep(0.2)
-
-    proc = await asyncio.create_subprocess_exec("pgrep", "-f", f"{session_name}", stdout=asyncio.subprocess.PIPE)
+    await asyncio.sleep(0.5)
+    
+    proc = await asyncio.create_subprocess_exec("pgrep", "-f", session_name, stdout=asyncio.subprocess.PIPE)
     stdout, _ = await proc.communicate()
-    pids = stdout.decode().strip().split("\n")
-    if not pids or not pids[0]:
-        logger.error(f"Could not find PID for job in session {session_name}")
-        raise exc.JobError(message=f"Failed to get PID for job in session {session_name}")
+    pids = [p for p in stdout.decode().strip().split("\n") if p]
 
-    return int(pids[0])
+    if pids:
+        return int(pids[0])
+        
+    raise exc.JobError(message=f"Failed to get PID for job in session {session_name}")
 
 
 ####################
@@ -369,26 +359,18 @@ def get_queue(queued_jobs: list[schemas.Job]) -> list[schemas.Job]:
 async def prepare_job_environment(
     job: schemas.Job, gpu_idxs: list[int], ctx
 ) -> tuple[pl.Path, pl.Path, dict[str, str], pl.Path]:
-    if job.dir is None:
-        raise exc.JobError(message="Job directory not set")
-
-    if not job.artifact_id:
-        raise exc.JobError(message="Missing artifact_id for job")
+    if job.dir is None or not job.artifact_id:
+        raise exc.JobError(message="Job directory or artifact_id not set")
 
     log_file, job_repo_dir = await asyncio.to_thread(_create_directories, job.dir)
     env = await asyncio.to_thread(_build_environment, gpu_idxs, job.env)
     
-    artifact_bytes = db.get_artifact(ctx.db, job.artifact_id)
-    bundle_path = job.dir / "code.bundle"
-    await asyncio.to_thread(lambda: bundle_path.write_bytes(artifact_bytes))
-
+    archive_path = job.dir / "code.tar"
+    archive_path.write_bytes(db.get_artifact(ctx.db, job.artifact_id))
+    
     script_path = await asyncio.to_thread(
-        _create_job_script,
-        job.dir,
-        log_file,
-        job_repo_dir,
-        bundle_path,
-        job.command,
-        job.jobrc,
+        _create_job_script, job.dir, log_file, job_repo_dir, 
+        archive_path, job.command, job.jobrc
     )
+    
     return log_file, job_repo_dir, env, script_path

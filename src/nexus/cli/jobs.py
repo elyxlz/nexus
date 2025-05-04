@@ -87,13 +87,13 @@ def run_job(
 
         if is_git_repo:
             utils.ensure_clean_repo()
-            
+
             result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
             git_repo_url = result.stdout.strip() or "unknown-url"
-            
-            print(colored("Creating git bundle...", "blue"))
-            artifact_data = utils.create_git_bundle()
-            print(colored("Uploading git bundle...", "blue"))
+
+            print(colored("Creating git archive...", "blue"))
+            artifact_data = utils.create_git_archive()
+            print(colored("Uploading git archive...", "blue"))
             artifact_id = api_client.upload_artifact(artifact_data)
             print(colored(f"Artifact uploaded with ID: {artifact_id}", "green"))
 
@@ -261,13 +261,13 @@ def add_jobs(
 
         if is_git_repo:
             utils.ensure_clean_repo()
-            
+
             result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
             git_repo_url = result.stdout.strip() or "unknown-url"
-            
-            print(colored("Creating git bundle...", "blue"))
-            artifact_data = utils.create_git_bundle()
-            print(colored("Uploading git bundle...", "blue"))
+
+            print(colored("Creating git archive...", "blue"))
+            artifact_data = utils.create_git_archive()
+            print(colored("Uploading git archive...", "blue"))
             artifact_id = api_client.upload_artifact(artifact_data)
             print(colored(f"Artifact uploaded with ID: {artifact_id}", "green"))
 

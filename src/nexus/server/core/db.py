@@ -4,6 +4,7 @@ import json
 import pathlib as pl
 import re
 import sqlite3
+import time
 import typing as tp
 
 from nexus.server.core import context, schemas
@@ -383,14 +384,12 @@ def safe_transaction(func: tp.Callable[..., tp.Any]) -> tp.Callable[..., tp.Any]
     return wrapper
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add artifact to database")
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add artifact")
 def add_artifact(conn: sqlite3.Connection, artifact_id: str, data: bytes) -> None:
     cur = conn.cursor()
-    size = len(data)
-    created_at = time.time()
     cur.execute(
         "INSERT INTO artifacts (id, size, created_at, data) VALUES (?, ?, ?, ?)",
-        (artifact_id, size, created_at, data),
+        (artifact_id, len(data), time.time(), data),
     )
     conn.commit()
 

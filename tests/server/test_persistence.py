@@ -51,13 +51,19 @@ def create_test_client(db_path: str, server_config: NexusServerConfig) -> Callab
 
 
 @pytest.fixture
-def job_payload() -> dict:
+def artifact_id() -> str:
+    """Create a test artifact ID."""
+    return "test_artifact_123"
+
+
+@pytest.fixture
+def job_payload(artifact_id) -> dict:
     """Create a test job payload."""
     return {
         "command": "echo 'Persistence Test'",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
-        "git_tag": "main",
         "git_branch": "master",
+        "artifact_id": artifact_id,
         "user": "persistence_test_user",
         "discord_id": None,
         "num_gpus": 1,
@@ -69,12 +75,45 @@ def job_payload() -> dict:
     }
 
 
+@pytest.fixture
+def artifact_data():
+    """Create test artifact data."""
+    # Create simple tar file data
+    import io
+    import tarfile
+
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w") as tar:
+        # Create a simple file in the archive
+        info = tarfile.TarInfo("README.md")
+        data = b"# Test Repository\nThis is a test tar archive for persistence testing."
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+
+    return output.getvalue()
+
+
+def add_artifact_to_db(client, artifact_id, artifact_data):
+    """Add an artifact to the database directly."""
+    from nexus.server.core import db
+
+    conn = client.app.state.ctx.db
+    db.add_artifact(conn, artifact_id, artifact_data)
+
+
 def test_api_with_persistent_database(
-    create_test_client: Callable[[], TestClient], job_payload: dict, db_path: str
+    create_test_client: Callable[[], TestClient],
+    job_payload: dict,
+    artifact_id: str,
+    artifact_data: bytes,
+    db_path: str,
 ) -> None:
     """Test the API endpoints use a persistent database."""
     # Create a client with the database
     client = create_test_client()
+
+    # Add artifact to the database
+    add_artifact_to_db(client, artifact_id, artifact_data)
 
     # Submit a job
     submit_response = client.post("/v1/jobs", json=job_payload)
@@ -146,10 +185,19 @@ def test_gpu_blacklisting(create_test_client: Callable[[], TestClient], db_path:
     # No need to stop server
 
 
-def test_job_lifecycle(create_test_client: Callable[[], TestClient], job_payload: dict, db_path: str) -> None:
+def test_job_lifecycle(
+    create_test_client: Callable[[], TestClient],
+    job_payload: dict,
+    artifact_id: str,
+    artifact_data: bytes,
+    db_path: str,
+) -> None:
     """Test basic job lifecycle functionality."""
     # Create a client
     client = create_test_client()
+
+    # Add artifact to the database
+    add_artifact_to_db(client, artifact_id, artifact_data)
 
     # Submit a job
     submit_response = client.post("/v1/jobs", json=job_payload)

@@ -1,10 +1,8 @@
 import functools
 import json
-import tempfile
 import typing as tp
 
 import requests
-import subprocess
 from termcolor import colored
 
 from nexus.cli import config
@@ -138,9 +136,7 @@ def check_heartbeat() -> bool:
 @handle_api_errors
 def upload_artifact(data: bytes) -> str:
     response = requests.post(
-        f"{get_api_base_url()}/artifacts",
-        data=data,
-        headers={"Content-Type": "application/octet-stream"}
+        f"{get_api_base_url()}/artifacts", data=data, headers={"Content-Type": "application/octet-stream"}
     )
     response.raise_for_status()
     return response.json().get("data")

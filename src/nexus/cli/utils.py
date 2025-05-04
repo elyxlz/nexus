@@ -96,12 +96,12 @@ def ensure_clean_repo() -> None:
         raise RuntimeError("Refusing to submit: working tree has uncommitted changes.")
 
 
-def create_git_bundle() -> bytes:
-    bundle = tempfile.NamedTemporaryFile(suffix=".bundle", delete=False)
-    subprocess.run(["git", "bundle", "create", bundle.name, "HEAD", "--depth=1"], check=True)
-    with open(bundle.name, "rb") as f:
+def create_git_archive() -> bytes:
+    with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as archive:
+        subprocess.run(["git", "archive", "--format=tar", "HEAD"], stdout=archive, check=True)
+    with open(archive.name, "rb") as f:
         data = f.read()
-    os.unlink(bundle.name)
+    os.unlink(archive.name)
     return data
 
 

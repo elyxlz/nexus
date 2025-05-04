@@ -82,16 +82,6 @@ def require_root() -> None:
         sys.exit("This operation requires root privileges. Please run with sudo.")
 
 
-def verify_external_dependencies() -> None:
-    missing = []
-    for cmd in ["git", "screen"]:
-        if shutil.which(cmd) is None:
-            missing.append(cmd)
-
-    if missing:
-        sys.exit(f"Missing dependencies: {missing}")
-
-
 def handle_version_check() -> None:
     try:
         current_version = importlib.metadata.version("nexusai")
@@ -429,7 +419,6 @@ def install_system(
     interactive: bool = True, config_file: pl.Path | None = None, start_server: bool = True, force: bool = False
 ) -> None:
     require_root()
-    verify_external_dependencies()
     check_installation_prerequisites(force)
 
     print("Installing Nexus server in system mode...")
