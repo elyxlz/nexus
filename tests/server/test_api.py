@@ -12,8 +12,7 @@ from nexus.server.core.db import create_connection
 
 def upload_test_artifact(client: TestClient, artifact_data: bytes) -> str:
     """Upload an artifact and return its ID."""
-    files = {"file": ("archive.tar.gz", artifact_data, "application/gzip")}
-    response = client.post("/v1/artifacts", files=files)
+    response = client.post("/v1/artifacts", content=artifact_data)
     assert response.status_code == 201
     return response.json()["data"]
 
