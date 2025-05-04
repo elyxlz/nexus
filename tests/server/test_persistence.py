@@ -111,7 +111,7 @@ def test_api_with_persistent_database(
 
     # Add artifact to the database and get its ID
     artifact_id = add_artifact_to_db(client, artifact_data)
-    
+
     # Update job payload with the generated artifact ID
     test_payload = {**job_payload, "artifact_id": artifact_id}
 
@@ -197,7 +197,7 @@ def test_job_lifecycle(
 
     # Add artifact to the database and get its ID
     artifact_id = add_artifact_to_db(client, artifact_data)
-    
+
     # Update job payload with the generated artifact ID
     test_payload = {**job_payload, "artifact_id": artifact_id}
 

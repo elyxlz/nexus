@@ -103,7 +103,7 @@ def test_server_status(app_client: TestClient) -> None:
 
 def test_add_job(app_client: TestClient, job_payload: dict) -> None:
     # The artifact was already uploaded via the fixture chain
-    
+
     response = app_client.post("/v1/jobs", json=job_payload)
     print("Response:", response.status_code, response.text)
     assert response.status_code == 201
