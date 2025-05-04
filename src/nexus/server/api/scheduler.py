@@ -94,6 +94,13 @@ async def _for_queued_jobs(ctx: context.NexusServerContext):
         db.update_job(conn=ctx.db, job=started)
         logger.info(format.format_job_action(started, action="started"))
 
+        if _job.artifact_id and not db.is_artifact_in_use(conn=ctx.db, artifact_id=_job.artifact_id):
+            try:
+                db.delete_artifact(conn=ctx.db, artifact_id=_job.artifact_id)
+                logger.info(f"Deleted artifact {_job.artifact_id} as it's no longer needed")
+            except Exception as e:
+                logger.error(f"Failed to delete artifact {_job.artifact_id}: {str(e)}")
+
         if started.notifications:
             job_with_notif = await notifications.notify_job_action(_job=started, action="started")
             db.update_job(conn=ctx.db, job=job_with_notif)

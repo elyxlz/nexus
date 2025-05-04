@@ -23,6 +23,8 @@ __all__ = [
     "list_blacklisted_gpus",
     "add_artifact",
     "get_artifact",
+    "is_artifact_in_use",
+    "delete_artifact",
     "safe_transaction",
 ]
 
@@ -331,9 +333,13 @@ def list_jobs(
 
 def delete_queued_job(conn: sqlite3.Connection, job_id: str) -> None:
     _validate_job_id(job_id)
-    status = _check_job_status(conn=conn, job_id=job_id)
+    job = _query_job(conn=conn, job_id=job_id)
+    status = job.status
     _verify_job_is_queued(job_id, status)
-    return _delete_job(conn=conn, job_id=job_id)
+    _delete_job(conn=conn, job_id=job_id)
+    if job.artifact_id and not is_artifact_in_use(conn=conn, artifact_id=job.artifact_id):
+        delete_artifact(conn=conn, artifact_id=job.artifact_id)
+        logger.info(f"Deleted artifact {job.artifact_id} as it's no longer needed after job {job_id} was removed")
 
 
 def add_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int) -> bool:
@@ -402,3 +408,18 @@ def get_artifact(conn: sqlite3.Connection, artifact_id: str) -> bytes:
     if not row:
         raise exc.JobError(message=f"Artifact not found: {artifact_id}")
     return row["data"]
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to check for artifact usage")
+def is_artifact_in_use(conn: sqlite3.Connection, artifact_id: str) -> bool:
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) as count FROM jobs WHERE artifact_id = ? AND status = 'queued'", (artifact_id,))
+    row = cur.fetchone()
+    return row["count"] > 0
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to delete artifact")
+def delete_artifact(conn: sqlite3.Connection, artifact_id: str) -> None:
+    cur = conn.cursor()
+    cur.execute("DELETE FROM artifacts WHERE id = ?", (artifact_id,))
+    conn.commit()

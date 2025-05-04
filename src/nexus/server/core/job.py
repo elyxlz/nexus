@@ -52,23 +52,6 @@ def _create_directories(dir_path: pl.Path) -> tuple[pl.Path, pl.Path]:
     return log_file, job_repo_dir
 
 
-@exc.handle_exception(PermissionError, exc.JobError, message="Failed to create GitHub token helper")
-@exc.handle_exception(OSError, exc.JobError, message="Failed to create GitHub token helper")
-def _create_git_token_helper(dir_path: pl.Path, git_token: str) -> pl.Path:
-    askpass_path = dir_path / "askpass.sh"
-    askpass_script = f'#!/usr/bin/env bash\necho "{git_token}"\n'
-    askpass_path.write_text(askpass_script)
-    askpass_path.chmod(0o700)
-    return askpass_path
-
-
-def _setup_github_auth(dir_path: pl.Path, git_token: str) -> pl.Path | None:
-    if not git_token:
-        return None
-
-    return _create_git_token_helper(dir_path, git_token=git_token)
-
-
 import pathlib as pl
 
 
