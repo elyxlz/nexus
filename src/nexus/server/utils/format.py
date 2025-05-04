@@ -48,6 +48,10 @@ def format_job_action(
         time_info = f" at {format_timestamp(job.created_at)}"
 
     error_info = f" ({job.error_message})" if job.error_message else ""
-    git_info = f" [Git Tag: {job.git_tag}, Git URL: {job.git_repo_url}]" if job.git_tag and job.git_repo_url else ""
+    git_info = (
+        f" [Artifact ID: {job.artifact_id}, Git URL: {job.git_repo_url}]"
+        if job.artifact_id and job.git_repo_url
+        else ""
+    )
 
     return f"Job {job.id} {action}{gpu_info}{time_info}: COMMAND: {job.command}{error_info}{git_info}"

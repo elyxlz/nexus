@@ -160,21 +160,6 @@ def setup_notifications(cfg: config.NexusCliConfig) -> tuple[config.NexusCliConf
         updated_config = cfg.copy(update={"default_integrations": default_integrations})
         config.save_config(updated_config)
 
-    # Add Git token for private repositories
-    if utils.ask_yes_no("Do you work with private Git repositories?", default=False):
-        print(colored("\nNexus needs a Git token to clone private repositories:", "cyan"))
-        print("You can create a Personal Access Token at: https://github.com/settings/tokens")
-        print("The token needs 'repo' scope to access private repositories")
-
-        git_token = utils.get_user_input(
-            "Git Personal Access Token",
-            default=env_vars.get("GIT_TOKEN", ""),
-            required=True,
-        )
-        env_vars["GIT_TOKEN"] = git_token
-
-        save_env_vars(env_vars)
-
     if utils.ask_yes_no("Would you like to add any additional environment variables?", default=True):
         # Save current env vars before opening editor
         create_default_env()

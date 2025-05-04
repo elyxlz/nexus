@@ -16,6 +16,7 @@ __all__ = [
     "GpuStatusResponse",
     "ServerStatusResponse",
     "HealthResponse",
+    "ArtifactUploadResponse",
 ]
 
 REQUIRED_ENV_VARS = {
@@ -40,6 +41,7 @@ class SingleFieldResponse(FrozenBaseModel, tp.Generic[T]):
 JobLogsResponse = SingleFieldResponse[str]
 ServerLogsResponse = SingleFieldResponse[str]
 ServerActionResponse = SingleFieldResponse[str]
+ArtifactUploadResponse = SingleFieldResponse[str]
 
 
 def _check_required_vars(kinds: tp.Sequence[str], env: dict[str, str], for_type: str = "") -> None:
@@ -51,11 +53,9 @@ def _check_required_vars(kinds: tp.Sequence[str], env: dict[str, str], for_type:
 
 
 class JobRequest(FrozenBaseModel):
+    artifact_id: str
     command: str
     user: str
-    git_repo_url: str
-    git_tag: str
-    git_branch: str
     num_gpus: int = 1
     gpu_idxs: list[int] | None = None
     priority: int = 0
@@ -64,6 +64,8 @@ class JobRequest(FrozenBaseModel):
     env: dict[str, str] = {}
     jobrc: str | None = None
     run_immediately: bool = False
+    git_repo_url: str | None = None
+    git_branch: str | None = None
 
     @pyd.model_validator(mode="after")
     def check_requirements(self) -> tpe.Self:

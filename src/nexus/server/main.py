@@ -23,7 +23,6 @@ def main() -> None:
     args = parser.parse_args()
 
     setup.handle_version_check()
-    setup.verify_external_dependencies()
 
     if setup.handle_command(args):
         return

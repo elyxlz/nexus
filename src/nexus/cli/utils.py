@@ -5,6 +5,7 @@ import pathlib as pl
 import random
 import re
 import subprocess
+import tempfile
 import time
 import typing as tp
 
@@ -87,6 +88,31 @@ def get_current_git_branch() -> str:
         return result.stdout.strip()
     except subprocess.CalledProcessError:
         return "unknown-branch"
+
+
+def ensure_clean_repo() -> None:
+    out = subprocess.check_output(["git", "status", "--porcelain"]).decode().strip()
+    if out:
+        raise RuntimeError("Refusing to submit: working tree has uncommitted changes.")
+
+
+def create_git_archive() -> bytes:
+    with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as archive:
+        subprocess.run(["git", "archive", "--format=tar", "HEAD"], stdout=archive, check=True)
+    with open(archive.name, "rb") as f:
+        data = f.read()
+    os.unlink(archive.name)
+
+    max_size_mb = 20
+    max_size_bytes = max_size_mb * 1024 * 1024
+    size_mb = len(data) / (1024 * 1024)
+
+    if len(data) > max_size_bytes:
+        print_warning(f"Archive size ({size_mb:.1f} MB) exceeds maximum allowed size ({max_size_mb} MB)")
+        print_warning("Try using .gitignore to exclude large files or data directories")
+        raise RuntimeError(f"Git archive exceeds maximum size of {max_size_mb} MB")
+
+    return data
 
 
 # Time Utilities

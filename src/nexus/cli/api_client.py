@@ -134,6 +134,15 @@ def check_heartbeat() -> bool:
 
 
 @handle_api_errors
+def upload_artifact(data: bytes) -> str:
+    response = requests.post(
+        f"{get_api_base_url()}/artifacts", data=data, headers={"Content-Type": "application/octet-stream"}
+    )
+    response.raise_for_status()
+    return response.json().get("data")
+
+
+@handle_api_errors
 def add_job(job_request: dict) -> dict:
     response = requests.post(f"{get_api_base_url()}/jobs", json=job_request)
     response.raise_for_status()

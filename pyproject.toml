@@ -3,7 +3,7 @@ name = "nexusai"
 version = "0.4.16"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
   "toml>=0.10.2",
   "termcolor>=2.5.0",

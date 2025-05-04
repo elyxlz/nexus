@@ -12,6 +12,7 @@ import time
 
 import base58
 
+from nexus.server.core import db
 from nexus.server.core import exceptions as exc
 from nexus.server.core import schemas
 from nexus.server.utils import logger
@@ -51,59 +52,21 @@ def _create_directories(dir_path: pl.Path) -> tuple[pl.Path, pl.Path]:
     return log_file, job_repo_dir
 
 
-@exc.handle_exception(PermissionError, exc.JobError, message="Failed to create GitHub token helper")
-@exc.handle_exception(OSError, exc.JobError, message="Failed to create GitHub token helper")
-def _create_git_token_helper(dir_path: pl.Path, git_token: str) -> pl.Path:
-    askpass_path = dir_path / "askpass.sh"
-    askpass_script = f'#!/usr/bin/env bash\necho "{git_token}"\n'
-    askpass_path.write_text(askpass_script)
-    askpass_path.chmod(0o700)
-    return askpass_path
-
-
-def _setup_github_auth(dir_path: pl.Path, git_token: str) -> pl.Path | None:
-    if not git_token:
-        return None
-
-    return _create_git_token_helper(dir_path, git_token=git_token)
-
-
 import pathlib as pl
 
 
 def _build_script_content(
     log_file: pl.Path,
     job_repo_dir: pl.Path,
-    git_repo_url: str,
-    git_tag: str,
+    archive_path: pl.Path,
     command: str,
-    askpass_path: pl.Path | None,
-    git_token: str | None = None,
     jobrc: str | None = None,
 ) -> str:
-    script_lines = [
-        "#!/bin/bash",
-        "set -e",
-        "export GIT_TERMINAL_PROMPT=0",
-    ]
-    clone_url = git_repo_url
-    if git_token and git_repo_url.startswith("https://"):
-        clone_url = git_repo_url.replace("https://", f"https://{git_token}@")
-    if askpass_path:
-        script_lines.append(f'export GIT_ASKPASS="{askpass_path}"')
-
-    script_lines.append('script -q -e -f -c "')
-
-    script_lines.append(
-        f"git clone --depth 1 --single-branch --no-tags --branch {git_tag} '{clone_url}' '{job_repo_dir}'"
-    )
-    script_lines.append(f"cd '{job_repo_dir}'")
-
-    prefix = jobrc.strip() + "\n" if jobrc and jobrc.strip() else ""
-    script_lines.append(f"{prefix}{command}")
-
-    script_lines.append(f'" "{log_file}"')
-    return "\n".join(script_lines)
+    jobrc_cmd = f"{jobrc.strip()} && " if jobrc and jobrc.strip() else ""
+    return f"""#!/bin/bash
+set -e
+script -q -e -f -c "mkdir -p {job_repo_dir} && tar -xf {archive_path} -C {job_repo_dir} && cd '{job_repo_dir}' && {jobrc_cmd}{command}" "{log_file}"
+"""
 
 
 @exc.handle_exception(PermissionError, exc.JobError, message="Failed to create job script")
@@ -119,16 +82,11 @@ def _create_job_script(
     job_dir: pl.Path,
     log_file: pl.Path,
     job_repo_dir: pl.Path,
-    git_repo_url: str,
-    git_tag: str,
+    archive_path: pl.Path,
     command: str,
-    askpass_path: pl.Path | None,
     jobrc: str | None = None,
-    git_token: str | None = None,
 ) -> pl.Path:
-    script_content = _build_script_content(
-        log_file, job_repo_dir, git_repo_url, git_tag, command, askpass_path, git_token=git_token, jobrc=jobrc
-    )
+    script_content = _build_script_content(log_file, job_repo_dir, archive_path, command, jobrc=jobrc)
     return _write_job_script(job_dir, script_content=script_content)
 
 
@@ -177,6 +135,15 @@ def _parse_exit_code(last_line: str) -> int:
 async def _launch_screen_process(session_name: str, script_path: str, env: dict[str, str]) -> int:
     abs_script_path = pl.Path(script_path).absolute()
 
+    if not abs_script_path.exists():
+        raise exc.JobError(message=f"Script path does not exist: {abs_script_path}")
+
+    if not os.access(abs_script_path, os.X_OK):
+        try:
+            abs_script_path.chmod(0o755)
+        except Exception:
+            raise exc.JobError(message=f"Script not executable: {abs_script_path}")
+
     process = await asyncio.create_subprocess_exec(
         "screen",
         "-dmS",
@@ -186,21 +153,21 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    await process.wait()
 
-    if process.returncode is not None and process.returncode != 0:
+    await process.communicate()
+    if process.returncode != 0:
         raise exc.JobError(message=f"Screen process exited with code {process.returncode}")
 
-    await asyncio.sleep(0.2)
+    await asyncio.sleep(0.5)
 
-    proc = await asyncio.create_subprocess_exec("pgrep", "-f", f"{session_name}", stdout=asyncio.subprocess.PIPE)
+    proc = await asyncio.create_subprocess_exec("pgrep", "-f", session_name, stdout=asyncio.subprocess.PIPE)
     stdout, _ = await proc.communicate()
-    pids = stdout.decode().strip().split("\n")
-    if not pids or not pids[0]:
-        logger.error(f"Could not find PID for job in session {session_name}")
-        raise exc.JobError(message=f"Failed to get PID for job in session {session_name}")
+    pids = [p for p in stdout.decode().strip().split("\n") if p]
 
-    return int(pids[0])
+    if pids:
+        return int(pids[0])
+
+    raise exc.JobError(message=f"Failed to get PID for job in session {session_name}")
 
 
 ####################
@@ -208,9 +175,7 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
 
 def create_job(
     command: str,
-    git_repo_url: str,
-    git_tag: str,
-    git_branch: str,
+    artifact_id: str,
     user: str,
     node_name: str,
     num_gpus: int,
@@ -219,6 +184,8 @@ def create_job(
     priority: int,
     integrations: list[schemas.IntegrationType],
     notifications: list[schemas.NotificationType],
+    git_repo_url: str | None = None,
+    git_branch: str | None = None,
     gpu_idxs: list[int] | None = None,
     ignore_blacklist: bool = False,
 ) -> schemas.Job:
@@ -228,8 +195,8 @@ def create_job(
         status="queued",
         created_at=dt.datetime.now().timestamp(),
         user=user,
+        artifact_id=artifact_id,
         git_repo_url=git_repo_url,
-        git_tag=git_tag,
         git_branch=git_branch,
         node_name=node_name,
         priority=priority,
@@ -254,7 +221,7 @@ def create_job(
 
 
 @exc.handle_exception(Exception, exc.JobError, message="Failed to start job")
-async def async_start_job(job: schemas.Job, gpu_idxs: list[int], server_dir: pl.Path | None) -> schemas.Job:
+async def async_start_job(job: schemas.Job, gpu_idxs: list[int], ctx) -> schemas.Job:
     job_dir = pl.Path(tempfile.mkdtemp(prefix=f"nexus-job-{job.id}-"))
     job_dir.mkdir(parents=True, exist_ok=True)
     job = dc.replace(job, dir=job_dir)
@@ -262,7 +229,7 @@ async def async_start_job(job: schemas.Job, gpu_idxs: list[int], server_dir: pl.
     if job.dir is None:
         raise exc.JobError(message=f"Job directory not set for job {job.id}")
 
-    log_file, job_repo_dir, env, askpass_path, script_path = await prepare_job_environment(job, gpu_idxs)
+    log_file, job_repo_dir, env, script_path = await prepare_job_environment(job, gpu_idxs, ctx)
     session_name = _get_job_session_name(job.id)
 
     pid = await _launch_screen_process(session_name, str(script_path), env)
@@ -378,30 +345,19 @@ def get_queue(queued_jobs: list[schemas.Job]) -> list[schemas.Job]:
 
 
 async def prepare_job_environment(
-    job: schemas.Job, gpu_idxs: list[int]
-) -> tuple[pl.Path, pl.Path, dict[str, str], pl.Path | None, pl.Path]:
-    if job.dir is None:
-        raise exc.JobError(message="Job directory not set")
+    job: schemas.Job, gpu_idxs: list[int], ctx
+) -> tuple[pl.Path, pl.Path, dict[str, str], pl.Path]:
+    if job.dir is None or not job.artifact_id:
+        raise exc.JobError(message="Job directory or artifact_id not set")
 
     log_file, job_repo_dir = await asyncio.to_thread(_create_directories, job.dir)
     env = await asyncio.to_thread(_build_environment, gpu_idxs, job.env)
-    env["NEXUS_GIT_TAG"] = job.git_tag
 
-    git_token = job.env.get("GIT_TOKEN")
-    askpass_path = None
-    if git_token:
-        askpass_path = await asyncio.to_thread(_setup_github_auth, job.dir, git_token)
+    archive_path = job.dir / "code.tar"
+    archive_path.write_bytes(db.get_artifact(ctx.db, job.artifact_id))
 
     script_path = await asyncio.to_thread(
-        _create_job_script,
-        job.dir,
-        log_file,
-        job_repo_dir,
-        job.git_repo_url,
-        job.git_tag,
-        job.command,
-        askpass_path,
-        job.jobrc,
-        git_token,
+        _create_job_script, job.dir, log_file, job_repo_dir, archive_path, job.command, job.jobrc
     )
-    return log_file, job_repo_dir, env, askpass_path, script_path
+
+    return log_file, job_repo_dir, env, script_path
