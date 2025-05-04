@@ -3,6 +3,7 @@ import pathlib as pl
 import uvicorn
 
 from nexus.server.api import app
+from nexus.server.core import rqlite
 from nexus.server.installation import setup
 
 __all__ = ["main"]
@@ -10,6 +11,9 @@ __all__ = ["main"]
 
 def _run_server(server_dir: pl.Path | None) -> None:
     ctx = setup.initialize_context(server_dir)
+
+    # Start rqlite database before creating the app
+    rqlite.setup_rqlite(ctx.config)
 
     api_app = app.create_app(ctx)
 

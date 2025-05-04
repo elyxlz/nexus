@@ -61,17 +61,24 @@ async def update_wandb_urls(ctx: context.NexusServerContext) -> None:
 
 
 async def _for_queued_jobs(ctx: context.NexusServerContext):
+    my_node = ctx.config.node_name
     queued_jobs = db.list_jobs(ctx.db, status="queued")
     if not queued_jobs:
         return
 
-    ordered_jobs = job.get_queue(queued_jobs)
+    candidates = [j for j in queued_jobs if (j.assigned_node in (None, my_node))]
+    ordered_jobs = job.get_queue(candidates)
     if not ordered_jobs:
         return
 
     _job = ordered_jobs[0]
+    
+    if _job.assigned_node is None:
+        db.update_job(ctx.db, dc.replace(_job, assigned_node=my_node))
+        _job = dc.replace(_job, assigned_node=my_node)
+        
     running_jobs = db.list_jobs(conn=ctx.db, status="running")
-    blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
+    blacklisted = db.list_blacklisted_gpus(conn=ctx.db, node=my_node)
     all_gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
 
     available = [
@@ -136,4 +143,8 @@ async def scheduler_loop(ctx: context.NexusServerContext) -> None:
         await update_wandb_urls(ctx=ctx)
         await start_queued_jobs(ctx=ctx)
         await check_system_health()
+        
+        # Node heartbeat
+        db.touch_node(ctx.db, ctx.config.node_name)
+        
         await asyncio.sleep(ctx.config.refresh_rate)

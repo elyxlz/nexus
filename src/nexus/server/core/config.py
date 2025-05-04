@@ -15,6 +15,8 @@ __all__ = [
 ]
 
 
+import secrets
+
 class NexusServerConfig(pyds.BaseSettings):
     model_config = pyds.SettingsConfigDict(env_prefix="ns_", frozen=True, extra="ignore")
 
@@ -23,6 +25,8 @@ class NexusServerConfig(pyds.BaseSettings):
     port: int = pyd.Field(default=54323)
     node_name: str = pyd.Field(default="test_node")
     mock_gpus: bool = pyd.Field(default=False)
+    api_key: str = pyd.Field(default_factory=lambda: secrets.token_hex(16))
+    rqlite_host: str = pyd.Field(default="localhost:4001")
 
     @classmethod
     def settings_customise_sources(

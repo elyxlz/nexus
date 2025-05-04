@@ -199,6 +199,7 @@ def create_job(
         git_repo_url=git_repo_url,
         git_branch=git_branch,
         node_name=node_name,
+        assigned_node=None,
         priority=priority,
         num_gpus=num_gpus,
         env=env,

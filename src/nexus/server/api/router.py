@@ -226,7 +226,7 @@ async def update_job_endpoint(
 @db.safe_transaction
 @router.put("/v1/gpus/{gpu_idx}/blacklist", response_model=models.GpuStatusResponse)
 async def blacklist_gpu_endpoint(gpu_idx: int, ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    changed = db.add_blacklisted_gpu(conn=ctx.db, gpu_idx=gpu_idx)
+    changed = db.add_blacklisted_gpu(conn=ctx.db, gpu_idx=gpu_idx, node=ctx.config.node_name)
     if changed:
         logger.info(f"Blacklisted GPU {gpu_idx}")
     else:
@@ -237,7 +237,7 @@ async def blacklist_gpu_endpoint(gpu_idx: int, ctx: context.NexusServerContext =
 @db.safe_transaction
 @router.delete("/v1/gpus/{gpu_idx}/blacklist", response_model=models.GpuStatusResponse)
 async def remove_gpu_blacklist_endpoint(gpu_idx: int, ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    changed = db.remove_blacklisted_gpu(conn=ctx.db, gpu_idx=gpu_idx)
+    changed = db.remove_blacklisted_gpu(conn=ctx.db, gpu_idx=gpu_idx, node=ctx.config.node_name)
     if changed:
         logger.info(f"Removed GPU {gpu_idx} from blacklist")
     else:
@@ -248,7 +248,7 @@ async def remove_gpu_blacklist_endpoint(gpu_idx: int, ctx: context.NexusServerCo
 @router.get("/v1/gpus", response_model=list[gpu.GpuInfo])
 async def list_gpus_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
     running_jobs = db.list_jobs(conn=ctx.db, status="running")
-    blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
+    blacklisted = db.list_blacklisted_gpus(conn=ctx.db, node=ctx.config.node_name)
     gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
     logger.info(f"Found {len(gpus)} GPUs")
     return gpus

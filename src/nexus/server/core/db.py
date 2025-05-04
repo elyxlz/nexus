@@ -1,11 +1,13 @@
 import dataclasses as dc
 import functools
+import importlib.metadata
 import json
 import pathlib as pl
 import re
 import sqlite3
 import time
 import typing as tp
+from typing import Sequence, Any
 
 from nexus.server.core import context, schemas
 from nexus.server.core import exceptions as exc
@@ -26,6 +28,7 @@ __all__ = [
     "is_artifact_in_use",
     "delete_artifact",
     "safe_transaction",
+    "touch_node",
 ]
 
 
@@ -44,7 +47,8 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             priority INTEGER,
             num_gpus INTEGER,
             env JSON, 
-            node_name TEXT,
+            node_name TEXT,          -- creator
+            assigned_node TEXT,      -- executor
             jobrc TEXT,
             integrations TEXT,
             notifications TEXT,
@@ -65,7 +69,9 @@ def _create_tables(conn: sqlite3.Connection) -> None:
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS blacklisted_gpus (
-            gpu_idx INTEGER PRIMARY KEY
+            node TEXT,
+            gpu_idx INTEGER,
+            PRIMARY KEY(node, gpu_idx)
         )
     """)
     cur.execute("""
@@ -74,6 +80,13 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             size INTEGER NOT NULL,
             created_at REAL NOT NULL,
             data BLOB NOT NULL
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS nodes (
+            name TEXT PRIMARY KEY,
+            last_heartbeat REAL,
+            version TEXT
         )
     """)
     conn.commit()
@@ -100,6 +113,7 @@ _DB_COLS = [
     "num_gpus",
     "env",
     "node_name",
+    "assigned_node",
     "jobrc",
     "integrations",
     "notifications",
@@ -135,6 +149,7 @@ def _job_to_row(job: schemas.Job) -> tuple:
         job.num_gpus,
         json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env),
         job.node_name,
+        job.assigned_node,
         job.jobrc,
         ",".join(job.integrations),
         ",".join(job.notifications),
@@ -165,6 +180,7 @@ def _row_to_job(row: sqlite3.Row) -> schemas.Job:
         priority=row["priority"],
         num_gpus=row["num_gpus"],
         node_name=row["node_name"],
+        assigned_node=row["assigned_node"],
         env=_parse_json(json_obj=row["env"]),
         jobrc=row["jobrc"],
         notifications=row["notifications"].split(",") if row["notifications"] else [],
@@ -198,7 +214,8 @@ def _query_job(conn: sqlite3.Connection, job_id: str) -> schemas.Job:
     row = cur.fetchone()
     if not row:
         raise exc.JobNotFoundError(message=f"Job not found: {job_id}")
-    return _row_to_job(row=row)
+    dict_row = _row_to_dict(row, cur)
+    return _row_to_job(row=dict_row)
 
 
 def _validate_job_status(status: str | None) -> None:
@@ -231,7 +248,7 @@ def _query_jobs(conn: sqlite3.Connection, status: str | None, command_regex: str
 
     cur.execute(query, params)
     rows = cur.fetchall()
-    return [_row_to_job(row=row) for row in rows]
+    return [_row_to_job(row=_row_to_dict(row, cur)) for row in rows]
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job status")
@@ -241,7 +258,8 @@ def _check_job_status(conn: sqlite3.Connection, job_id: str) -> str:
     row = cur.fetchone()
     if not row:
         raise exc.JobNotFoundError(message=f"Job not found: {job_id}")
-    return row["status"]
+    dict_row = _row_to_dict(row, cur)
+    return dict_row["status"]
 
 
 def _verify_job_is_queued(job_id: str, status: str) -> None:
@@ -263,34 +281,38 @@ def _validate_gpu_idx(gpu_idx: int) -> None:
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to blacklist GPU")
-def _add_gpu_to_blacklist(conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def _add_gpu_to_blacklist(conn: sqlite3.Connection, node: str, gpu_idx: int) -> bool:
     """Add GPU to blacklist. Returns True if added, False if already blacklisted."""
     cur = conn.cursor()
-    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
+    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE node = ? AND gpu_idx = ?", (node, gpu_idx))
     if cur.fetchone():
         return False
-    cur.execute("INSERT INTO blacklisted_gpus (gpu_idx) VALUES (?)", (gpu_idx,))
+    cur.execute("INSERT INTO blacklisted_gpus (node, gpu_idx) VALUES (?, ?)", (node, gpu_idx))
     return True
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to remove GPU from blacklist")
-def _remove_gpu_from_blacklist(conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def _remove_gpu_from_blacklist(conn: sqlite3.Connection, node: str, gpu_idx: int) -> bool:
     """Remove GPU from blacklist. Returns True if removed, False if not blacklisted."""
     cur = conn.cursor()
-    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
+    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE node = ? AND gpu_idx = ?", (node, gpu_idx))
     if not cur.fetchone():
         return False
-    cur.execute("DELETE FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
+    cur.execute("DELETE FROM blacklisted_gpus WHERE node = ? AND gpu_idx = ?", (node, gpu_idx))
     return True
 
 
 ####################
 
 
+def _row_to_dict(row: Sequence, cursor) -> dict[str, Any]:
+    return {d[0]: row[i] for i, d in enumerate(cursor.description)}
+
+
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database connection")
-def create_connection(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+def create_connection(cfg) -> sqlite3.Connection:
+    from nexus.server.core import db_rqlite
+    conn = db_rqlite.connect(cfg)
     _create_tables(conn=conn)
     return conn
 
@@ -342,22 +364,25 @@ def delete_queued_job(conn: sqlite3.Connection, job_id: str) -> None:
         logger.info(f"Deleted artifact {job.artifact_id} as it's no longer needed after job {job_id} was removed")
 
 
-def add_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def add_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int, node: str) -> bool:
     _validate_gpu_idx(gpu_idx)
-    return _add_gpu_to_blacklist(conn=conn, gpu_idx=gpu_idx)
+    return _add_gpu_to_blacklist(conn=conn, node=node, gpu_idx=gpu_idx)
 
 
-def remove_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def remove_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int, node: str) -> bool:
     _validate_gpu_idx(gpu_idx)
-    return _remove_gpu_from_blacklist(conn=conn, gpu_idx=gpu_idx)
+    return _remove_gpu_from_blacklist(conn=conn, node=node, gpu_idx=gpu_idx)
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list blacklisted GPUs")
-def list_blacklisted_gpus(conn: sqlite3.Connection) -> list[int]:
+def list_blacklisted_gpus(conn: sqlite3.Connection, node: str | None = None) -> list[int]:
     cur = conn.cursor()
-    cur.execute("SELECT gpu_idx FROM blacklisted_gpus")
+    if node:
+        cur.execute("SELECT gpu_idx FROM blacklisted_gpus WHERE node = ?", (node,))
+    else:
+        cur.execute("SELECT gpu_idx FROM blacklisted_gpus")
     rows = cur.fetchall()
-    return [row["gpu_idx"] for row in rows]
+    return [_row_to_dict(row, cur)["gpu_idx"] for row in rows]
 
 
 def safe_transaction(func: tp.Callable[..., tp.Any]) -> tp.Callable[..., tp.Any]:
@@ -407,7 +432,8 @@ def get_artifact(conn: sqlite3.Connection, artifact_id: str) -> bytes:
     row = cur.fetchone()
     if not row:
         raise exc.JobError(message=f"Artifact not found: {artifact_id}")
-    return row["data"]
+    dict_row = _row_to_dict(row, cur)
+    return dict_row["data"]
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to check for artifact usage")
@@ -415,11 +441,23 @@ def is_artifact_in_use(conn: sqlite3.Connection, artifact_id: str) -> bool:
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) as count FROM jobs WHERE artifact_id = ? AND status = 'queued'", (artifact_id,))
     row = cur.fetchone()
-    return row["count"] > 0
+    dict_row = _row_to_dict(row, cur)
+    return dict_row["count"] > 0
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to delete artifact")
 def delete_artifact(conn: sqlite3.Connection, artifact_id: str) -> None:
     cur = conn.cursor()
     cur.execute("DELETE FROM artifacts WHERE id = ?", (artifact_id,))
+    conn.commit()
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to update node heartbeat")
+def touch_node(conn: sqlite3.Connection, name: str, version: str | None = None) -> None:
+    version = version or importlib.metadata.version("nexusai")
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT OR REPLACE INTO nodes (name, last_heartbeat, version) VALUES (?, ?, ?)",
+        (name, time.time(), version),
+    )
     conn.commit()
