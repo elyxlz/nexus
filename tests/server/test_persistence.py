@@ -57,13 +57,12 @@ def artifact_id() -> str:
 
 
 @pytest.fixture
-def job_payload(artifact_id) -> dict:
+def job_payload() -> dict:
     """Create a test job payload."""
     return {
         "command": "echo 'Persistence Test'",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
         "git_branch": "master",
-        "artifact_id": artifact_id,
         "user": "persistence_test_user",
         "discord_id": None,
         "num_gpus": 1,
@@ -93,18 +92,17 @@ def artifact_data():
     return output.getvalue()
 
 
-def add_artifact_to_db(client, artifact_id, artifact_data):
-    """Add an artifact to the database directly."""
-    from nexus.server.core import db
-
-    conn = client.app.state.ctx.db
-    db.add_artifact(conn, artifact_id, artifact_data)
+def add_artifact_to_db(client, artifact_data) -> str:
+    """Upload an artifact and return its ID."""
+    files = {"file": ("archive.tar.gz", artifact_data, "application/gzip")}
+    response = client.post("/v1/artifacts", files=files)
+    assert response.status_code == 201
+    return response.json()["data"]
 
 
 def test_api_with_persistent_database(
     create_test_client: Callable[[], TestClient],
     job_payload: dict,
-    artifact_id: str,
     artifact_data: bytes,
     db_path: str,
 ) -> None:
@@ -112,11 +110,14 @@ def test_api_with_persistent_database(
     # Create a client with the database
     client = create_test_client()
 
-    # Add artifact to the database
-    add_artifact_to_db(client, artifact_id, artifact_data)
+    # Add artifact to the database and get its ID
+    artifact_id = add_artifact_to_db(client, artifact_data)
+    
+    # Update job payload with the generated artifact ID
+    test_payload = {**job_payload, "artifact_id": artifact_id}
 
     # Submit a job
-    submit_response = client.post("/v1/jobs", json=job_payload)
+    submit_response = client.post("/v1/jobs", json=test_payload)
     assert submit_response.status_code == 201
     job_data = submit_response.json()
     job_id = job_data["id"]
@@ -129,7 +130,7 @@ def test_api_with_persistent_database(
     assert job["command"] == job_payload["command"]
 
     # Submit another job
-    job_payload2 = dict(job_payload)
+    job_payload2 = dict(test_payload)
     job_payload2["command"] = "echo 'Second job'"
     submit_response2 = client.post("/v1/jobs", json=job_payload2)
     assert submit_response2.status_code == 201
@@ -188,7 +189,6 @@ def test_gpu_blacklisting(create_test_client: Callable[[], TestClient], db_path:
 def test_job_lifecycle(
     create_test_client: Callable[[], TestClient],
     job_payload: dict,
-    artifact_id: str,
     artifact_data: bytes,
     db_path: str,
 ) -> None:
@@ -196,11 +196,14 @@ def test_job_lifecycle(
     # Create a client
     client = create_test_client()
 
-    # Add artifact to the database
-    add_artifact_to_db(client, artifact_id, artifact_data)
+    # Add artifact to the database and get its ID
+    artifact_id = add_artifact_to_db(client, artifact_data)
+    
+    # Update job payload with the generated artifact ID
+    test_payload = {**job_payload, "artifact_id": artifact_id}
 
     # Submit a job
-    submit_response = client.post("/v1/jobs", json=job_payload)
+    submit_response = client.post("/v1/jobs", json=test_payload)
     assert submit_response.status_code == 201
     job_id = submit_response.json()["id"]
 

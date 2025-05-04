@@ -10,9 +10,12 @@ from nexus.server.core.context import NexusServerContext
 from nexus.server.core.db import create_connection
 
 
-@pytest.fixture
-def artifact_id():
-    yield "abc123"
+def upload_test_artifact(client: TestClient, artifact_data: bytes) -> str:
+    """Upload an artifact and return its ID."""
+    files = {"file": ("archive.tar.gz", artifact_data, "application/gzip")}
+    response = client.post("/v1/artifacts", files=files)
+    assert response.status_code == 201
+    return response.json()["data"]
 
 
 @pytest.fixture
@@ -35,12 +38,12 @@ def app_client() -> Iterator[TestClient]:
 
 
 @pytest.fixture
-def job_payload(artifact_id) -> dict:
+def job_payload(uploaded_artifact) -> dict:
     return {
         "command": "echo 'Hello World'",
         "git_repo_url": "https://github.com/elyxlz/nexus.git",
         "git_branch": "master",
-        "artifact_id": artifact_id,
+        "artifact_id": uploaded_artifact,  # Use the server-generated artifact ID
         "user": "testuser",
         "discord_id": None,
         "num_gpus": 1,
@@ -72,13 +75,9 @@ def artifact_data():
 
 
 @pytest.fixture
-def uploaded_artifact(app_client: TestClient, artifact_id, artifact_data):
-    # Mock direct artifact insertion in the database since we're not testing the upload API here
-    from nexus.server.core import db
-
-    conn = app_client.app.state.ctx.db
-    db.add_artifact(conn, artifact_id, artifact_data)
-    return artifact_id
+def uploaded_artifact(app_client: TestClient, artifact_data):
+    # Upload an artifact via the helper function
+    return upload_test_artifact(app_client, artifact_data)
 
 
 @pytest.fixture
@@ -103,13 +102,9 @@ def test_server_status(app_client: TestClient) -> None:
     assert "server_user" in data
 
 
-def test_add_job(app_client: TestClient, job_payload: dict, artifact_id, artifact_data) -> None:
-    # Add artifact to the database first
-    from nexus.server.core import db
-
-    conn = app_client.app.state.ctx.db
-    db.add_artifact(conn, artifact_id, artifact_data)
-
+def test_add_job(app_client: TestClient, job_payload: dict) -> None:
+    # The artifact was already uploaded via the fixture chain
+    
     response = app_client.post("/v1/jobs", json=job_payload)
     print("Response:", response.status_code, response.text)
     assert response.status_code == 201
@@ -161,12 +156,9 @@ def test_list_jobs_by_gpu(app_client: TestClient) -> None:
     assert isinstance(by_gpu_resp.json(), list)
 
 
-def test_list_jobs_with_regex(app_client: TestClient, artifact_id: str, artifact_data: bytes) -> None:
-    # Add artifact to the database first
-    from nexus.server.core import db
-
-    conn = app_client.app.state.ctx.db
-    db.add_artifact(conn, artifact_id, artifact_data)
+def test_list_jobs_with_regex(app_client: TestClient, artifact_data: bytes) -> None:
+    # Upload artifact and get its ID
+    artifact_id = upload_test_artifact(app_client, artifact_data)
 
     job_payloads = [
         {
@@ -270,17 +262,14 @@ def test_get_nonexistent_job(app_client: TestClient) -> None:
     assert "Job not found: nonexistent" in response.text
 
 
-def test_job_lifecycle(app_client: TestClient, artifact_id: str, artifact_data: bytes) -> None:
+def test_job_lifecycle(app_client: TestClient, artifact_data: bytes) -> None:
     status_response = app_client.get("/v1/server/status")
     attempt = None
     assert status_response.status_code == 200
     assert "gpu_count" in status_response.json()
 
-    # Add artifact to the database first
-    from nexus.server.core import db
-
-    conn = app_client.app.state.ctx.db
-    db.add_artifact(conn, artifact_id, artifact_data)
+    # Upload artifact and get its ID
+    artifact_id = upload_test_artifact(app_client, artifact_data)
 
     job_payload = {
         "command": "echo 'Test job lifecycle'",
@@ -430,13 +419,10 @@ def test_blacklist_and_remove_gpu(app_client: TestClient) -> None:
     assert rem_data2["changed"] is False  # Should not be changed on second removal
 
 
-def test_kill_running_job(app_client: TestClient, artifact_id: str, artifact_data: bytes) -> None:
+def test_kill_running_job(app_client: TestClient, artifact_data: bytes) -> None:
     # Use the exact implementation that works in master, with fewer modifications
-    # Add artifact to the database first
-    from nexus.server.core import db
-
-    conn = app_client.app.state.ctx.db
-    db.add_artifact(conn, artifact_id, artifact_data)
+    # Upload artifact and get its ID
+    artifact_id = upload_test_artifact(app_client, artifact_data)
 
     job_payload = {
         "command": "sleep 30",
@@ -523,13 +509,10 @@ def test_kill_running_job(app_client: TestClient, artifact_id: str, artifact_dat
     assert job_data.get("marked_for_kill") is True
 
 
-def test_job_submission_minimal(app_client: TestClient, artifact_id: str, artifact_data: bytes) -> None:
+def test_job_submission_minimal(app_client: TestClient, artifact_data: bytes) -> None:
     """A simpler test that just checks job submission works."""
-    # Add artifact to the database first
-    from nexus.server.core import db
-
-    conn = app_client.app.state.ctx.db
-    db.add_artifact(conn, artifact_id, artifact_data)
+    # Upload artifact and get its ID
+    artifact_id = upload_test_artifact(app_client, artifact_data)
 
     # Create a job payload with required fields
     job_payload = {
@@ -620,12 +603,9 @@ def test_update_queued_job(app_client: TestClient, created_job: dict) -> None:
     assert verified_job["priority"] == 100
 
 
-def test_update_nonqueued_job(app_client: TestClient, artifact_id: str, artifact_data: bytes) -> None:
-    # Add artifact to the database first
-    from nexus.server.core import db
-
-    conn = app_client.app.state.ctx.db
-    db.add_artifact(conn, artifact_id, artifact_data)
+def test_update_nonqueued_job(app_client: TestClient, artifact_data: bytes) -> None:
+    # Upload artifact and get its ID
+    artifact_id = upload_test_artifact(app_client, artifact_data)
 
     job_payload = {
         "command": "echo 'Test non-queued update'",
@@ -662,12 +642,9 @@ def test_update_nonqueued_job(app_client: TestClient, artifact_id: str, artifact
     assert "Cannot update job" in update_response.text
 
 
-def test_job_with_gpu_idxs(app_client: TestClient, artifact_id: str, artifact_data: bytes) -> None:
-    # Add artifact to the database first
-    from nexus.server.core import db
-
-    conn = app_client.app.state.ctx.db
-    db.add_artifact(conn, artifact_id, artifact_data)
+def test_job_with_gpu_idxs(app_client: TestClient, artifact_data: bytes) -> None:
+    # Upload artifact and get its ID
+    artifact_id = upload_test_artifact(app_client, artifact_data)
 
     # Get available GPUs
     gpus_resp = app_client.get("/v1/gpus")
