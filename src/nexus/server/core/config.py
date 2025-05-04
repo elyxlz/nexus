@@ -17,6 +17,7 @@ __all__ = [
 
 import secrets
 
+
 class NexusServerConfig(pyds.BaseSettings):
     model_config = pyds.SettingsConfigDict(env_prefix="ns_", frozen=True, extra="ignore")
 

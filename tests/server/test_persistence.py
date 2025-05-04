@@ -39,7 +39,8 @@ def create_test_client(db_path: str, server_config: NexusServerConfig) -> Callab
     def _create_client() -> TestClient:
         # Use the same DB path for all test clients
         print(f"Using database at: {db_path}")
-        db = create_connection(db_path)
+        host, port = server_config.rqlite_host.split(":")
+        db = create_connection(host, int(port), server_config.api_key)
         context = NexusServerContext(db=db, config=server_config)
         app = create_app(ctx=context)
 
@@ -104,6 +105,7 @@ def test_api_with_persistent_database(
     job_payload: dict,
     artifact_data: bytes,
     db_path: str,
+    server_config: NexusServerConfig,
 ) -> None:
     """Test the API endpoints use a persistent database."""
     # Create a client with the database
@@ -127,6 +129,7 @@ def test_api_with_persistent_database(
     job = job_response.json()
     assert job["status"] == "queued"
     assert job["command"] == job_payload["command"]
+    assert job["node"] is None  # Node should be unassigned initially
 
     # Submit another job
     job_payload2 = dict(test_payload)
@@ -144,7 +147,9 @@ def test_api_with_persistent_database(
     # No need to stop server
 
 
-def test_gpu_blacklisting(create_test_client: Callable[[], TestClient], db_path: str) -> None:
+def test_gpu_blacklisting(
+    create_test_client: Callable[[], TestClient], db_path: str, server_config: NexusServerConfig
+) -> None:
     """Test the GPU blacklisting endpoint."""
     # Create a client
     client = create_test_client()
@@ -190,6 +195,7 @@ def test_job_lifecycle(
     job_payload: dict,
     artifact_data: bytes,
     db_path: str,
+    server_config: NexusServerConfig,
 ) -> None:
     """Test basic job lifecycle functionality."""
     # Create a client
@@ -209,6 +215,7 @@ def test_job_lifecycle(
     # Check job status - should be queued
     job = client.get(f"/v1/jobs/{job_id}").json()
     assert job["status"] == "queued"
+    assert job["node"] is None  # Should start with no node assignment
 
     # List jobs by status
     queued_jobs = client.get("/v1/jobs", params={"status": "queued"}).json()

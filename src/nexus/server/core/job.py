@@ -177,7 +177,7 @@ def create_job(
     command: str,
     artifact_id: str,
     user: str,
-    node_name: str,
+    node_name: str,  # submitting node, will be mapped to user
     num_gpus: int,
     env: dict[str, str],
     jobrc: str | None,
@@ -198,8 +198,7 @@ def create_job(
         artifact_id=artifact_id,
         git_repo_url=git_repo_url,
         git_branch=git_branch,
-        node_name=node_name,
-        assigned_node=None,
+        node=None,  # Will be assigned when a node claims the job
         priority=priority,
         num_gpus=num_gpus,
         env=env,

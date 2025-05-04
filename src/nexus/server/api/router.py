@@ -92,7 +92,7 @@ async def create_job_endpoint(
     gpu_idxs_list = job_request.gpu_idxs or []
     if job_request.run_immediately:
         running_jobs = db.list_jobs(conn=ctx.db, status="running")
-        blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
+        blacklisted = db.list_blacklisted_gpus(conn=ctx.db, node=ctx.config.node_name)
 
         if gpu_idxs_list:
             all_gpus = gpu.get_gpus(

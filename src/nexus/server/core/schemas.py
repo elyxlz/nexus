@@ -24,8 +24,7 @@ class Job:
     git_branch: str | None
     priority: int
     num_gpus: int
-    node_name: str
-    assigned_node: str | None
+    node: str | None  # executing node
     env: dict[str, str]
     jobrc: str | None
     notifications: list[NotificationType]

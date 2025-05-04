@@ -7,7 +7,8 @@ import re
 import sqlite3
 import time
 import typing as tp
-from typing import Sequence, Any
+from typing import Any
+from collections.abc import Sequence
 
 from nexus.server.core import context, schemas
 from nexus.server.core import exceptions as exc
@@ -47,8 +48,7 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             priority INTEGER,
             num_gpus INTEGER,
             env JSON, 
-            node_name TEXT,          -- creator
-            assigned_node TEXT,      -- executor
+            node TEXT,               -- executing node
             jobrc TEXT,
             integrations TEXT,
             notifications TEXT,
@@ -62,7 +62,7 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             completed_at REAL,
             exit_code INTEGER,
             error_message TEXT,
-            user TEXT,
+            user TEXT,               -- submitting user
             ignore_blacklist INTEGER DEFAULT 0,
             screen_session_name TEXT
         )
@@ -112,8 +112,7 @@ _DB_COLS = [
     "priority",
     "num_gpus",
     "env",
-    "node_name",
-    "assigned_node",
+    "node",
     "jobrc",
     "integrations",
     "notifications",
@@ -148,8 +147,7 @@ def _job_to_row(job: schemas.Job) -> tuple:
         job.priority,
         job.num_gpus,
         json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env),
-        job.node_name,
-        job.assigned_node,
+        job.node,
         job.jobrc,
         ",".join(job.integrations),
         ",".join(job.notifications),
@@ -179,8 +177,7 @@ def _row_to_job(row: sqlite3.Row) -> schemas.Job:
         git_branch=row["git_branch"],
         priority=row["priority"],
         num_gpus=row["num_gpus"],
-        node_name=row["node_name"],
-        assigned_node=row["assigned_node"],
+        node=row["node"],
         env=_parse_json(json_obj=row["env"]),
         jobrc=row["jobrc"],
         notifications=row["notifications"].split(",") if row["notifications"] else [],
@@ -310,9 +307,10 @@ def _row_to_dict(row: Sequence, cursor) -> dict[str, Any]:
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database connection")
-def create_connection(cfg) -> sqlite3.Connection:
-    from nexus.server.core import db_rqlite
-    conn = db_rqlite.connect(cfg)
+def create_connection(host: str, port: int, api_key: str) -> sqlite3.Connection:
+    from nexus.server.core import rqlite
+
+    conn = rqlite.connect_with_params(host, port, api_key)
     _create_tables(conn=conn)
     return conn
 
