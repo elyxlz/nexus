@@ -71,6 +71,7 @@ def run_job(
 
         branch_name = utils.get_current_git_branch()
         git_repo_url = None
+        artifact_id = None
 
         is_git_repo = True
         try:
