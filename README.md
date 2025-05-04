@@ -10,8 +10,6 @@
 - [ ] Filter job history/queue by user
 - [ ] History list broken on Hermes (possibly time-related)
 - [ ] Git: clean up helper functions
-- [ ] Git: make tagging optional
-- [ ] Gracefully skip pushing tag if repo isn't owned
 - [ ] Bug: `nx remove` repeats jobs multiple times
 - [ ] Support CPU-only jobs
 - [ ] Track per-job resource allocation in metadata
@@ -21,6 +19,6 @@
 
 - [ ] Dependent jobs (run job B after job A completes)
 - [ ] Better secrets management (e.g., encrypted `.env`)
-- [ ] Multi-node support (DHT + DQLite for coordination/auth)
-- [ ] Full job execution isolation (process/network/filesystem)
+- [ ] Multi-node support (DHT + RqLite for coordination/auth)
+- [ ] Full job execution isolation (like slurm does it)
 - [ ] Create a dedicated Linux user per Nexus user
