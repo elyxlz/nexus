@@ -7,25 +7,20 @@
 # ]
 # ///
 """
-Key-only BitTorrent-DHT discovery helper
+Key-only BitTorrent-DHT discovery helper (hard-coded key: "banana")
 
-Usage (no arguments needed – default Raft port 4002):
-    uv run test_find.py             # announces and looks up peers
+Run on two (publicly reachable) machines:
+    uv run test_dht.py          # advertises port 4002
+or
+    uv run test_dht.py 5000     # advertises custom port 5000
 
-Optional custom port:
-    uv run test_find.py 5000        # announce on port 5000
-
-All nodes hard-code the same discovery key ("banana"). They publish their
-public-IP:port tuple as a mutable DHT record and look for peers under the very
-same info-hash.  Run this on as many machines as you like and they should list
-one another once the DHT has converged.
+It will print other peers' public-IP:port once discovered.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import random
 import sys
 import time
 import urllib.request
@@ -34,27 +29,26 @@ from typing import List, Tuple
 import libtorrent as lt
 
 # ---------------------------------------------------------------------------
-# Configuration
+# Configuration constants
 # ---------------------------------------------------------------------------
-NETWORK_KEY = "banana"  # shared secret → SHA-1 → info-hash
-DEFAULT_PORT = 4002  # Raft port we advertise
+NETWORK_KEY = "banana"
+DEFAULT_PORT = 4002
 BOOTSTRAP_ROUTERS: List[Tuple[str, int]] = [
     ("router.bittorrent.com", 6881),
     ("router.utorrent.com", 6881),
     ("dht.transmissionbt.com", 6881),
 ]
-ANNOUNCE_INTERVAL = 15  # seconds between repeated announces
-QUERY_INTERVAL = 5  # seconds between get_peers lookups
-TIMEOUT = 300  # total seconds to wait before giving up
-MIN_ROUTING_NODES = 25  # wait until we know at least N DHT nodes
+ANNOUNCE_INTERVAL = 20  # seconds
+QUERY_INTERVAL = 7  # seconds
+TIMEOUT = 300  # give up after 5 min
+MIN_ROUTING_NODES = 25  # wait until routing table reasonably filled
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helper functions
 # ---------------------------------------------------------------------------
 
 
 def get_public_ip() -> str | None:
-    """Return the outward-facing IPv4 address seen by ipify (or None)."""
     try:
         with urllib.request.urlopen("https://api.ipify.org", timeout=5) as r:
             return r.read().decode().strip()
@@ -67,75 +61,65 @@ def sha1_hex(data: bytes) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Main discovery logic
+# Main
 # ---------------------------------------------------------------------------
 
 
 def main() -> None:
-    # ---------------------------------------------------------------------
-    # Parse CLI
-    # ---------------------------------------------------------------------
     port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
 
-    # ---------------------------------------------------------------------
-    # Derive info-hash from NETWORK_KEY (hard-coded "banana")
-    # ---------------------------------------------------------------------
-    key_bytes = NETWORK_KEY.encode()
-    info_hash_hex = sha1_hex(key_bytes)
+    info_hash_hex = sha1_hex(NETWORK_KEY.encode())
     info_hash = lt.sha1_hash(bytes.fromhex(info_hash_hex))
     print(f"[*] Info-hash (SHA-1 of '{NETWORK_KEY}'): {info_hash_hex}")
 
-    # ---------------------------------------------------------------------
-    # Figure out our public IP to publish
-    # ---------------------------------------------------------------------
     public_ip = get_public_ip()
     if public_ip:
         print(f"[*] Public IP detected: {public_ip}")
     else:
-        print("[!] Could not determine public IP – announcing behind NAT; peers must connect via DHT rendezvous only.")
-    advertised_value = json.dumps({"ip": public_ip, "port": port}).encode()
+        print("[!] Could not determine public IP; replies may not reach us under symmetric NAT.")
 
-    # ---------------------------------------------------------------------
-    # libtorrent session + DHT bootstrap
-    # ---------------------------------------------------------------------
     ses = lt.session()
     ses.listen_on(port, port)
     for host, p in BOOTSTRAP_ROUTERS:
         ses.add_dht_router(host, p)
     ses.start_dht()
-    ses.set_alert_mask(
+
+    # Build alert mask – handle libtorrent variants gracefully
+    mask = (
         lt.alert.category_t.dht_operation_notification
         | lt.alert.category_t.dht_notification
-        | lt.alert.category_t.dht_stats_notification
+        | lt.alert.category_t.stats_notification  # broader stats category covers dht_stats_alert
     )
+    ses.set_alert_mask(mask)
 
-    # Wait until routing table has a minimum number of nodes
-    print("[*] Bootstrapping DHT …")
+    # ------------------------------------------------------------------
+    # Wait until routing table is populated
+    # ------------------------------------------------------------------
+    print("[*] Bootstrapping DHT … (looking for routing nodes)")
     while True:
         ses.post_dht_stats()
-        alert = ses.wait_for_alert(1000)
+        ses.wait_for_alert(1000)
+        ready = False
         for a in ses.pop_alerts():
             if isinstance(a, lt.dht_stats_alert):
                 if a.num_nodes >= MIN_ROUTING_NODES:
-                    print(f"[*] DHT routing table ready – {a.num_nodes} nodes")
+                    ready = True
+                    print(f"[*] Routing table ready – {a.num_nodes} nodes known")
                     break
-        else:
-            continue  # inner loop did not break – keep waiting
-        break  # inner loop did break – routing table OK
+        if ready:
+            break
 
-    # ---------------------------------------------------------------------
-    # Repeatedly announce and look for peers
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Main announce / lookup loop
+    # ------------------------------------------------------------------
+    deadline = time.time() + TIMEOUT
     next_announce = 0.0
     next_query = 0.0
-    deadline = time.time() + TIMEOUT
-    print("[*] Entering announce / query loop …")
 
     while time.time() < deadline:
         now = time.time()
         if now >= next_announce:
             print("[*] Announcing our presence …")
-            ses.dht_put_item({"v": advertised_value})  # mutable put requires libtorrent 2.x
             ses.dht_announce(info_hash, port, 0)
             next_announce = now + ANNOUNCE_INTERVAL
         if now >= next_query:
@@ -143,27 +127,19 @@ def main() -> None:
             ses.dht_get_peers(info_hash)
             next_query = now + QUERY_INTERVAL
 
-        alert = ses.wait_for_alert(1000)
-        if not alert:
-            continue
-
+        ses.wait_for_alert(1000)
         for a in ses.pop_alerts():
-            # Peer list comes back via dht_get_peers_reply_alert
             if isinstance(a, lt.dht_get_peers_reply_alert):
                 peers = a.peers()
                 if peers:
                     print("[+] Discovered peers:")
                     for ip, p in peers:
                         print(f"    {ip}:{p}")
-                    return  # finished successfully
+                    return
             elif isinstance(a, lt.dht_error_alert):
                 print(f"[!] DHT error: {a}")
-            elif isinstance(a, lt.dht_put_alert):
-                print("[*] DHT put acknowledged")
-            elif isinstance(a, lt.dht_announce_alert):
-                print("[*] Announce accepted by remote node")
 
-    print(f"[!] Gave up after {TIMEOUT}s – no peers found. Try again or check NAT/firewall.")
+    print(f"[!] Timed out after {TIMEOUT}s – no peers found. Check NAT/firewall or run on public VMs.")
 
 
 if __name__ == "__main__":
