@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from nexus.server.api.app import create_app
 from nexus.server.core.config import NexusServerConfig
 from nexus.server.core.context import NexusServerContext
-from nexus.server.core.db import create_connection, touch_node
+from nexus.server.core.db import create_connection
 
 
 @pytest.fixture
@@ -48,19 +48,9 @@ def create_app_client(server_config: NexusServerConfig):
         yield client, context
 
 
-def test_node_heartbeat(create_app_client, alt_server_config):
-    """Test that node heartbeat records are created and updated."""
+def test_node_gpu_blacklisting(create_app_client, alt_server_config):
+    """Test that GPU blacklisting works correctly in multi-node setup."""
     client, context = create_app_client
-
-    # Trigger the scheduler loop which should create a heartbeat
-    client.get("/v1/server/status")
-
-    # Manually add a second node heartbeat
-    touch_node(context.db, alt_server_config.node_name)
-
-    # Verify nodes are listed in the database
-    # We can't directly access the nodes table through an API, so we'll check
-    # indirectly through the blacklisted GPUs endpoint
 
     # Blacklist a GPU on the first node
     blacklist_resp = client.put("/v1/gpus/0/blacklist")

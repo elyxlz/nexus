@@ -136,9 +136,11 @@ async def create_job_endpoint(
         ignore_blacklist=ignore_blacklist,
     )
 
+    # Writes always go through the leader, so no need to use linearizable consistency
     db.add_job(conn=ctx.db, job=j)
     logger.info(format.format_job_action(j, action="added"))
 
+    # Reading job details can use weak consistency
     return db.get_job(conn=ctx.db, job_id=j.id)
 
 
@@ -170,6 +172,7 @@ async def delete_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.
             message=f"Cannot delete job {job_id} with status '{_job.status}'. Only queued jobs can be deleted."
         )
 
+    # Writes always go through the leader, so no need to use linearizable consistency
     db.delete_queued_job(conn=ctx.db, job_id=job_id)
     logger.info(f"Removed queued job {job_id}")
 
@@ -186,6 +189,7 @@ async def kill_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.De
         )
 
     updated = dc.replace(_job, marked_for_kill=True)
+    # Writes always go through the leader, so no need to use linearizable consistency
     db.update_job(conn=ctx.db, job=updated)
     logger.info(f"Marked running job {job_id} for termination")
 
@@ -217,6 +221,7 @@ async def update_job_endpoint(
         return _job
 
     updated = dc.replace(_job, **update_fields)
+    # Writes always go through the leader, so no need to use linearizable consistency
     db.update_job(conn=ctx.db, job=updated)
     logger.info(format.format_job_action(updated, action="updated"))
 

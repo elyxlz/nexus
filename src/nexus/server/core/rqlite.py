@@ -18,22 +18,37 @@ RQLITE_DATA_DIR = pl.Path("/var/lib/rqlite")
 rqlite_process = None
 
 
-def connect(cfg: config.NexusServerConfig):
-    """Connect to a rqlite database using the configuration object"""
+def connect(cfg: config.NexusServerConfig, scheduler_mode: bool = False):
+    """Connect to a rqlite database using the configuration object
+    
+    Args:
+        cfg: The server configuration
+        scheduler_mode: Whether this connection is for the scheduler.
+                       If True, uses linearizable consistency for immediate cross-cluster visibility.
+    """
     host, port = cfg.rqlite_host.split(":")
-    return connect_with_params(host=host, port=int(port), api_key=cfg.api_key)
+    consistency = "linearizable" if scheduler_mode else "weak"
+    return connect_with_params(host=host, port=int(port), api_key=cfg.api_key, consistency=consistency)
 
 
-def connect_with_params(host: str, port: int, api_key: str):
+def dict_factory(cursor, row):
+    """Factory function to convert database rows to dictionaries more efficiently"""
+    return {c[0]: row[i] for i, c in enumerate(cursor.description)}
+
+
+def connect_with_params(host: str, port: int, api_key: str, consistency: str = "weak"):
     """Connect to a rqlite database using explicit parameters"""
-    return dbapi.connect(
+    conn = dbapi.connect(
         host=host,
         port=port,
         user="nexus",
         password=api_key,
         https=False,
         verify_https=False,
+        consistency=consistency,
     )
+    conn.row_factory = dict_factory
+    return conn
 
 
 def is_port_in_use(port: int) -> bool:

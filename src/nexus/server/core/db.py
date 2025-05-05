@@ -29,7 +29,7 @@ __all__ = [
     "is_artifact_in_use",
     "delete_artifact",
     "safe_transaction",
-    "touch_node",
+    "claim_job",
 ]
 
 
@@ -48,7 +48,7 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             priority INTEGER,
             num_gpus INTEGER,
             env JSON, 
-            node TEXT,               -- executing node
+            node TEXT,
             jobrc TEXT,
             integrations TEXT,
             notifications TEXT,
@@ -62,7 +62,7 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             completed_at REAL,
             exit_code INTEGER,
             error_message TEXT,
-            user TEXT,               -- submitting user
+            user TEXT,
             ignore_blacklist INTEGER DEFAULT 0,
             screen_session_name TEXT
         )
@@ -80,13 +80,6 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             size INTEGER NOT NULL,
             created_at REAL NOT NULL,
             data BLOB NOT NULL
-        )
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS nodes (
-            name TEXT PRIMARY KEY,
-            last_heartbeat REAL,
-            version TEXT
         )
     """)
     conn.commit()
@@ -211,8 +204,7 @@ def _query_job(conn: sqlite3.Connection, job_id: str) -> schemas.Job:
     row = cur.fetchone()
     if not row:
         raise exc.JobNotFoundError(message=f"Job not found: {job_id}")
-    dict_row = _row_to_dict(row, cur)
-    return _row_to_job(row=dict_row)
+    return _row_to_job(row=row)
 
 
 def _validate_job_status(status: str | None) -> None:
@@ -245,7 +237,7 @@ def _query_jobs(conn: sqlite3.Connection, status: str | None, command_regex: str
 
     cur.execute(query, params)
     rows = cur.fetchall()
-    return [_row_to_job(row=_row_to_dict(row, cur)) for row in rows]
+    return [_row_to_job(row=row) for row in rows]
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job status")
@@ -255,8 +247,7 @@ def _check_job_status(conn: sqlite3.Connection, job_id: str) -> str:
     row = cur.fetchone()
     if not row:
         raise exc.JobNotFoundError(message=f"Job not found: {job_id}")
-    dict_row = _row_to_dict(row, cur)
-    return dict_row["status"]
+    return row["status"]
 
 
 def _verify_job_is_queued(job_id: str, status: str) -> None:
@@ -302,8 +293,8 @@ def _remove_gpu_from_blacklist(conn: sqlite3.Connection, node: str, gpu_idx: int
 ####################
 
 
-def _row_to_dict(row: Sequence, cursor) -> dict[str, Any]:
-    return {d[0]: row[i] for i, d in enumerate(cursor.description)}
+# This function is no longer needed as we use conn.row_factory = dict_factory
+# Instead we get dictionaries directly from database rows
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database connection")
@@ -380,7 +371,7 @@ def list_blacklisted_gpus(conn: sqlite3.Connection, node: str | None = None) -> 
     else:
         cur.execute("SELECT gpu_idx FROM blacklisted_gpus")
     rows = cur.fetchall()
-    return [_row_to_dict(row, cur)["gpu_idx"] for row in rows]
+    return [row["gpu_idx"] for row in rows]
 
 
 def safe_transaction(func: tp.Callable[..., tp.Any]) -> tp.Callable[..., tp.Any]:
@@ -430,8 +421,7 @@ def get_artifact(conn: sqlite3.Connection, artifact_id: str) -> bytes:
     row = cur.fetchone()
     if not row:
         raise exc.JobError(message=f"Artifact not found: {artifact_id}")
-    dict_row = _row_to_dict(row, cur)
-    return dict_row["data"]
+    return row["data"]
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to check for artifact usage")
@@ -439,8 +429,7 @@ def is_artifact_in_use(conn: sqlite3.Connection, artifact_id: str) -> bool:
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) as count FROM jobs WHERE artifact_id = ? AND status = 'queued'", (artifact_id,))
     row = cur.fetchone()
-    dict_row = _row_to_dict(row, cur)
-    return dict_row["count"] > 0
+    return row["count"] > 0
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to delete artifact")
@@ -450,12 +439,17 @@ def delete_artifact(conn: sqlite3.Connection, artifact_id: str) -> None:
     conn.commit()
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to update node heartbeat")
-def touch_node(conn: sqlite3.Connection, name: str, version: str | None = None) -> None:
-    version = version or importlib.metadata.version("nexusai")
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to claim job")
+def claim_job(conn: sqlite3.Connection, job_id: str, node: str) -> bool:
+    """Atomically claim a job for a node if it's not claimed yet.
+    
+    Returns True if successfully claimed, False if another node claimed it first.
+    """
     cur = conn.cursor()
     cur.execute(
-        "INSERT OR REPLACE INTO nodes (name, last_heartbeat, version) VALUES (?, ?, ?)",
-        (name, time.time(), version),
+        "UPDATE jobs SET node = ? WHERE id = ? AND node IS NULL AND status = 'queued'",
+        (node, job_id),
     )
-    conn.commit()
+    return cur.rowcount == 1
+
+

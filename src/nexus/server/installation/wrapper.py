@@ -6,21 +6,22 @@ import sys
 NEXUS_RUN_SCRIPT = """#!/bin/bash
 set -e
 
-# Start rqlite with the right options
+JOIN_OPTS=""
+if [ -f /etc/nexus_server/auth.conf ]; then
+    JOIN_OPTS="-join-as nexus -join-auth-file /etc/nexus_server/auth.conf"
+fi
+
 if [ -f /etc/nexus_server/rqlite/join.env ]; then
     source /etc/nexus_server/rqlite/join.env
-    echo "Starting rqlite node in cluster mode..."
-    rqlited -node-id "$(hostname)" -join $JOIN_FLAGS -auth /etc/nexus_server/auth.conf /var/lib/rqlite &
+    
+    rqlited -node-id "$(hostname)" -join $JOIN_FLAGS ${JOIN_OPTS:+$JOIN_OPTS} -auth /etc/nexus_server/auth.conf /var/lib/rqlite &
 else
-    echo "Starting rqlite node in standalone mode..."
+    
     rqlited -node-id "$(hostname)" -auth /etc/nexus_server/auth.conf /var/lib/rqlite &
 fi
 
 RQLITE_PID=$!
-echo "rqlite started with PID $RQLITE_PID"
 
-# Start nexus-server and make sure it's in foreground
-echo "Starting nexus-server..."
 exec /usr/local/bin/nexus-server
 """
 

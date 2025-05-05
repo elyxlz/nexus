@@ -768,6 +768,7 @@ Configuration can also be set using environment variables (prefix=NS_):
 
 def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext:
     import secrets
+    from nexus.server.core import rqlite
 
     if server_dir and (server_dir / "config.toml").exists():
         _config = config.load_config(server_dir)
@@ -775,8 +776,11 @@ def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext
     else:
         _config = config.NexusServerConfig(server_dir=server_dir, api_key=secrets.token_hex(16))
 
-    # Create DB connection
+    # Create DB connection with weak consistency for general operations
     host, port = _config.rqlite_host.split(":")
-    _db = db.create_connection(host, int(port), _config.api_key)
+    _db = rqlite.connect_with_params(host, int(port), _config.api_key, consistency="weak")
+    
+    # Create a separate DB connection with linearizable consistency for operations requiring immediate cross-cluster visibility
+    strong_db = rqlite.connect_with_params(host, int(port), _config.api_key, consistency="linearizable")
 
-    return context.NexusServerContext(db=_db, config=_config)
+    return context.NexusServerContext(db=_db, config=_config, strong_db=strong_db)
