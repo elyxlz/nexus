@@ -10,3 +10,4 @@ __all__ = ["NexusServerContext"]
 class NexusServerContext:
     db: sqlite3.Connection
     config: config.NexusServerConfig
+    strong_db: sqlite3.Connection

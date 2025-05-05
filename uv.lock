@@ -610,6 +610,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "psutil" },
     { name = "pydantic-settings" },
+    { name = "pyrqlite" },
     { name = "requests" },
     { name = "speedtest-cli" },
     { name = "termcolor" },
@@ -637,6 +638,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.3" },
     { name = "psutil", specifier = ">=7.0.0" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },
+    { name = "pyrqlite", specifier = ">=1.1" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "speedtest-cli", specifier = ">=2.1.3" },
     { name = "termcolor", specifier = ">=2.5.0" },
@@ -984,6 +986,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/bd/73/f20cb1dea1bdc1774e7f860fb69dc0718c7d8dea854a345faec845eb086a/pyright-1.1.396.tar.gz", hash = "sha256:142901f5908f5a0895be3d3befcc18bedcdb8cc1798deecaec86ef7233a29b03", size = 3814400 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/80/be/ecb7cfb42d242b7ee764b52e6ff4782beeec00e3b943a3ec832b281f9da6/pyright-1.1.396-py3-none-any.whl", hash = "sha256:c635e473095b9138c471abccca22b9fedbe63858e0b40d4fc4b67da041891844", size = 5689355 },
+]
+
+[[package]]
+name = "pyrqlite"
+version = "2.2.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7c/b6/3cfa237107f6e2077cdd649e4c3d5185bc8d564551ecd14a4e300f91ff5c/pyrqlite-2.2.3.tar.gz", hash = "sha256:074950c2d9c05bf59addcb07b55b7b85ab103748e79a41fb0e96990eed22d9e7", size = 14230 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9c/e9/2c979c0b558c0ddebd95000dc23fe3f07abaf389af199bcfb0094943e47b/pyrqlite-2.2.3-py3-none-any.whl", hash = "sha256:b090209cfe118038cf898be2584850905ea1d9ec5f3b9b317dccb9c419a60d1c", size = 14419 },
 ]
 
 [[package]]

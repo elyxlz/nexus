@@ -92,7 +92,7 @@ async def create_job_endpoint(
     gpu_idxs_list = job_request.gpu_idxs or []
     if job_request.run_immediately:
         running_jobs = db.list_jobs(conn=ctx.db, status="running")
-        blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
+        blacklisted = db.list_blacklisted_gpus(conn=ctx.db, node=ctx.config.node_name)
 
         if gpu_idxs_list:
             all_gpus = gpu.get_gpus(
@@ -136,9 +136,11 @@ async def create_job_endpoint(
         ignore_blacklist=ignore_blacklist,
     )
 
+    # Writes always go through the leader, so no need to use linearizable consistency
     db.add_job(conn=ctx.db, job=j)
     logger.info(format.format_job_action(j, action="added"))
 
+    # Reading job details can use weak consistency
     return db.get_job(conn=ctx.db, job_id=j.id)
 
 
@@ -170,6 +172,7 @@ async def delete_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.
             message=f"Cannot delete job {job_id} with status '{_job.status}'. Only queued jobs can be deleted."
         )
 
+    # Writes always go through the leader, so no need to use linearizable consistency
     db.delete_queued_job(conn=ctx.db, job_id=job_id)
     logger.info(f"Removed queued job {job_id}")
 
@@ -186,6 +189,7 @@ async def kill_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.De
         )
 
     updated = dc.replace(_job, marked_for_kill=True)
+    # Writes always go through the leader, so no need to use linearizable consistency
     db.update_job(conn=ctx.db, job=updated)
     logger.info(f"Marked running job {job_id} for termination")
 
@@ -217,6 +221,7 @@ async def update_job_endpoint(
         return _job
 
     updated = dc.replace(_job, **update_fields)
+    # Writes always go through the leader, so no need to use linearizable consistency
     db.update_job(conn=ctx.db, job=updated)
     logger.info(format.format_job_action(updated, action="updated"))
 
@@ -226,7 +231,7 @@ async def update_job_endpoint(
 @db.safe_transaction
 @router.put("/v1/gpus/{gpu_idx}/blacklist", response_model=models.GpuStatusResponse)
 async def blacklist_gpu_endpoint(gpu_idx: int, ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    changed = db.add_blacklisted_gpu(conn=ctx.db, gpu_idx=gpu_idx)
+    changed = db.add_blacklisted_gpu(conn=ctx.db, gpu_idx=gpu_idx, node=ctx.config.node_name)
     if changed:
         logger.info(f"Blacklisted GPU {gpu_idx}")
     else:
@@ -237,7 +242,7 @@ async def blacklist_gpu_endpoint(gpu_idx: int, ctx: context.NexusServerContext =
 @db.safe_transaction
 @router.delete("/v1/gpus/{gpu_idx}/blacklist", response_model=models.GpuStatusResponse)
 async def remove_gpu_blacklist_endpoint(gpu_idx: int, ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    changed = db.remove_blacklisted_gpu(conn=ctx.db, gpu_idx=gpu_idx)
+    changed = db.remove_blacklisted_gpu(conn=ctx.db, gpu_idx=gpu_idx, node=ctx.config.node_name)
     if changed:
         logger.info(f"Removed GPU {gpu_idx} from blacklist")
     else:
@@ -248,7 +253,7 @@ async def remove_gpu_blacklist_endpoint(gpu_idx: int, ctx: context.NexusServerCo
 @router.get("/v1/gpus", response_model=list[gpu.GpuInfo])
 async def list_gpus_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
     running_jobs = db.list_jobs(conn=ctx.db, status="running")
-    blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
+    blacklisted = db.list_blacklisted_gpus(conn=ctx.db, node=ctx.config.node_name)
     gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
     logger.info(f"Found {len(gpus)} GPUs")
     return gpus

@@ -26,6 +26,7 @@ __all__ = [
     "is_artifact_in_use",
     "delete_artifact",
     "safe_transaction",
+    "claim_job",
 ]
 
 
@@ -44,7 +45,7 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             priority INTEGER,
             num_gpus INTEGER,
             env JSON, 
-            node_name TEXT,
+            node TEXT,
             jobrc TEXT,
             integrations TEXT,
             notifications TEXT,
@@ -65,7 +66,9 @@ def _create_tables(conn: sqlite3.Connection) -> None:
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS blacklisted_gpus (
-            gpu_idx INTEGER PRIMARY KEY
+            node TEXT,
+            gpu_idx INTEGER,
+            PRIMARY KEY(node, gpu_idx)
         )
     """)
     cur.execute("""
@@ -99,7 +102,7 @@ _DB_COLS = [
     "priority",
     "num_gpus",
     "env",
-    "node_name",
+    "node",
     "jobrc",
     "integrations",
     "notifications",
@@ -134,7 +137,7 @@ def _job_to_row(job: schemas.Job) -> tuple:
         job.priority,
         job.num_gpus,
         json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env),
-        job.node_name,
+        job.node,
         job.jobrc,
         ",".join(job.integrations),
         ",".join(job.notifications),
@@ -164,7 +167,7 @@ def _row_to_job(row: sqlite3.Row) -> schemas.Job:
         git_branch=row["git_branch"],
         priority=row["priority"],
         num_gpus=row["num_gpus"],
-        node_name=row["node_name"],
+        node=row["node"],
         env=_parse_json(json_obj=row["env"]),
         jobrc=row["jobrc"],
         notifications=row["notifications"].split(",") if row["notifications"] else [],
@@ -263,34 +266,39 @@ def _validate_gpu_idx(gpu_idx: int) -> None:
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to blacklist GPU")
-def _add_gpu_to_blacklist(conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def _add_gpu_to_blacklist(conn: sqlite3.Connection, node: str, gpu_idx: int) -> bool:
     """Add GPU to blacklist. Returns True if added, False if already blacklisted."""
     cur = conn.cursor()
-    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
+    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE node = ? AND gpu_idx = ?", (node, gpu_idx))
     if cur.fetchone():
         return False
-    cur.execute("INSERT INTO blacklisted_gpus (gpu_idx) VALUES (?)", (gpu_idx,))
+    cur.execute("INSERT INTO blacklisted_gpus (node, gpu_idx) VALUES (?, ?)", (node, gpu_idx))
     return True
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to remove GPU from blacklist")
-def _remove_gpu_from_blacklist(conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def _remove_gpu_from_blacklist(conn: sqlite3.Connection, node: str, gpu_idx: int) -> bool:
     """Remove GPU from blacklist. Returns True if removed, False if not blacklisted."""
     cur = conn.cursor()
-    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
+    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE node = ? AND gpu_idx = ?", (node, gpu_idx))
     if not cur.fetchone():
         return False
-    cur.execute("DELETE FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
+    cur.execute("DELETE FROM blacklisted_gpus WHERE node = ? AND gpu_idx = ?", (node, gpu_idx))
     return True
 
 
 ####################
 
 
+# This function is no longer needed as we use conn.row_factory = dict_factory
+# Instead we get dictionaries directly from database rows
+
+
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database connection")
-def create_connection(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+def create_connection(host: str, port: int, api_key: str) -> sqlite3.Connection:
+    from nexus.server.core import rqlite
+
+    conn = rqlite.connect_with_params(host, port, api_key)
     _create_tables(conn=conn)
     return conn
 
@@ -342,20 +350,23 @@ def delete_queued_job(conn: sqlite3.Connection, job_id: str) -> None:
         logger.info(f"Deleted artifact {job.artifact_id} as it's no longer needed after job {job_id} was removed")
 
 
-def add_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def add_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int, node: str) -> bool:
     _validate_gpu_idx(gpu_idx)
-    return _add_gpu_to_blacklist(conn=conn, gpu_idx=gpu_idx)
+    return _add_gpu_to_blacklist(conn=conn, node=node, gpu_idx=gpu_idx)
 
 
-def remove_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def remove_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int, node: str) -> bool:
     _validate_gpu_idx(gpu_idx)
-    return _remove_gpu_from_blacklist(conn=conn, gpu_idx=gpu_idx)
+    return _remove_gpu_from_blacklist(conn=conn, node=node, gpu_idx=gpu_idx)
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list blacklisted GPUs")
-def list_blacklisted_gpus(conn: sqlite3.Connection) -> list[int]:
+def list_blacklisted_gpus(conn: sqlite3.Connection, node: str | None = None) -> list[int]:
     cur = conn.cursor()
-    cur.execute("SELECT gpu_idx FROM blacklisted_gpus")
+    if node:
+        cur.execute("SELECT gpu_idx FROM blacklisted_gpus WHERE node = ?", (node,))
+    else:
+        cur.execute("SELECT gpu_idx FROM blacklisted_gpus")
     rows = cur.fetchall()
     return [row["gpu_idx"] for row in rows]
 
@@ -423,3 +434,17 @@ def delete_artifact(conn: sqlite3.Connection, artifact_id: str) -> None:
     cur = conn.cursor()
     cur.execute("DELETE FROM artifacts WHERE id = ?", (artifact_id,))
     conn.commit()
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to claim job")
+def claim_job(conn: sqlite3.Connection, job_id: str, node: str) -> bool:
+    """Atomically claim a job for a node if it's not claimed yet.
+
+    Returns True if successfully claimed, False if another node claimed it first.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE jobs SET node = ? WHERE id = ? AND node IS NULL AND status = 'queued'",
+        (node, job_id),
+    )
+    return cur.rowcount == 1
