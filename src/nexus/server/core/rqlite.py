@@ -20,7 +20,7 @@ rqlite_process = None
 
 def connect(cfg: config.NexusServerConfig, scheduler_mode: bool = False):
     """Connect to a rqlite database using the configuration object
-    
+
     Args:
         cfg: The server configuration
         scheduler_mode: Whether this connection is for the scheduler.

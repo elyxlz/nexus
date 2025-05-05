@@ -1,46 +1,37 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.10"
-# dependencies = [
-#   "libtorrent>=2.0.11,<3",
-#   "requests>=2,<3",
-# ]
+# dependencies = ["libtorrent>=2.0.11,<3", "requests>=2,<3"]
 # ///
 """
 Minimal BitTorrent-DHT discovery helper
-• Hard-coded key  : “banana”
-• Advertises      : <public-ip>:<port>
-• Prints new peers : until you abort with Ctrl-C
+• Hard-coded key: "banana"
+• Advertises: <public-ip>:<port>
+• Prints new peers until you abort with Ctrl-C
 """
 
 from __future__ import annotations
+import hashlib
+import sys
+import time
+import requests
+import libtorrent as lt
 
-import hashlib, sys, time, requests, libtorrent as lt
-from typing import List, Tuple, Union
-
-# ── config ────────────────────────────────────────────────────────────────
-KEY = "banana"
-DEFAULT_PORT = 4002
-BOOTSTRAP: List[Tuple[str, int]] = [
+KEY, DEFAULT_PORT = "bananaaslkdjalkjdalwkdjalkcjsdknsdmnvkwejnkwejfhwkejfhksjehf", 4002
+BOOTSTRAP: list[tuple[str, int]] = [
     ("router.bittorrent.com", 6881),
     ("router.utorrent.com", 6881),
     ("dht.transmissionbt.com", 6881),
 ]
-ANNOUNCE_EVERY = 20  # seconds
-QUERY_EVERY = 7
-MIN_RT_NODES = 25  # routing-table warm-up target
-WARMUP_TIMEOUT = 60  # seconds
+ANNOUNCE_EVERY, QUERY_EVERY = 20, 7  # seconds
+MIN_RT_NODES, WARMUP_TIMEOUT = 25, 60  # routing-table warm-up target, seconds
+ROUTING_PORTS = {6881, 6889, 9118}  # Common BitTorrent DHT routing ports
 
-# ── helpers ───────────────────────────────────────────────────────────────
 sha1 = lambda b: hashlib.sha1(b).hexdigest()
 pubip = lambda: requests.get("https://api.ipify.org", timeout=5).text.strip()
+bucket_nodes = lambda b: int(b.get("num_nodes", 0) if isinstance(b, dict) else getattr(b, "num_nodes", 0))
 
 
-def bucket_nodes(b: Union[dict, object]) -> int:
-    return int(b.get("num_nodes", 0) if isinstance(b, dict) else getattr(b, "num_nodes", 0))
-
-
-# ── main ──────────────────────────────────────────────────────────────────
 def main() -> None:
     port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
     info_hex = sha1(KEY.encode())
@@ -49,7 +40,7 @@ def main() -> None:
 
     try:
         my_ip = pubip()
-        print(f"[*] public IP        : {my_ip}")
+        print(f"[*] public IP: {my_ip}")
     except Exception:
         my_ip = None
         print("[!] could not determine public IP (may be CG-NAT)")
@@ -65,19 +56,17 @@ def main() -> None:
         | lt.alert.category_t.stats_notification
     )
 
-    # ── warm-up routing table ──────────────────────────────────────────
     print("[*] bootstrapping DHT …")
     end = time.time() + WARMUP_TIMEOUT
     while time.time() < end:
         ses.post_dht_stats()
         ses.wait_for_alert(1000)
         for a in ses.pop_alerts():
-            if isinstance(a, lt.dht_stats_alert):
-                if sum(bucket_nodes(b) for b in a.routing_table) >= MIN_RT_NODES:
-                    print("[*] routing table ready")
-                    end = 0
-                    break
-    # ── announce / query loop ─────────────────────────────────────────
+            if isinstance(a, lt.dht_stats_alert) and sum(bucket_nodes(b) for b in a.routing_table) >= MIN_RT_NODES:
+                print("[*] routing table ready")
+                end = 0
+                break
+
     known = set()
     next_ann = next_q = 0.0
     print("[*] running (Ctrl-C to stop) …")
@@ -95,8 +84,7 @@ def main() -> None:
             for a in ses.pop_alerts():
                 if isinstance(a, lt.dht_get_peers_reply_alert):
                     for ip_addr, ip_port in a.peers():
-                        # skip own entry if we know our public IP
-                        if my_ip and (ip_addr, ip_port) == (my_ip, port):
+                        if (my_ip and (ip_addr, ip_port) == (my_ip, port)) or ip_port in ROUTING_PORTS:
                             continue
                         peer = f"{ip_addr}:{ip_port}"
                         if peer not in known:

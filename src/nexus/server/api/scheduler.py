@@ -79,7 +79,7 @@ async def _for_queued_jobs(ctx: context.NexusServerContext):
         # Use conditional update to avoid lost-update race conditions
         if not db.claim_job(ctx.strong_db, _job.id, my_node):
             return  # Another node claimed it first
-            
+
         # Job was successfully claimed
         _job = dc.replace(_job, node=my_node)
 

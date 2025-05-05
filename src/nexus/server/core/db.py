@@ -1,14 +1,11 @@
 import dataclasses as dc
 import functools
-import importlib.metadata
 import json
 import pathlib as pl
 import re
 import sqlite3
 import time
 import typing as tp
-from typing import Any
-from collections.abc import Sequence
 
 from nexus.server.core import context, schemas
 from nexus.server.core import exceptions as exc
@@ -442,7 +439,7 @@ def delete_artifact(conn: sqlite3.Connection, artifact_id: str) -> None:
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to claim job")
 def claim_job(conn: sqlite3.Connection, job_id: str, node: str) -> bool:
     """Atomically claim a job for a node if it's not claimed yet.
-    
+
     Returns True if successfully claimed, False if another node claimed it first.
     """
     cur = conn.cursor()
@@ -451,5 +448,3 @@ def claim_job(conn: sqlite3.Connection, job_id: str, node: str) -> bool:
         (node, job_id),
     )
     return cur.rowcount == 1
-
-

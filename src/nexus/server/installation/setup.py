@@ -13,7 +13,7 @@ import sys
 import time
 import typing as tp
 
-from nexus.server.core import config, context, db
+from nexus.server.core import config, context
 
 SYSTEM_SERVER_DIR = pl.Path("/etc/nexus_server")
 SERVER_USER = "nexus"
@@ -779,7 +779,7 @@ def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext
     # Create DB connection with weak consistency for general operations
     host, port = _config.rqlite_host.split(":")
     _db = rqlite.connect_with_params(host, int(port), _config.api_key, consistency="weak")
-    
+
     # Create a separate DB connection with linearizable consistency for operations requiring immediate cross-cluster visibility
     strong_db = rqlite.connect_with_params(host, int(port), _config.api_key, consistency="linearizable")
 
