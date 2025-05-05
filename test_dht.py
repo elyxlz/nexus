@@ -8,8 +8,12 @@
 # ///
 """
 BitTorrent-DHT discovery helper
-• Shared key:  "banana"
-• Publishes     <public-ip>:<port>  under SHA-1(key)
+──────────────────────────────
+• Shared key hard-coded to “banana”.
+• Publishes   <public-ip>:<port> under SHA-1(key) and looks for peers.
+Run on two public hosts:
+    uv run test_dht.py          # advertises port 4002
+    uv run test_dht.py 5000     # advertises port 5000
 """
 
 from __future__ import annotations
@@ -22,8 +26,7 @@ from typing import List, Tuple, Union
 import libtorrent as lt
 import requests
 
-# --------------------------- config ----------------------------------------
-
+# ── config ────────────────────────────────────────────────────────────────
 NETWORK_KEY = "banana"
 DEFAULT_PORT = 4002
 BOOTSTRAP_ROUTERS: List[Tuple[str, int]] = [
@@ -36,7 +39,7 @@ QUERY_INTERVAL = 7
 TIMEOUT = 300  # seconds
 MIN_ROUTING_NODES = 25
 
-# --------------------------- helpers ---------------------------------------
+# ── helpers ───────────────────────────────────────────────────────────────
 
 
 def public_ip() -> str | None:
@@ -51,15 +54,13 @@ def sha1_hex(data: bytes) -> str:
 
 
 def bucket_node_count(bucket: Union[dict, object]) -> int:
-    """Return #nodes in a bucket, handling struct OR dict representation."""
+    """Handle struct *or* dict representation of routing buckets."""
     if isinstance(bucket, dict):
         return int(bucket.get("num_nodes", 0))
     return int(getattr(bucket, "num_nodes", 0))
 
 
-# --------------------------- main ------------------------------------------
-
-
+# ── main ──────────────────────────────────────────────────────────────────
 def main() -> None:
     port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
 
@@ -71,63 +72,63 @@ def main() -> None:
     if ip:
         print(f"[*] Public IP: {ip}")
     else:
-        print("[!] Could not determine public IP (might be behind CG-NAT)")
+        print("[!] Could not determine public IP (maybe CG-NAT)")
 
-    # ---- libtorrent session ------------------------------------------------
+    # session
     ses = lt.session()
     ses.listen_on(port, port)
-    for host, p in BOOTSTRAP_ROUTERS:
-        ses.add_dht_router(host, p)
+    for h, p in BOOTSTRAP_ROUTERS:
+        ses.add_dht_router(h, p)
     ses.start_dht()
-
     ses.set_alert_mask(
         lt.alert.category_t.dht_operation_notification
         | lt.alert.category_t.dht_notification
         | lt.alert.category_t.stats_notification
     )
 
-    # ---- wait for routing table to warm up ---------------------------------
+    # wait until routing table has some nodes
     print("[*] Bootstrapping DHT …")
-    warm_deadline = time.time() + 60
-    while time.time() < warm_deadline:
+    warm_until = time.time() + 60
+    while time.time() < warm_until:
         ses.post_dht_stats()
         ses.wait_for_alert(1000)
         total = 0
-        for a in ses.pop_alerts():
-            if isinstance(a, lt.dht_stats_alert):
-                total = sum(bucket_node_count(b) for b in a.routing_table)
+        for al in ses.pop_alerts():
+            if isinstance(al, lt.dht_stats_alert):
+                total = sum(bucket_node_count(b) for b in al.routing_table)
         if total >= MIN_ROUTING_NODES:
             print(f"[*] Routing table ready – {total} nodes")
             break
     else:
         print("[!] Routing table still sparse; continuing anyway")
 
-    # ---- main announce / lookup loop --------------------------------------
+    # announce / lookup loop
     deadline = time.time() + TIMEOUT
-    next_announce = next_query = 0.0
+    next_ann = next_q = 0.0
 
     while time.time() < deadline:
         now = time.time()
-        if now >= next_announce:
+        if now >= next_ann:
             print("[*] Announcing …")
             ses.dht_announce(info_hash, port, 0)
-            next_announce = now + ANNOUNCE_INTERVAL
+            next_ann = now + ANNOUNCE_INTERVAL
 
-        if now >= next_query:
+        if now >= next_q:
             ses.dht_get_peers(info_hash)
-            next_query = now + QUERY_INTERVAL
+            next_q = now + QUERY_INTERVAL
 
         ses.wait_for_alert(1000)
-        for a in ses.pop_alerts():
-            if isinstance(a, lt.dht_get_peers_reply_alert):
-                peers = a.peers()
+        for al in ses.pop_alerts():
+            if isinstance(al, lt.dht_get_peers_reply_alert):
+                peers = al.peers()
                 if peers:
                     print("[+] Peers discovered:")
                     for ip_addr, ip_port in peers:
                         print(f"    {ip_addr}:{ip_port}")
                     return
-            elif isinstance(a, lt.dht_error_alert):
-                print(f"[!] DHT error: {a}")
+            # catch-all for any DHT-related error alert variant
+            elif "dht_" in al.what() and "error" in al.what():
+                print(f"[!] {al.what()}: {al.message()}")
 
     print(f"[!] No peers after {TIMEOUT}s – check NAT/firewall or try again.")
 
