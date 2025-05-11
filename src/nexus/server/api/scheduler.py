@@ -31,7 +31,6 @@ async def _for_running(ctx: context.NexusServerContext):
         if _job.notifications:
             await notifications.notify_job_action(_job=updated_job, action=job_action)
 
-        # Writes always go through the leader, so no need to use linearizable consistency
         db.update_job(conn=ctx.db, job=updated_job)
 
 
@@ -52,7 +51,6 @@ async def _for_wandb_urls(ctx: context.NexusServerContext):
 
         if url := await wandb_finder.find_wandb_run_by_nexus_id(job=_job):
             updated = dc.replace(_job, wandb_url=url)
-            # WandB URL updates are non-critical - can use weak db for better performance
             db.update_job(conn=ctx.db, job=updated)
             await notifications.update_notification_with_wandb(job=updated)
 
@@ -63,7 +61,7 @@ async def update_wandb_urls(ctx: context.NexusServerContext) -> None:
 
 
 async def _for_queued_jobs(ctx: context.NexusServerContext):
-    my_node = ctx.config.node_name  # The config field is called node_name
+    my_node = ctx.config.node_name
     queued_jobs = db.list_jobs(ctx.strong_db, status="queued")
     if not queued_jobs:
         return
@@ -76,11 +74,9 @@ async def _for_queued_jobs(ctx: context.NexusServerContext):
     _job = ordered_jobs[0]
 
     if _job.node is None:
-        # Use conditional update to avoid lost-update race conditions
         if not db.claim_job(ctx.strong_db, _job.id, my_node):
-            return  # Another node claimed it first
+            return
 
-        # Job was successfully claimed
         _job = dc.replace(_job, node=my_node)
 
     running_jobs = db.list_jobs(conn=ctx.strong_db, status="running")
@@ -104,13 +100,11 @@ async def _for_queued_jobs(ctx: context.NexusServerContext):
 
     try:
         started = await job.async_start_job(job=_job, gpu_idxs=gpu_idxs, ctx=ctx)
-        # Writes always go through the leader, so no need to use linearizable consistency
         db.update_job(conn=ctx.db, job=started)
         logger.info(format.format_job_action(started, action="started"))
 
         if _job.artifact_id and not db.is_artifact_in_use(conn=ctx.strong_db, artifact_id=_job.artifact_id):
             try:
-                # Writes always go through the leader, so no need to use linearizable consistency
                 db.delete_artifact(conn=ctx.db, artifact_id=_job.artifact_id)
                 logger.info(f"Deleted artifact {_job.artifact_id} as it's no longer needed")
             except Exception as e:
@@ -118,10 +112,8 @@ async def _for_queued_jobs(ctx: context.NexusServerContext):
 
         if started.notifications:
             job_with_notif = await notifications.notify_job_action(_job=started, action="started")
-            # Writes always go through the leader, so no need to use linearizable consistency
             db.update_job(conn=ctx.db, job=job_with_notif)
     except Exception as e:
-        # Writes always go through the leader, so no need to use linearizable consistency
         db.update_job(
             conn=ctx.db,
             job=dc.replace(
