@@ -1,5 +1,5 @@
 import dataclasses as dc
-import sqlite3
+from pyrqlite.connections import Connection as RqliteConnection
 
 from nexus.server.core import config
 
@@ -8,5 +8,5 @@ __all__ = ["NexusServerContext"]
 
 @dc.dataclass(frozen=True, slots=True)
 class NexusServerContext:
-    db: sqlite3.Connection
+    db: RqliteConnection
     config: config.NexusServerConfig

@@ -3,13 +3,17 @@ import functools
 import json
 import pathlib as pl
 import re
-import sqlite3
 import time
 import typing as tp
+
+from pyrqlite.connections import Connection as RqliteConnection
 
 from nexus.server.core import context, schemas
 from nexus.server.core import exceptions as exc
 from nexus.server.utils import logger
+
+# Define Row type for database rows
+Row = dict[str, tp.Any]
 
 __all__ = [
     "create_connection",
@@ -26,11 +30,12 @@ __all__ = [
     "is_artifact_in_use",
     "delete_artifact",
     "safe_transaction",
+    "claim_job",
 ]
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database tables")
-def _create_tables(conn: sqlite3.Connection) -> None:
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to create database tables")
+def _create_tables(conn: RqliteConnection) -> None:
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
@@ -44,7 +49,7 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             priority INTEGER,
             num_gpus INTEGER,
             env JSON, 
-            node_name TEXT,
+            node TEXT,
             jobrc TEXT,
             integrations TEXT,
             notifications TEXT,
@@ -65,7 +70,9 @@ def _create_tables(conn: sqlite3.Connection) -> None:
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS blacklisted_gpus (
-            gpu_idx INTEGER PRIMARY KEY
+            node TEXT,
+            gpu_idx INTEGER,
+            PRIMARY KEY(node, gpu_idx)
         )
     """)
     cur.execute("""
@@ -99,7 +106,7 @@ _DB_COLS = [
     "priority",
     "num_gpus",
     "env",
-    "node_name",
+    "node",
     "jobrc",
     "integrations",
     "notifications",
@@ -134,7 +141,7 @@ def _job_to_row(job: schemas.Job) -> tuple:
         job.priority,
         job.num_gpus,
         json.dumps({}) if job.status in ["failed", "completed"] else json.dumps(job.env),
-        job.node_name,
+        job.node,
         job.jobrc,
         ",".join(job.integrations),
         ",".join(job.notifications),
@@ -154,7 +161,7 @@ def _job_to_row(job: schemas.Job) -> tuple:
     )
 
 
-def _row_to_job(row: sqlite3.Row) -> schemas.Job:
+def _row_to_job(row: Row) -> schemas.Job:
     return schemas.Job(
         id=row["id"],
         command=row["command"],
@@ -164,7 +171,7 @@ def _row_to_job(row: sqlite3.Row) -> schemas.Job:
         git_branch=row["git_branch"],
         priority=row["priority"],
         num_gpus=row["num_gpus"],
-        node_name=row["node_name"],
+        node=row["node"],
         env=_parse_json(json_obj=row["env"]),
         jobrc=row["jobrc"],
         notifications=row["notifications"].split(",") if row["notifications"] else [],
@@ -191,8 +198,11 @@ def _validate_job_id(job_id: str) -> None:
         raise exc.JobError(message="Job ID cannot be empty")
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job")
-def _query_job(conn: sqlite3.Connection, job_id: str) -> schemas.Job:
+# We *only* keep the JobNotFoundError wrapper here so the 404 bubbles
+# straight up to FastAPI; unexpected errors simply propagate as-is and
+# are handled at the API layer, still producing a 500.
+@exc.handle_exception(exc.JobNotFoundError, message="Job not found error", reraise=True)
+def _query_job(conn: RqliteConnection, job_id: str) -> schemas.Job:
     cur = conn.cursor()
     cur.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
     row = cur.fetchone()
@@ -208,8 +218,8 @@ def _validate_job_status(status: str | None) -> None:
             raise exc.JobError(message=f"Invalid job status: {status}. Must be one of {', '.join(valid_statuses)}")
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list jobs")
-def _query_jobs(conn: sqlite3.Connection, status: str | None, command_regex: str | None = None) -> list[schemas.Job]:
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to list jobs")
+def _query_jobs(conn: RqliteConnection, status: str | None, command_regex: str | None = None) -> list[schemas.Job]:
     cur = conn.cursor()
 
     query = "SELECT * FROM jobs"
@@ -220,22 +230,35 @@ def _query_jobs(conn: sqlite3.Connection, status: str | None, command_regex: str
         conditions.append("status = ?")
         params.append(status)
 
+    # For command_regex, we need to use a different approach with pyrqlite
+    # as it doesn't support the create_function method
     if command_regex is not None:
-        conditions.append("command REGEXP ?")
-        params.append(command_regex)
+        # Don't include the regex in the SQL query - we'll filter after
+        pass
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
 
-    conn.create_function("REGEXP", 2, lambda pattern, text: bool(re.search(pattern, text or "")) if text else False)
-
+    # Execute query
     cur.execute(query, params)
     rows = cur.fetchall()
+
+    # Apply regex filter if needed
+    if command_regex is not None:
+        # Manual post-query filtering
+        filtered_rows = []
+        pattern = re.compile(command_regex)
+        for row in rows:
+            command = row.get("command", "")
+            if command and pattern.search(command):
+                filtered_rows.append(row)
+        rows = filtered_rows
+
     return [_row_to_job(row=row) for row in rows]
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job status")
-def _check_job_status(conn: sqlite3.Connection, job_id: str) -> str:
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to query job status")
+def _check_job_status(conn: RqliteConnection, job_id: str) -> str:
     cur = conn.cursor()
     cur.execute("SELECT status FROM jobs WHERE id = ?", (job_id,))
     row = cur.fetchone()
@@ -251,8 +274,8 @@ def _verify_job_is_queued(job_id: str, status: str) -> None:
         )
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to delete job")
-def _delete_job(conn: sqlite3.Connection, job_id: str) -> None:
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to delete job")
+def _delete_job(conn: RqliteConnection, job_id: str) -> None:
     cur = conn.cursor()
     cur.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
 
@@ -262,42 +285,41 @@ def _validate_gpu_idx(gpu_idx: int) -> None:
         raise exc.GPUError(message=f"Invalid GPU index: {gpu_idx}. Must be a non-negative integer.")
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to blacklist GPU")
-def _add_gpu_to_blacklist(conn: sqlite3.Connection, gpu_idx: int) -> bool:
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to blacklist GPU")
+def _add_gpu_to_blacklist(conn: RqliteConnection, node: str, gpu_idx: int) -> bool:
     """Add GPU to blacklist. Returns True if added, False if already blacklisted."""
     cur = conn.cursor()
-    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
+    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE node = ? AND gpu_idx = ?", (node, gpu_idx))
     if cur.fetchone():
         return False
-    cur.execute("INSERT INTO blacklisted_gpus (gpu_idx) VALUES (?)", (gpu_idx,))
+    cur.execute("INSERT INTO blacklisted_gpus (node, gpu_idx) VALUES (?, ?)", (node, gpu_idx))
     return True
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to remove GPU from blacklist")
-def _remove_gpu_from_blacklist(conn: sqlite3.Connection, gpu_idx: int) -> bool:
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to remove GPU from blacklist")
+def _remove_gpu_from_blacklist(conn: RqliteConnection, node: str, gpu_idx: int) -> bool:
     """Remove GPU from blacklist. Returns True if removed, False if not blacklisted."""
     cur = conn.cursor()
-    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
+    cur.execute("SELECT 1 FROM blacklisted_gpus WHERE node = ? AND gpu_idx = ?", (node, gpu_idx))
     if not cur.fetchone():
         return False
-    cur.execute("DELETE FROM blacklisted_gpus WHERE gpu_idx = ?", (gpu_idx,))
+    cur.execute("DELETE FROM blacklisted_gpus WHERE node = ? AND gpu_idx = ?", (node, gpu_idx))
     return True
 
 
 ####################
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to create database connection")
+def create_connection(host: str, port: int, api_key: str) -> RqliteConnection:
+    from nexus.server.core import rqlite
 
-
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database connection")
-def create_connection(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    conn = rqlite.connect_with_params(host, port, api_key)
     _create_tables(conn=conn)
     return conn
 
 
-@exc.handle_exception(sqlite3.IntegrityError, exc.JobError, message="Job already exists")
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add job to database")
-def add_job(conn: sqlite3.Connection, job: schemas.Job) -> None:
+@exc.handle_exception(Exception, exc.JobError, message="Job already exists")
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to add job to database")
+def add_job(conn: RqliteConnection, job: schemas.Job) -> None:
     if job.status != "queued":
         job = dc.replace(job, status="queued")
 
@@ -305,8 +327,8 @@ def add_job(conn: sqlite3.Connection, job: schemas.Job) -> None:
     cur.execute(_INSERT_SQL, _job_to_row(job))
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to update job")
-def update_job(conn: sqlite3.Connection, job: schemas.Job) -> None:
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to update job")
+def update_job(conn: RqliteConnection, job: schemas.Job) -> None:
     cur = conn.cursor()
     row_data = _job_to_row(job)
     # For UPDATE we need id at the end for WHERE clause
@@ -317,13 +339,13 @@ def update_job(conn: sqlite3.Connection, job: schemas.Job) -> None:
         raise exc.JobNotFoundError(message="Job not found")
 
 
-def get_job(conn: sqlite3.Connection, job_id: str) -> schemas.Job:
+def get_job(conn: RqliteConnection, job_id: str) -> schemas.Job:
     _validate_job_id(job_id)
     return _query_job(conn=conn, job_id=job_id)
 
 
 def list_jobs(
-    conn: sqlite3.Connection,
+    conn: RqliteConnection,
     status: str | None = None,
     command_regex: str | None = None,
 ) -> list[schemas.Job]:
@@ -331,7 +353,8 @@ def list_jobs(
     return _query_jobs(conn=conn, status=status, command_regex=command_regex)
 
 
-def delete_queued_job(conn: sqlite3.Connection, job_id: str) -> None:
+@exc.handle_exception(exc.JobNotFoundError, message="Job not found", reraise=True)
+def delete_queued_job(conn: RqliteConnection, job_id: str) -> None:
     _validate_job_id(job_id)
     job = _query_job(conn=conn, job_id=job_id)
     status = job.status
@@ -342,20 +365,20 @@ def delete_queued_job(conn: sqlite3.Connection, job_id: str) -> None:
         logger.info(f"Deleted artifact {job.artifact_id} as it's no longer needed after job {job_id} was removed")
 
 
-def add_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def add_blacklisted_gpu(conn: RqliteConnection, gpu_idx: int, node: str) -> bool:
     _validate_gpu_idx(gpu_idx)
-    return _add_gpu_to_blacklist(conn=conn, gpu_idx=gpu_idx)
+    return _add_gpu_to_blacklist(conn=conn, node=node, gpu_idx=gpu_idx)
 
 
-def remove_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int) -> bool:
+def remove_blacklisted_gpu(conn: RqliteConnection, gpu_idx: int, node: str) -> bool:
     _validate_gpu_idx(gpu_idx)
-    return _remove_gpu_from_blacklist(conn=conn, gpu_idx=gpu_idx)
+    return _remove_gpu_from_blacklist(conn=conn, node=node, gpu_idx=gpu_idx)
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list blacklisted GPUs")
-def list_blacklisted_gpus(conn: sqlite3.Connection) -> list[int]:
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to list blacklisted GPUs")
+def list_blacklisted_gpus(conn: RqliteConnection, node: str) -> list[int]:
     cur = conn.cursor()
-    cur.execute("SELECT gpu_idx FROM blacklisted_gpus")
+    cur.execute("SELECT gpu_idx FROM blacklisted_gpus WHERE node = ?", (node,))
     rows = cur.fetchall()
     return [row["gpu_idx"] for row in rows]
 
@@ -390,8 +413,8 @@ def safe_transaction(func: tp.Callable[..., tp.Any]) -> tp.Callable[..., tp.Any]
     return wrapper
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add artifact")
-def add_artifact(conn: sqlite3.Connection, artifact_id: str, data: bytes) -> None:
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to add artifact")
+def add_artifact(conn: RqliteConnection, artifact_id: str, data: bytes) -> None:
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO artifacts (id, size, created_at, data) VALUES (?, ?, ?, ?)",
@@ -400,8 +423,8 @@ def add_artifact(conn: sqlite3.Connection, artifact_id: str, data: bytes) -> Non
     conn.commit()
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to retrieve artifact")
-def get_artifact(conn: sqlite3.Connection, artifact_id: str) -> bytes:
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to retrieve artifact")
+def get_artifact(conn: RqliteConnection, artifact_id: str) -> bytes:
     cur = conn.cursor()
     cur.execute("SELECT data FROM artifacts WHERE id = ?", (artifact_id,))
     row = cur.fetchone()
@@ -410,16 +433,28 @@ def get_artifact(conn: sqlite3.Connection, artifact_id: str) -> bytes:
     return row["data"]
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to check for artifact usage")
-def is_artifact_in_use(conn: sqlite3.Connection, artifact_id: str) -> bool:
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to check for artifact usage")
+def is_artifact_in_use(conn: RqliteConnection, artifact_id: str) -> bool:
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) as count FROM jobs WHERE artifact_id = ? AND status = 'queued'", (artifact_id,))
     row = cur.fetchone()
+    if row is None:
+        return False
     return row["count"] > 0
 
 
-@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to delete artifact")
-def delete_artifact(conn: sqlite3.Connection, artifact_id: str) -> None:
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to delete artifact")
+def delete_artifact(conn: RqliteConnection, artifact_id: str) -> None:
     cur = conn.cursor()
     cur.execute("DELETE FROM artifacts WHERE id = ?", (artifact_id,))
     conn.commit()
+
+
+@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to claim job")
+def claim_job(conn: RqliteConnection, job_id: str, node: str) -> bool:
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE jobs SET node = ? WHERE id = ? AND node IS NULL AND status = 'queued'",
+        (node, job_id),
+    )
+    return cur.rowcount == 1
