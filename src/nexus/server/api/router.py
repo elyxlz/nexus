@@ -134,6 +134,7 @@ async def create_job_endpoint(
         git_repo_url=job_request.git_repo_url,
         git_branch=job_request.git_branch,
         ignore_blacklist=ignore_blacklist,
+        node=job_request.node,  # Pass through the target node
     )
 
     db.add_job(conn=ctx.db, job=j)

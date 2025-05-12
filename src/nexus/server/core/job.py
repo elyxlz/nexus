@@ -188,6 +188,7 @@ def create_job(
     git_branch: str | None = None,
     gpu_idxs: list[int] | None = None,
     ignore_blacklist: bool = False,
+    node: str | None = None,  # Target node for pre-assignment
 ) -> schemas.Job:
     return schemas.Job(
         id=_generate_job_id(),
@@ -198,7 +199,7 @@ def create_job(
         artifact_id=artifact_id,
         git_repo_url=git_repo_url,
         git_branch=git_branch,
-        node=None,  # Will be assigned when a node claims the job
+        node=node,  # Pre-assigned if specified, otherwise claimed later
         priority=priority,
         num_gpus=num_gpus,
         env=env,

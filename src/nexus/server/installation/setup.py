@@ -776,11 +776,9 @@ def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext
     else:
         _config = config.NexusServerConfig(server_dir=server_dir, api_key=secrets.token_hex(16))
 
-    # Create DB connection with weak consistency for general operations
+    # Create DB connection
     host, port = _config.rqlite_host.split(":")
-    _db = rqlite.connect_with_params(host, int(port), _config.api_key, consistency="weak")
+    _db = rqlite.connect_with_params(host, int(port), _config.api_key)
 
-    # Create a separate DB connection with linearizable consistency for operations requiring immediate cross-cluster visibility
-    strong_db = rqlite.connect_with_params(host, int(port), _config.api_key, consistency="linearizable")
-
-    return context.NexusServerContext(db=_db, config=_config, strong_db=strong_db)
+    # Return context with db connection
+    return context.NexusServerContext(db=_db, config=_config)

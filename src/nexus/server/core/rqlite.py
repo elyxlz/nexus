@@ -5,7 +5,12 @@ import socket
 import sys
 import tempfile
 import time
+import os
+import platform
+import tarfile
+import shutil
 import pathlib as pl
+import requests
 
 from pyrqlite import dbapi2 as dbapi
 from nexus.server.core import config
@@ -14,6 +19,7 @@ from nexus.server.utils import logger
 RQLITE_JOIN_ENV_FILE = pl.Path("/etc/nexus_server/rqlite/join.env")
 RQLITE_AUTH_FILE = pl.Path("/etc/nexus_server/auth.conf")
 RQLITE_DATA_DIR = pl.Path("/var/lib/rqlite")
+RQLITE_BINARY_PATH = None
 
 rqlite_process = None
 
@@ -27,8 +33,7 @@ def connect(cfg: config.NexusServerConfig, scheduler_mode: bool = False):
                        If True, uses linearizable consistency for immediate cross-cluster visibility.
     """
     host, port = cfg.rqlite_host.split(":")
-    consistency = "linearizable" if scheduler_mode else "weak"
-    return connect_with_params(host=host, port=int(port), api_key=cfg.api_key, consistency=consistency)
+    return connect_with_params(host=host, port=int(port), api_key=cfg.api_key)
 
 
 def dict_factory(cursor, row):
@@ -36,18 +41,17 @@ def dict_factory(cursor, row):
     return {c[0]: row[i] for i, c in enumerate(cursor.description)}
 
 
-def connect_with_params(host: str, port: int, api_key: str, consistency: str = "weak"):
+def connect_with_params(host: str, port: int, api_key: str):
     """Connect to a rqlite database using explicit parameters"""
     conn = dbapi.connect(
         host=host,
         port=port,
         user="nexus",
         password=api_key,
-        https=False,
-        verify_https=False,
-        consistency=consistency,
+        scheme="http",  # Use http instead of https
     )
-    conn.row_factory = dict_factory
+    # Note: pyrqlite doesn't support setting row_factory like sqlite3 does
+    # It already returns dict-like Row objects that can be accessed by column name
     return conn
 
 
@@ -56,9 +60,110 @@ def is_port_in_use(port: int) -> bool:
         return s.connect_ex(("localhost", port)) == 0
 
 
+def download_rqlite() -> pl.Path:
+    """Download rqlite binary from GitHub releases if not already available.
+
+    Returns:
+        Path to the rqlite binary
+    """
+    global RQLITE_BINARY_PATH
+
+    # If we've already downloaded it or found a system one, return that
+    if RQLITE_BINARY_PATH and os.path.exists(RQLITE_BINARY_PATH):
+        return pl.Path(RQLITE_BINARY_PATH)
+
+    # First check if rqlited is in PATH
+    try:
+        which_result = subprocess.run(["which", "rqlited"], capture_output=True, text=True, check=False)
+        if which_result.returncode == 0:
+            binary_path = which_result.stdout.strip()
+            RQLITE_BINARY_PATH = binary_path
+            logger.info(f"Found system rqlited at {binary_path}")
+            return pl.Path(binary_path)
+    except Exception:
+        pass
+
+    # Determine system architecture
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+
+    # Map architecture to rqlite release name
+    arch_map = {"x86_64": "amd64", "amd64": "amd64", "arm64": "arm64", "aarch64": "arm64"}
+
+    if machine in arch_map:
+        arch = arch_map[machine]
+    else:
+        raise RuntimeError(f"Unsupported architecture: {machine}")
+
+    if system == "linux":
+        os_name = "linux"
+    elif system == "darwin":
+        os_name = "darwin"
+    else:
+        raise RuntimeError(f"Unsupported OS: {system}")
+
+    # Create directory for downloaded binary
+    cache_dir = pl.Path.home() / ".cache" / "nexus"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Set up paths
+    version = "7.21.4"  # Latest stable version at time of writing
+    url = f"https://github.com/rqlite/rqlite/releases/download/v{version}/rqlite-v{version}-{os_name}-{arch}.tar.gz"
+    binary_dir = cache_dir / f"rqlite-{version}"
+    tar_path = binary_dir / "rqlite.tar.gz"
+
+    # Check if we already have this version cached
+    binary_path = binary_dir / "rqlited"
+    if binary_path.exists():
+        logger.info(f"Using cached rqlited binary at {binary_path}")
+        RQLITE_BINARY_PATH = str(binary_path)
+        return binary_path
+
+    # Create directory for this version
+    binary_dir.mkdir(parents=True, exist_ok=True)
+
+    # Download tarball
+    logger.info(f"Downloading rqlite from {url}")
+    response = requests.get(url, stream=True)
+    response.raise_for_status()
+
+    with open(tar_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+    # Extract tarball
+    with tarfile.open(tar_path) as tar:
+        tar.extractall(path=binary_dir)
+
+    # Find the binary
+    for root, _, files in os.walk(binary_dir):
+        if "rqlited" in files:
+            binary_path = pl.Path(root) / "rqlited"
+            break
+    else:
+        raise RuntimeError("rqlited binary not found in downloaded package")
+
+    # Make executable
+    os.chmod(binary_path, 0o755)
+
+    logger.info(f"Downloaded rqlited binary to {binary_path}")
+    RQLITE_BINARY_PATH = str(binary_path)
+    return binary_path
+
+
 def write_auth_config(auth_file: pl.Path, api_key: str) -> None:
-    """Write authentication config file for rqlite"""
-    auth_content = f"nexus:{api_key}"
+    """Write authentication config file for rqlite.
+
+    The rqlite auth file is a JSON array of user objects.
+    See: https://rqlite.io/docs/guides/security/
+    """
+    auth_content = f"""[
+  {{
+    "username": "nexus",
+    "password": "{api_key}",
+    "perms": ["all"]
+  }}
+]"""
     auth_file.parent.mkdir(parents=True, exist_ok=True)
     auth_file.write_text(auth_content)
     auth_file.chmod(0o600)
@@ -68,19 +173,31 @@ def cleanup_rqlite() -> None:
     """Terminate rqlite process when nexus-server exits"""
     global rqlite_process
     if rqlite_process is not None:
-        logger.info("Stopping rqlite process...")
         try:
+            # Avoid logging here since it may be called during process shutdown
+            # when logging streams might be closed
             rqlite_process.terminate()
             rqlite_process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            logger.warning("rqlite did not terminate gracefully, forcing exit")
             rqlite_process.kill()
-        except Exception as e:
-            logger.error(f"Error terminating rqlite: {e}")
+        except Exception:
+            pass
 
 
-def setup_rqlite(cfg: config.NexusServerConfig) -> None:
-    """Start rqlite and prepare configuration"""
+def setup_rqlite(
+    cfg: config.NexusServerConfig,
+    auth_file_path: pl.Path = RQLITE_AUTH_FILE,
+    data_dir_path: pl.Path = RQLITE_DATA_DIR,
+    join_env_file_path: pl.Path = RQLITE_JOIN_ENV_FILE
+) -> None:
+    """Start rqlite and prepare configuration
+
+    Args:
+        cfg: Configuration for the Nexus server
+        auth_file_path: Path to auth file, defaults to RQLITE_AUTH_FILE
+        data_dir_path: Path to data directory, defaults to RQLITE_DATA_DIR
+        join_env_file_path: Path to join env file, defaults to RQLITE_JOIN_ENV_FILE
+    """
     global rqlite_process
 
     # Register cleanup handler
@@ -100,32 +217,51 @@ def setup_rqlite(cfg: config.NexusServerConfig) -> None:
         logger.info(f"rqlite already running on port {port}, skipping launch")
         return
 
-    # Create temporary or permanent auth file
-    if cfg.server_dir is None:
-        # For testing/ephemeral mode, use temporary file
+    # For testing/ephemeral mode, use temporary files if explicit defaults are used
+    if cfg.server_dir is None and auth_file_path == RQLITE_AUTH_FILE:
         auth_file = pl.Path(tempfile.mktemp(prefix="rqlite_auth_"))
+    else:
+        auth_file = auth_file_path
+
+    if cfg.server_dir is None and data_dir_path == RQLITE_DATA_DIR:
         data_dir = pl.Path(tempfile.mkdtemp(prefix="rqlite_data_"))
     else:
-        # For production mode, use system paths
-        auth_file = RQLITE_AUTH_FILE
-        data_dir = RQLITE_DATA_DIR
+        data_dir = data_dir_path
         data_dir.mkdir(parents=True, exist_ok=True)
 
+    # Use the provided join env file path
+    join_file = join_env_file_path
+
+    # Write the auth configuration
     write_auth_config(auth_file, cfg.api_key)
 
+    # Download or find rqlite binary
+    rqlited_path = download_rqlite()
+
     # Determine if we're joining or bootstrapping
-    cmd = ["rqlited", "-node-id", socket.gethostname(), "-auth", str(auth_file)]
+    cmd = [str(rqlited_path), "-node-id", socket.gethostname(), "-auth", str(auth_file)]
+
+    # In test mode, use pre-configured ports for rqlite HTTP and Raft interfaces
+    if cfg.server_dir is None:
+        # Set explicit HTTP and Raft ports for testing to avoid conflicts
+        cmd.extend(["-http-addr", f"{host}:{port}"])
+        # Use port+1 for Raft communication to avoid conflicts
+        cmd.extend(["-raft-addr", f"{host}:{port + 1}"])
 
     join_flags = []
-    if RQLITE_JOIN_ENV_FILE.exists():
-        with open(RQLITE_JOIN_ENV_FILE) as f:
-            for line in f:
-                if line.startswith("JOIN_FLAGS="):
-                    join_part = line.strip().split("=", 1)[1]
-                    # Remove surrounding quotes if present
-                    join_part = join_part.strip("\"'")
-                    join_flags = ["-join", join_part]
-                    break
+    try:
+        if join_file.exists():
+            with open(join_file) as f:
+                for line in f:
+                    if line.startswith("JOIN_FLAGS="):
+                        join_part = line.strip().split("=", 1)[1]
+                        # Remove surrounding quotes if present
+                        join_part = join_part.strip("\"'")
+                        join_flags = ["-join", join_part]
+                        break
+    except (PermissionError, FileNotFoundError):
+        # Skip if file doesn't exist or we don't have permission
+        pass
 
     if join_flags:
         logger.info("Starting rqlite in cluster join mode")

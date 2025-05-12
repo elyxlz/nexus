@@ -71,7 +71,7 @@ def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction
     discord_id = _get_discord_secrets(job)[1]
     user_mention = f"<@{discord_id}>"
     gpu_idxs = ", ".join(str(idx) for idx in job.gpu_idxs) if job.gpu_idxs else "None"
-    message_title = f"{EMOJI_MAPPING[job_action]} **Job {job.id} {job_action} on GPU(s) {gpu_idxs} - ({job.node_name})** - {user_mention}"
+    message_title = f"{EMOJI_MAPPING[job_action]} **Job {job.id} {job_action} on GPU(s) {gpu_idxs} - ({job.node})** - {user_mention}"
     command = str(job.command)
     git_info = f"{job.artifact_id} ({job.git_repo_url}) - Branch: {job.git_branch}"
     fields = [

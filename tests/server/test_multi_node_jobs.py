@@ -1,4 +1,5 @@
 import time
+import dataclasses as dc
 from collections.abc import Iterator
 
 import pytest
@@ -18,8 +19,23 @@ def upload_test_artifact(client: TestClient, artifact_data: bytes) -> str:
     return response.json()["data"]
 
 
+@pytest.fixture(scope="module")
+def multinode_db():
+    """Create a dedicated database for all multi-node tests.
+
+    This creates an independent database instance on a unique port.
+    """
+    # Import the setup function from conftest
+    from conftest import setup_test_db
+
+    # Set up a database on a unique port for these tests
+    # Use a higher port number to avoid conflicts
+    return setup_test_db(port=5322)
+
+
 @pytest.fixture
-def node1_config() -> NexusServerConfig:
+def node1_config(multinode_db) -> NexusServerConfig:
+    """Configuration for the first node in multi-node tests."""
     return NexusServerConfig(
         server_dir=None,
         refresh_rate=1,
@@ -27,11 +43,13 @@ def node1_config() -> NexusServerConfig:
         node_name="node1",
         mock_gpus=True,
         api_key="test_api_key",
+        rqlite_host=multinode_db,
     )
 
 
 @pytest.fixture
-def node2_config() -> NexusServerConfig:
+def node2_config(multinode_db) -> NexusServerConfig:
+    """Configuration for the second node in multi-node tests."""
     return NexusServerConfig(
         server_dir=None,
         refresh_rate=1,
@@ -39,6 +57,7 @@ def node2_config() -> NexusServerConfig:
         node_name="node2",
         mock_gpus=True,
         api_key="test_api_key",
+        rqlite_host=multinode_db,
     )
 
 

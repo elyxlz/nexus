@@ -1,4 +1,5 @@
 import time
+import dataclasses as dc
 from collections.abc import Callable
 
 import pytest
@@ -20,15 +21,34 @@ def db_path(tmp_path) -> str:
     return db_path
 
 
+@pytest.fixture(scope="module")
+def persistence_db():
+    """Create a dedicated database for all persistence tests.
+
+    This creates an independent database instance on a unique port.
+    """
+    # Import the setup function from conftest
+    from conftest import setup_test_db
+
+    # Set up a database on a unique port for these tests
+    # Use a higher port number to avoid conflicts
+    return setup_test_db(port=5321)
+
+
 @pytest.fixture
-def server_config() -> NexusServerConfig:
-    """Create server configuration for testing."""
+def server_config(persistence_db) -> NexusServerConfig:
+    """Create a server configuration specific to persistence tests.
+
+    Uses the dedicated persistence database to avoid conflicts.
+    """
     return NexusServerConfig(
         server_dir=None,
         refresh_rate=1,
         port=54325,
         node_name="test_persistence_node",
         mock_gpus=True,
+        api_key="test_api_key",  # Using a consistent API key
+        rqlite_host=persistence_db,
     )
 
 
