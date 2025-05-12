@@ -32,7 +32,7 @@ async def get_status_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_
     running = len(running_jobs)
     completed = len(completed_jobs) + len(failed_jobs)
 
-    blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
+    blacklisted = db.list_blacklisted_gpus(conn=ctx.db, node=ctx.config.node_name)
     gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
 
     response = models.ServerStatusResponse(

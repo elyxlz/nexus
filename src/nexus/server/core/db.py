@@ -288,12 +288,6 @@ def _remove_gpu_from_blacklist(conn: sqlite3.Connection, node: str, gpu_idx: int
 
 
 ####################
-
-
-# This function is no longer needed as we use conn.row_factory = dict_factory
-# Instead we get dictionaries directly from database rows
-
-
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to create database connection")
 def create_connection(host: str, port: int, api_key: str) -> sqlite3.Connection:
     from nexus.server.core import rqlite
@@ -361,12 +355,9 @@ def remove_blacklisted_gpu(conn: sqlite3.Connection, gpu_idx: int, node: str) ->
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list blacklisted GPUs")
-def list_blacklisted_gpus(conn: sqlite3.Connection, node: str | None = None) -> list[int]:
+def list_blacklisted_gpus(conn: sqlite3.Connection, node: str) -> list[int]:
     cur = conn.cursor()
-    if node:
-        cur.execute("SELECT gpu_idx FROM blacklisted_gpus WHERE node = ?", (node,))
-    else:
-        cur.execute("SELECT gpu_idx FROM blacklisted_gpus")
+    cur.execute("SELECT gpu_idx FROM blacklisted_gpus WHERE node = ?", (node,))
     rows = cur.fetchall()
     return [row["gpu_idx"] for row in rows]
 
@@ -438,10 +429,6 @@ def delete_artifact(conn: sqlite3.Connection, artifact_id: str) -> None:
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to claim job")
 def claim_job(conn: sqlite3.Connection, job_id: str, node: str) -> bool:
-    """Atomically claim a job for a node if it's not claimed yet.
-
-    Returns True if successfully claimed, False if another node claimed it first.
-    """
     cur = conn.cursor()
     cur.execute(
         "UPDATE jobs SET node = ? WHERE id = ? AND node IS NULL AND status = 'queued'",

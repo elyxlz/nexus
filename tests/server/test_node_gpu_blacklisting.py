@@ -76,10 +76,12 @@ def test_node_gpu_blacklisting(create_app_client, alt_server_config):
     assert gpu_1 is not None
     assert gpu_1["is_blacklisted"] is False
 
-    # Verify both nodes have blacklisted GPU records in the db
-    blacklisted = db.list_blacklisted_gpus(context.db)  # All blacklisted GPUs across nodes
-    assert 0 in blacklisted  # GPU 0 blacklisted on test_node_1
-    assert 1 in blacklisted  # GPU 1 blacklisted on test_node_2
+    # Get blacklisted GPUs for both nodes
+    all_node_gpus = []
+    all_node_gpus.extend(db.list_blacklisted_gpus(context.db, node=server_config.node_name))
+    all_node_gpus.extend(db.list_blacklisted_gpus(context.db, node=alt_server_config.node_name))
+    assert 0 in all_node_gpus  # GPU 0 blacklisted on test_node_1
+    assert 1 in all_node_gpus  # GPU 1 blacklisted on test_node_2
 
     # Node-specific blacklisted GPUs
     node1_blacklisted = db.list_blacklisted_gpus(context.db, node=server_config.node_name)
