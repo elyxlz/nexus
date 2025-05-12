@@ -198,8 +198,10 @@ def _validate_job_id(job_id: str) -> None:
         raise exc.JobError(message="Job ID cannot be empty")
 
 
+# We *only* keep the JobNotFoundError wrapper here so the 404 bubbles
+# straight up to FastAPI; unexpected errors simply propagate as-is and
+# are handled at the API layer, still producing a 500.
 @exc.handle_exception(exc.JobNotFoundError, message="Job not found error", reraise=True)
-@exc.handle_exception(Exception, exc.DatabaseError, message="Failed to query job")
 def _query_job(conn: RqliteConnection, job_id: str) -> schemas.Job:
     cur = conn.cursor()
     cur.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))

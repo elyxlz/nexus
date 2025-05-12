@@ -112,11 +112,11 @@ def download_rqlite() -> pl.Path:
     binary_dir = cache_dir / f"rqlite-{version}"
     tar_path = binary_dir / "rqlite.tar.gz"
 
-    # Check if we already have this version cached
+    # ── fast path ── a flattened binary already exists, just use it
     binary_path = binary_dir / "rqlited"
-    if binary_path.exists():
-        logger.info(f"Using cached rqlited binary at {binary_path}")
+    if binary_path.is_file():
         RQLITE_BINARY_PATH = str(binary_path)
+        logger.info("Using cached rqlited binary → %s", binary_path)
         return binary_path
 
     # Create directory for this version
@@ -131,20 +131,28 @@ def download_rqlite() -> pl.Path:
         for chunk in response.iter_content(chunk_size=8192):
             f.write(chunk)
 
-    # Extract tarball
-    with tarfile.open(tar_path) as tar:
-        tar.extractall(path=binary_dir)
+    # Unpack ONCE into a temporary folder, then move the binary to the
+    # shared cache path; if another process wins the race we just reuse it.
+    tmp_extract = binary_dir / "__tmp_extract__"
+    tmp_extract.mkdir(exist_ok=True)
+    try:
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(path=tmp_extract)
 
-    # Find the binary
-    for root, _, files in os.walk(binary_dir):
-        if "rqlited" in files:
-            binary_path = pl.Path(root) / "rqlited"
-            break
-    else:
-        raise RuntimeError("rqlited binary not found in downloaded package")
+        for root, _, files in os.walk(tmp_extract):
+            if "rqlited" in files:
+                src = pl.Path(root) / "rqlited"
+                break
+        else:
+            raise RuntimeError("rqlited binary not found in tarball")
 
-    # Make executable
-    os.chmod(binary_path, 0o755)
+        try:
+            src.replace(binary_path)           # atomic, first writer wins
+        except FileExistsError:
+            pass                               # already copied by another worker
+        os.chmod(binary_path, 0o755)
+    finally:
+        shutil.rmtree(tmp_extract, ignore_errors=True)
 
     logger.info(f"Downloaded rqlited binary to {binary_path}")
     RQLITE_BINARY_PATH = str(binary_path)
