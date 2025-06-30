@@ -15,6 +15,7 @@ KillMode=process
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+LimitMEMLOCK=infinity
 """
 
 INSTALL_SECTION = """[Install]
