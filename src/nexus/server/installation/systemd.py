@@ -16,6 +16,7 @@ Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 LimitMEMLOCK=infinity
+LimitNOFILE=65536
 """
 
 INSTALL_SECTION = """[Install]
