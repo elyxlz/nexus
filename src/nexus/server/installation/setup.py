@@ -13,7 +13,7 @@ import sys
 import time
 import typing as tp
 
-from nexus.server.core import config, context, db
+from nexus.server.core import config, context
 
 SYSTEM_SERVER_DIR = pl.Path("/etc/nexus_server")
 SERVER_USER = "nexus"
@@ -213,6 +213,8 @@ def stop_system_server() -> bool:
 
 
 def create_interactive_config(default_config: config.NexusServerConfig) -> config.NexusServerConfig:
+    import secrets
+
     print("\nNexus Server Configuration")
     print("=========================")
     print("(You can also set these values with environment variables: e.g pass NS_PORT)")
@@ -222,10 +224,39 @@ def create_interactive_config(default_config: config.NexusServerConfig) -> confi
 
     node_name = input(f"Node name [default: {default_config.node_name}]: ").strip() or default_config.node_name
 
+    rqlite_host = input(f"rqlite host [default: {default_config.rqlite_host}]: ").strip() or default_config.rqlite_host
+
+    is_join = input("Join existing cluster? [y/N]: ").lower().strip() == "y"
+
+    if is_join:
+        join_host = input("Enter host:port of any cluster node to join: ").strip()
+
+        # Write JOIN_FLAGS to file
+        join_env_path = SYSTEM_SERVER_DIR / "rqlite" / "join.env"
+        join_env_path.parent.mkdir(parents=True, exist_ok=True)
+        join_env_path.write_text(f'JOIN_FLAGS="{join_host}"')
+        print(f"Join configuration saved to {join_env_path}")
+
+        # Ask for the cluster API key
+        api_key = input("Enter the cluster API key: ").strip()
+    else:
+        # Generate API key for new cluster
+        api_key = secrets.token_hex(16)
+        print(f"Generated new API key: {api_key}")
+
+    # Write API key to auth.conf file
+    auth_path = SYSTEM_SERVER_DIR / "auth.conf"
+    auth_content = f"nexus:{api_key}"
+    auth_path.write_text(auth_content)
+    auth_path.chmod(0o600)
+    print(f"Authentication configuration saved to {auth_path}")
+
     return config.NexusServerConfig(
         server_dir=default_config.server_dir,
         port=port,
         node_name=node_name,
+        rqlite_host=rqlite_host,
+        api_key=api_key,
     )
 
 
@@ -403,6 +434,16 @@ def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
             "PASSWORDLESS ACCESS ENABLED: Any user can now run 'sudo -u nexus screen -r <session>' without a password"
         )
         print("Added rule to /etc/sudoers.d/nexus_attach")
+
+    # Create rqlite directories
+    rqlite_dir = SYSTEM_SERVER_DIR / "rqlite"
+    rqlite_dir.mkdir(parents=True, exist_ok=True)
+
+    # Open port for rqlite if ufw is available
+    try:
+        subprocess.run(["ufw", "allow", "4001,4002/tcp"], check=False)
+    except FileNotFoundError:
+        pass
 
 
 def print_installation_complete_message() -> None:
@@ -726,15 +767,18 @@ Configuration can also be set using environment variables (prefix=NS_):
 
 
 def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext:
+    import secrets
+    from nexus.server.core import rqlite
+
     if server_dir and (server_dir / "config.toml").exists():
         _config = config.load_config(server_dir)
         create_persistent_directory(_config)
     else:
-        _config = config.NexusServerConfig(server_dir=server_dir)
-
-    db_path = ":memory:" if _config.server_dir is None else str(config.get_db_path(_config.server_dir))
+        _config = config.NexusServerConfig(server_dir=server_dir, api_key=secrets.token_hex(16))
 
     # Create DB connection
-    _db = db.create_connection(db_path=db_path)
+    host, port = _config.rqlite_host.split(":")
+    _db = rqlite.connect_with_params(host, int(port), _config.api_key)
 
+    # Return context with db connection
     return context.NexusServerContext(db=_db, config=_config)

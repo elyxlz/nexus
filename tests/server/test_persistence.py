@@ -1,4 +1,5 @@
 import time
+import dataclasses as dc
 from collections.abc import Callable
 
 import pytest
@@ -20,15 +21,34 @@ def db_path(tmp_path) -> str:
     return db_path
 
 
+@pytest.fixture(scope="module")
+def persistence_db():
+    """Create a dedicated database for all persistence tests.
+
+    This creates an independent database instance on a unique port.
+    """
+    # Import the setup function from conftest
+    from conftest import setup_test_db
+
+    # Set up a database on a unique port for these tests
+    # Use a higher port number to avoid conflicts
+    return setup_test_db(port=5321)
+
+
 @pytest.fixture
-def server_config() -> NexusServerConfig:
-    """Create server configuration for testing."""
+def server_config(persistence_db) -> NexusServerConfig:
+    """Create a server configuration specific to persistence tests.
+
+    Uses the dedicated persistence database to avoid conflicts.
+    """
     return NexusServerConfig(
         server_dir=None,
         refresh_rate=1,
         port=54325,
         node_name="test_persistence_node",
         mock_gpus=True,
+        api_key="test_api_key",  # Using a consistent API key
+        rqlite_host=persistence_db,
     )
 
 
@@ -39,7 +59,8 @@ def create_test_client(db_path: str, server_config: NexusServerConfig) -> Callab
     def _create_client() -> TestClient:
         # Use the same DB path for all test clients
         print(f"Using database at: {db_path}")
-        db = create_connection(db_path)
+        host, port = server_config.rqlite_host.split(":")
+        db = create_connection(host, int(port), server_config.api_key)
         context = NexusServerContext(db=db, config=server_config)
         app = create_app(ctx=context)
 
@@ -104,6 +125,7 @@ def test_api_with_persistent_database(
     job_payload: dict,
     artifact_data: bytes,
     db_path: str,
+    server_config: NexusServerConfig,
 ) -> None:
     """Test the API endpoints use a persistent database."""
     # Create a client with the database
@@ -127,6 +149,7 @@ def test_api_with_persistent_database(
     job = job_response.json()
     assert job["status"] == "queued"
     assert job["command"] == job_payload["command"]
+    assert job["node"] is None  # Node should be unassigned initially
 
     # Submit another job
     job_payload2 = dict(test_payload)
@@ -144,7 +167,9 @@ def test_api_with_persistent_database(
     # No need to stop server
 
 
-def test_gpu_blacklisting(create_test_client: Callable[[], TestClient], db_path: str) -> None:
+def test_gpu_blacklisting(
+    create_test_client: Callable[[], TestClient], db_path: str, server_config: NexusServerConfig
+) -> None:
     """Test the GPU blacklisting endpoint."""
     # Create a client
     client = create_test_client()
@@ -190,6 +215,7 @@ def test_job_lifecycle(
     job_payload: dict,
     artifact_data: bytes,
     db_path: str,
+    server_config: NexusServerConfig,
 ) -> None:
     """Test basic job lifecycle functionality."""
     # Create a client
@@ -209,6 +235,7 @@ def test_job_lifecycle(
     # Check job status - should be queued
     job = client.get(f"/v1/jobs/{job_id}").json()
     assert job["status"] == "queued"
+    assert job["node"] is None  # Should start with no node assignment
 
     # List jobs by status
     queued_jobs = client.get("/v1/jobs", params={"status": "queued"}).json()

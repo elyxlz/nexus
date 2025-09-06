@@ -1,5 +1,6 @@
 import os
 import time
+import dataclasses as dc
 from collections.abc import Iterator
 
 import pytest
@@ -19,16 +20,14 @@ def upload_test_artifact(client: TestClient, artifact_data: bytes) -> str:
 
 
 @pytest.fixture
-def app_client() -> Iterator[TestClient]:
-    config = NexusServerConfig(
-        server_dir=None,
-        refresh_rate=1,
-        port=54324,
-        node_name="test_node",
-        mock_gpus=True,
-    )
+def app_client(server_config) -> Iterator[TestClient]:
+    # Create a copy with a different port to avoid conflicts
+    config_dict = server_config.model_dump()
+    config_dict["port"] = 54324
+    config = NexusServerConfig(**config_dict)
 
-    _db = create_connection(":memory:")
+    host, port = config.rqlite_host.split(":")
+    _db = create_connection(host, int(port), config.api_key)
     context = NexusServerContext(db=_db, config=config)
     _app = create_app(ctx=context)
 
@@ -372,7 +371,7 @@ def test_blacklist_and_remove_gpu(app_client: TestClient) -> None:
     # First, ensure the GPU is not blacklisted
     app_client.delete(f"/v1/gpus/{gpu_idx}/blacklist")
 
-    # Blacklist the GPU
+    # Blacklist the GPU - node parameter is automatically added by the endpoint
     blacklist_resp = app_client.put(f"/v1/gpus/{gpu_idx}/blacklist")
     assert blacklist_resp.status_code == 200
     bl_data = blacklist_resp.json()
