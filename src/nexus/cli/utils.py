@@ -115,6 +115,38 @@ def create_git_archive() -> bytes:
     return data
 
 
+# Git Tag Helpers
+def ensure_git_tag(tag_name: str, message: str | None = None) -> None:
+    """Create an annotated git tag if it doesn't exist.
+
+    Does nothing if the tag already exists locally.
+    """
+    try:
+        # Check if tag exists
+        res = subprocess.run(
+            ["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag_name}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if res.returncode == 0:
+            return
+
+        args = ["git", "tag", "-a", tag_name]
+        if message:
+            args += ["-m", message]
+        subprocess.run(args, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to create git tag {tag_name}: {e}")
+
+
+def push_git_tag(tag_name: str, remote: str = "origin") -> None:
+    """Push a single tag to the specified remote."""
+    try:
+        subprocess.run(["git", "push", remote, tag_name], check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to push git tag {tag_name} to {remote}: {e}")
+
+
 # Time Utilities
 def format_runtime(seconds: float) -> str:
     m, s = divmod(int(seconds), 60)

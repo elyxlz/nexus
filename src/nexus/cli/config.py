@@ -22,6 +22,9 @@ class NexusCliConfig(pyds.BaseSettings):
     user: str | None = pyd.Field(default=None)
     default_integrations: list[IntegrationType] = []
     default_notifications: list[NotificationType] = []
+    # When enabled, the CLI will create and push a git tag per job
+    # and jobs will expose the tag name via NEXUS_GIT_TAG.
+    enable_git_tag_push: bool = pyd.Field(default=False)
 
     model_config = {"env_prefix": "NEXUS_", "env_nested_delimiter": "__", "extra": "ignore"}
 

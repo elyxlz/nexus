@@ -99,6 +99,7 @@ def run_job(
             print(colored(f"Artifact uploaded with ID: {artifact_id}", "green"))
 
         env_vars = setup.load_current_env()
+        job_env_vars = dict(env_vars)
 
         invalid_notifications = []
 
@@ -136,7 +137,7 @@ def run_job(
             "priority": 0,
             "integrations": integrations,
             "notifications": notifications,
-            "env": env_vars,
+            "env": job_env_vars,
             "jobrc": jobrc_content,
             "gpu_idxs": gpu_idxs,
             "run_immediately": True,
@@ -144,6 +145,17 @@ def run_job(
 
         result = api_client.add_job(job_request)
         job_id = result["id"]
+
+        # Push git tag then mark job if enabled
+        if cfg.enable_git_tag_push:
+            try:
+                tag_name = f"nexus-{job_id}"
+                utils.ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
+                utils.push_git_tag(tag_name, remote="origin")
+                api_client.mark_job_git_tag_pushed(job_id)
+                print(colored(f"Pushed git tag: {tag_name}", "green"))
+            except Exception as e:
+                print(colored(f"Warning: could not push git tag for job {job_id}: {e}", "yellow"))
 
         print(colored("\nJob started:", "green", attrs=["bold"]))
         print(f"  {colored('•', 'green')} Job {colored(job_id, 'magenta')}: {result['command']}")
@@ -279,6 +291,8 @@ def add_jobs(
                 jobrc_content = f.read()
 
         created_jobs = []
+        # Prepare env for jobs
+        job_env_vars = dict(env_vars)
         for cmd in expanded_commands:
             job_request = {
                 "command": cmd,
@@ -290,7 +304,7 @@ def add_jobs(
                 "priority": priority,
                 "integrations": integrations,
                 "notifications": notifications,
-                "env": env_vars,
+                "env": job_env_vars,
                 "jobrc": jobrc_content,
                 "gpu_idxs": None,
                 "run_immediately": False,
@@ -298,6 +312,17 @@ def add_jobs(
 
             result = api_client.add_job(job_request)
             created_jobs.append(result)
+            # Push git tag then mark job if enabled
+            if cfg.enable_git_tag_push:
+                try:
+                    job_id = result['id']
+                    tag_name = f"nexus-{job_id}"
+                    utils.ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
+                    utils.push_git_tag(tag_name, remote="origin")
+                    api_client.mark_job_git_tag_pushed(job_id)
+                    print(colored(f"Pushed git tag: {tag_name}", "green"))
+                except Exception as e:
+                    print(colored(f"Warning: could not push git tag for job {result['id']}: {e}", "yellow"))
 
         print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
         for job in created_jobs:

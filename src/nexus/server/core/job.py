@@ -353,6 +353,15 @@ async def prepare_job_environment(
     log_file, job_repo_dir = await asyncio.to_thread(_create_directories, job.dir)
     env = await asyncio.to_thread(_build_environment, gpu_idxs, job.env)
 
+    # If client requested git tagging, expose the tag name to the job
+    try:
+        enable_tag = str(env.get("NEXUS_ENABLE_GIT_TAG", "")).strip().lower() in {"1", "true", "yes", "on"}
+        if enable_tag and "NEXUS_GIT_TAG" not in env:
+            env["NEXUS_GIT_TAG"] = f"nexus-{job.id}"
+    except Exception:
+        # Do not fail job prep if env munging fails
+        pass
+
     archive_path = job.dir / "code.tar"
     archive_path.write_bytes(db.get_artifact(ctx.db, job.artifact_id))
 
