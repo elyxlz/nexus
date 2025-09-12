@@ -218,7 +218,6 @@ async def update_job_endpoint(
     if job_update.num_gpus is not None:
         update_fields["num_gpus"] = job_update.num_gpus
 
-
     if not update_fields:
         return _job
 

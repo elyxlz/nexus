@@ -353,8 +353,6 @@ async def prepare_job_environment(
     log_file, job_repo_dir = await asyncio.to_thread(_create_directories, job.dir)
     env = await asyncio.to_thread(_build_environment, gpu_idxs, job.env)
 
-    
-
     archive_path = job.dir / "code.tar"
     archive_path.write_bytes(db.get_artifact(ctx.db, job.artifact_id))
 

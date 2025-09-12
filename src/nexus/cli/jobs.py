@@ -316,7 +316,7 @@ def add_jobs(
             result = api_client.add_job(job_request)
             created_jobs.append(result)
             if cfg.enable_git_tag_push:
-                push_git_tag_for_job(result['id'])
+                push_git_tag_for_job(result["id"])
 
         print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
         for job in created_jobs:
