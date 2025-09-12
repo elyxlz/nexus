@@ -10,6 +10,19 @@ from nexus.cli import api_client, config, setup, utils
 from nexus.cli.config import IntegrationType, NotificationType
 
 
+def _maybe_push_and_mark_tag(enabled: bool, job_id: str) -> None:
+    if not enabled:
+        return
+    try:
+        tag_name = f"nexus-{job_id}"
+        utils.ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
+        utils.push_git_tag(tag_name, remote="origin")
+        api_client.mark_job_git_tag_pushed(job_id)
+        print(colored(f"Pushed git tag: {tag_name}", "green"))
+    except Exception as e:
+        print(colored(f"Warning: could not push git tag for job {job_id}: {e}", "yellow"))
+
+
 def run_job(
     cfg: config.NexusCliConfig,
     commands: list[str],
@@ -146,15 +159,7 @@ def run_job(
         result = api_client.add_job(job_request)
         job_id = result["id"]
 
-        if cfg.enable_git_tag_push:
-            try:
-                tag_name = f"nexus-{job_id}"
-                utils.ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
-                utils.push_git_tag(tag_name, remote="origin")
-                api_client.mark_job_git_tag_pushed(job_id)
-                print(colored(f"Pushed git tag: {tag_name}", "green"))
-            except Exception as e:
-                print(colored(f"Warning: could not push git tag for job {job_id}: {e}", "yellow"))
+        _maybe_push_and_mark_tag(cfg.enable_git_tag_push, job_id)
 
         print(colored("\nJob started:", "green", attrs=["bold"]))
         print(f"  {colored('•', 'green')} Job {colored(job_id, 'magenta')}: {result['command']}")
@@ -311,16 +316,7 @@ def add_jobs(
 
             result = api_client.add_job(job_request)
             created_jobs.append(result)
-            if cfg.enable_git_tag_push:
-                try:
-                    job_id = result['id']
-                    tag_name = f"nexus-{job_id}"
-                    utils.ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
-                    utils.push_git_tag(tag_name, remote="origin")
-                    api_client.mark_job_git_tag_pushed(job_id)
-                    print(colored(f"Pushed git tag: {tag_name}", "green"))
-                except Exception as e:
-                    print(colored(f"Warning: could not push git tag for job {result['id']}: {e}", "yellow"))
+            _maybe_push_and_mark_tag(cfg.enable_git_tag_push, result['id'])
 
         print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
         for job in created_jobs:
