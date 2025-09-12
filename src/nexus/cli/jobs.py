@@ -112,8 +112,6 @@ def run_job(
 
         env_vars = setup.load_current_env()
         job_env_vars = dict(env_vars)
-        if cfg.enable_git_tag_push:
-            job_env_vars["NEXUS_ENABLE_GIT_TAG"] = "1"
 
         invalid_notifications = []
 
@@ -155,6 +153,7 @@ def run_job(
             "jobrc": jobrc_content,
             "gpu_idxs": gpu_idxs,
             "run_immediately": True,
+            "git_tag_pushed": bool(cfg.enable_git_tag_push),
         }
 
         result = api_client.add_job(job_request)
@@ -298,8 +297,6 @@ def add_jobs(
         created_jobs = []
         # Prepare env for jobs
         job_env_vars = dict(env_vars)
-        if cfg.enable_git_tag_push:
-            job_env_vars["NEXUS_ENABLE_GIT_TAG"] = "1"
         for cmd in expanded_commands:
             job_request = {
                 "command": cmd,
@@ -315,6 +312,7 @@ def add_jobs(
                 "jobrc": jobrc_content,
                 "gpu_idxs": None,
                 "run_immediately": False,
+                "git_tag_pushed": bool(cfg.enable_git_tag_push),
             }
 
             result = api_client.add_job(job_request)
