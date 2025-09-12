@@ -10,9 +10,7 @@ from nexus.cli import api_client, config, setup, utils
 from nexus.cli.config import IntegrationType, NotificationType
 
 
-def _maybe_push_and_mark_tag(enabled: bool, job_id: str) -> None:
-    if not enabled:
-        return
+def push_git_tag_for_job(job_id: str) -> None:
     try:
         tag_name = f"nexus-{job_id}"
         utils.ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
@@ -159,7 +157,8 @@ def run_job(
         result = api_client.add_job(job_request)
         job_id = result["id"]
 
-        _maybe_push_and_mark_tag(cfg.enable_git_tag_push, job_id)
+        if cfg.enable_git_tag_push:
+            push_git_tag_for_job(job_id)
 
         print(colored("\nJob started:", "green", attrs=["bold"]))
         print(f"  {colored('•', 'green')} Job {colored(job_id, 'magenta')}: {result['command']}")
@@ -317,7 +316,8 @@ def add_jobs(
 
             result = api_client.add_job(job_request)
             created_jobs.append(result)
-            _maybe_push_and_mark_tag(cfg.enable_git_tag_push, result['id'])
+            if cfg.enable_git_tag_push:
+                push_git_tag_for_job(result['id'])
 
         print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
         for job in created_jobs:
