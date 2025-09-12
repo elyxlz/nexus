@@ -218,7 +218,6 @@ async def update_job_endpoint(
     if job_update.num_gpus is not None:
         update_fields["num_gpus"] = job_update.num_gpus
 
-    # Handle git_tag_pushed toggle by injecting NEXUS_GIT_TAG if missing
     if job_update.git_tag_pushed:
         new_env = dict(_job.env)
         new_env.setdefault("NEXUS_GIT_TAG", f"nexus-{_job.id}")

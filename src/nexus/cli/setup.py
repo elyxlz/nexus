@@ -225,7 +225,6 @@ def setup_wizard() -> None:
 
     cfg, env_vars = setup_notifications(cfg)
 
-    # Optional: enable per‑job git tags (requires push rights)
     if utils.ask_yes_no("Enable per-job git tags (requires repo push rights)?", default=False):
         cfg = cfg.copy(update={"enable_git_tag_push": True})
 

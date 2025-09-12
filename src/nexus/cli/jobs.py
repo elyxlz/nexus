@@ -146,7 +146,6 @@ def run_job(
         result = api_client.add_job(job_request)
         job_id = result["id"]
 
-        # Push git tag then mark job if enabled
         if cfg.enable_git_tag_push:
             try:
                 tag_name = f"nexus-{job_id}"
@@ -312,7 +311,6 @@ def add_jobs(
 
             result = api_client.add_job(job_request)
             created_jobs.append(result)
-            # Push git tag then mark job if enabled
             if cfg.enable_git_tag_push:
                 try:
                     job_id = result['id']
