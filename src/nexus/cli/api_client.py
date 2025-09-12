@@ -201,13 +201,6 @@ def edit_job(job_id: str, command: str | None = None, priority: int | None = Non
 
 
 @handle_api_errors
-def mark_job_git_tag_pushed(job_id: str) -> dict:
-    response = requests.patch(f"{get_api_base_url()}/jobs/{job_id}", json={"git_tag_pushed": True})
-    response.raise_for_status()
-    return response.json()
-
-
-@handle_api_errors
 def manage_blacklist(gpu_indices: list[int], action: tp.Literal["add", "remove"]) -> dict:
     # In the new API, we need to make individual blacklist requests per GPU
     results = {"blacklisted": [], "removed": [], "failed": []}

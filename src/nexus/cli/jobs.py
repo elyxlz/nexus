@@ -17,7 +17,6 @@ def _maybe_push_and_mark_tag(enabled: bool, job_id: str) -> None:
         tag_name = f"nexus-{job_id}"
         utils.ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
         utils.push_git_tag(tag_name, remote="origin")
-        api_client.mark_job_git_tag_pushed(job_id)
         print(colored(f"Pushed git tag: {tag_name}", "green"))
     except Exception as e:
         print(colored(f"Warning: could not push git tag for job {job_id}: {e}", "yellow"))
@@ -113,6 +112,8 @@ def run_job(
 
         env_vars = setup.load_current_env()
         job_env_vars = dict(env_vars)
+        if cfg.enable_git_tag_push:
+            job_env_vars["NEXUS_ENABLE_GIT_TAG"] = "1"
 
         invalid_notifications = []
 
@@ -297,6 +298,8 @@ def add_jobs(
         created_jobs = []
         # Prepare env for jobs
         job_env_vars = dict(env_vars)
+        if cfg.enable_git_tag_push:
+            job_env_vars["NEXUS_ENABLE_GIT_TAG"] = "1"
         for cmd in expanded_commands:
             job_request = {
                 "command": cmd,

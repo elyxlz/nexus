@@ -134,7 +134,6 @@ class JobUpdateRequest(FrozenBaseModel):
     command: str | None = None
     priority: int | None = None
     num_gpus: int | None = None
-    git_tag_pushed: bool | None = None
 
 
 class JobListRequest(FrozenBaseModel):
