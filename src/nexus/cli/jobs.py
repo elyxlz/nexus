@@ -294,7 +294,6 @@ def add_jobs(
                 jobrc_content = f.read()
 
         created_jobs = []
-        # Prepare env for jobs
         job_env_vars = dict(env_vars)
         for cmd in expanded_commands:
             job_request = {
