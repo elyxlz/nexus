@@ -1,5 +1,10 @@
 ## 🚧 Nexus TODO
 
+change statu view to show queued and running jobs not per gpu stuff
+-- force to skip git commit checks
+nexus git tag option
+fix bug where jobs get stuck and need to restart nexus
+
 ### 🟢 Easy
 
 - [ ] Command autocomplete
