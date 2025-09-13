@@ -10,6 +10,16 @@ from nexus.cli import api_client, config, setup, utils
 from nexus.cli.config import IntegrationType, NotificationType
 
 
+def push_git_tag_for_job(job_id: str) -> None:
+    try:
+        tag_name = f"nexus-{job_id}"
+        utils.ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
+        utils.push_git_tag(tag_name, remote="origin")
+        print(colored(f"Pushed git tag: {tag_name}", "green"))
+    except Exception as e:
+        print(colored(f"Warning: could not push git tag for job {job_id}: {e}", "yellow"))
+
+
 def run_job(
     cfg: config.NexusCliConfig,
     commands: list[str],
@@ -99,6 +109,7 @@ def run_job(
             print(colored(f"Artifact uploaded with ID: {artifact_id}", "green"))
 
         env_vars = setup.load_current_env()
+        job_env_vars = dict(env_vars)
 
         invalid_notifications = []
 
@@ -136,14 +147,18 @@ def run_job(
             "priority": 0,
             "integrations": integrations,
             "notifications": notifications,
-            "env": env_vars,
+            "env": job_env_vars,
             "jobrc": jobrc_content,
             "gpu_idxs": gpu_idxs,
             "run_immediately": True,
+            "git_tag_pushed": bool(cfg.enable_git_tag_push),
         }
 
         result = api_client.add_job(job_request)
         job_id = result["id"]
+
+        if cfg.enable_git_tag_push:
+            push_git_tag_for_job(job_id)
 
         print(colored("\nJob started:", "green", attrs=["bold"]))
         print(f"  {colored('•', 'green')} Job {colored(job_id, 'magenta')}: {result['command']}")
@@ -279,6 +294,7 @@ def add_jobs(
                 jobrc_content = f.read()
 
         created_jobs = []
+        job_env_vars = dict(env_vars)
         for cmd in expanded_commands:
             job_request = {
                 "command": cmd,
@@ -290,14 +306,17 @@ def add_jobs(
                 "priority": priority,
                 "integrations": integrations,
                 "notifications": notifications,
-                "env": env_vars,
+                "env": job_env_vars,
                 "jobrc": jobrc_content,
                 "gpu_idxs": None,
                 "run_immediately": False,
+                "git_tag_pushed": bool(cfg.enable_git_tag_push),
             }
 
             result = api_client.add_job(job_request)
             created_jobs.append(result)
+            if cfg.enable_git_tag_push:
+                push_git_tag_for_job(result["id"])
 
         print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
         for job in created_jobs:

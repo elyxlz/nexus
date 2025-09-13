@@ -225,6 +225,9 @@ def setup_wizard() -> None:
 
     cfg, env_vars = setup_notifications(cfg)
 
+    if utils.ask_yes_no("Enable per-job git tags (requires repo push rights)?", default=False):
+        cfg = cfg.copy(update={"enable_git_tag_push": True})
+
     # Initialize jobrc file if requested
     if utils.ask_yes_no("Would you like to set up a job runtime configuration (.jobrc)?"):
         jobrc_path = get_jobrc_path()

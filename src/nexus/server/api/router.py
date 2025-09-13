@@ -136,6 +136,11 @@ async def create_job_endpoint(
         ignore_blacklist=ignore_blacklist,
     )
 
+    if job_request.git_tag_pushed:
+        new_env = dict(j.env)
+        new_env.setdefault("NEXUS_GIT_TAG", f"nexus-{j.id}")
+        j = dc.replace(j, env=new_env)
+
     db.add_job(conn=ctx.db, job=j)
     logger.info(format.format_job_action(j, action="added"))
 

@@ -22,6 +22,7 @@ class NexusCliConfig(pyds.BaseSettings):
     user: str | None = pyd.Field(default=None)
     default_integrations: list[IntegrationType] = []
     default_notifications: list[NotificationType] = []
+    enable_git_tag_push: bool = pyd.Field(default=False)
 
     model_config = {"env_prefix": "NEXUS_", "env_nested_delimiter": "__", "extra": "ignore"}
 

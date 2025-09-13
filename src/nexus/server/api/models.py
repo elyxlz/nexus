@@ -66,6 +66,7 @@ class JobRequest(FrozenBaseModel):
     run_immediately: bool = False
     git_repo_url: str | None = None
     git_branch: str | None = None
+    git_tag_pushed: bool = False
 
     @pyd.model_validator(mode="after")
     def check_requirements(self) -> tpe.Self:
