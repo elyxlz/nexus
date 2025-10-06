@@ -55,23 +55,50 @@ def _create_directories(dir_path: pl.Path) -> tuple[pl.Path, pl.Path]:
 import pathlib as pl
 
 
-def _build_script_content(
-    log_file: pl.Path,
+def _build_job_commands_script(
     job_repo_dir: pl.Path,
     archive_path: pl.Path,
     command: str,
     jobrc: str | None = None,
 ) -> str:
-    error_log = log_file.parent / "error.log"
     jobrc_section = ""
     if jobrc and jobrc.strip():
-        jobrc_lines = [line.strip() for line in jobrc.strip().split('\n') if line.strip()]
-        jobrc_commands = ' && '.join(jobrc_lines)
-        jobrc_section = f'echo "Running jobrc..." && {jobrc_commands} && '
+        jobrc_section = f"""
+echo "Running jobrc..."
+{jobrc.strip()}
+"""
 
     return f"""#!/bin/bash
+set -euo pipefail
+
+echo "Extracting repository..."
+mkdir -p {job_repo_dir}
+tar -xf {archive_path} -C {job_repo_dir}
+cd '{job_repo_dir}'
+{jobrc_section}
+echo "Running command..."
+{command}
+"""
+
+
+def _build_script_content(
+    log_file: pl.Path,
+    job_commands_script: pl.Path,
+) -> str:
+    error_log = log_file.parent / "error.log"
+
+    return f"""#!/bin/bash
+set -euo pipefail
 exec 2>"{error_log}"
-script -q -e -f -c "set -e && mkdir -p {job_repo_dir} && tar -xf {archive_path} -C {job_repo_dir} && cd '{job_repo_dir}' && {jobrc_section}echo 'Running command...' && {command}" "{log_file}"
+
+echo "Starting job execution..." >&2
+
+if ! script -q -e -f "{job_commands_script}" "{log_file}"; then
+    echo "Job script failed with exit code $?" >&2
+    exit 1
+fi
+
+echo "Job completed successfully" >&2
 """
 
 
@@ -92,7 +119,12 @@ def _create_job_script(
     command: str,
     jobrc: str | None = None,
 ) -> pl.Path:
-    script_content = _build_script_content(log_file, job_repo_dir, archive_path, command, jobrc=jobrc)
+    job_commands_script_path = job_dir / "job_commands.sh"
+    job_commands_content = _build_job_commands_script(job_repo_dir, archive_path, command, jobrc=jobrc)
+    job_commands_script_path.write_text(job_commands_content)
+    job_commands_script_path.chmod(0o755)
+
+    script_content = _build_script_content(log_file, job_commands_script_path)
     return _write_job_script(job_dir, script_content=script_content)
 
 
@@ -152,7 +184,12 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
 
     logger.info(f"Starting screen session {session_name} with script {abs_script_path}")
     script_content = abs_script_path.read_text()
-    logger.info(f"Script content:\n{script_content}")
+    logger.info(f"Outer script (run.sh):\n{script_content}")
+
+    job_commands_script = abs_script_path.parent / "job_commands.sh"
+    if job_commands_script.exists():
+        job_commands_content = job_commands_script.read_text()
+        logger.info(f"Inner script (job_commands.sh):\n{job_commands_content}")
 
     syntax_check = await asyncio.create_subprocess_exec(
         "bash", "-n", str(abs_script_path), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
