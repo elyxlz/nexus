@@ -62,10 +62,12 @@ def _build_script_content(
     command: str,
     jobrc: str | None = None,
 ) -> str:
-    jobrc_cmd = f"{jobrc.strip()} && " if jobrc and jobrc.strip() else ""
+    jobrc_section = ""
+    if jobrc and jobrc.strip():
+        jobrc_section = f'echo "Running jobrc..." && {jobrc.strip()} && '
+
     return f"""#!/bin/bash
-set -e
-script -q -e -f -c "mkdir -p {job_repo_dir} && tar -xf {archive_path} -C {job_repo_dir} && cd '{job_repo_dir}' && {jobrc_cmd}{command}" "{log_file}"
+script -q -e -f -c "set -e && mkdir -p {job_repo_dir} && tar -xf {archive_path} -C {job_repo_dir} && cd '{job_repo_dir}' && {jobrc_section}echo 'Running command: {command}' && {command}" "{log_file}"
 """
 
 

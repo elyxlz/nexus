@@ -64,6 +64,7 @@ class JobRequest(FrozenBaseModel):
     env: dict[str, str] = {}
     jobrc: str | None = None
     run_immediately: bool = False
+    ignore_blacklist: bool = False
     git_repo_url: str | None = None
     git_branch: str | None = None
     git_tag_pushed: bool = False
