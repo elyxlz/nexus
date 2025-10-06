@@ -87,7 +87,7 @@ async def create_job_endpoint(
     job_request: models.JobRequest, ctx: context.NexusServerContext = fa.Depends(_get_context)
 ):
     priority = job_request.priority if not job_request.run_immediately else 9999
-    ignore_blacklist = job_request.run_immediately
+    ignore_blacklist = job_request.ignore_blacklist
 
     gpu_idxs_list = job_request.gpu_idxs or []
     if job_request.run_immediately:

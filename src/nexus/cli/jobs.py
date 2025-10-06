@@ -27,6 +27,7 @@ def run_job(
     num_gpus: int = 1,
     notification_types: list[NotificationType] | None = None,
     integration_types: list[config.IntegrationType] | None = None,
+    force: bool = False,
     bypass_confirm: bool = False,
     interactive: bool = False,
 ) -> None:
@@ -151,6 +152,7 @@ def run_job(
             "jobrc": jobrc_content,
             "gpu_idxs": gpu_idxs,
             "run_immediately": True,
+            "ignore_blacklist": force,
             "git_tag_pushed": bool(cfg.enable_git_tag_push),
         }
 
@@ -195,12 +197,18 @@ def add_jobs(
     commands: list[str],
     repeat: int,
     priority: int = 0,
+    gpu_idxs_str: str | None = None,
     num_gpus: int = 1,
     notification_types: list[NotificationType] | None = None,
     integration_types: list[IntegrationType] | None = None,
+    force: bool = False,
     bypass_confirm: bool = False,
 ) -> None:
     try:
+        gpu_idxs = None
+        if gpu_idxs_str:
+            gpu_idxs = utils.parse_gpu_list(gpu_idxs_str)
+
         expanded_commands = utils.expand_job_commands(commands, repeat=repeat)
         if not expanded_commands:
             return
@@ -212,7 +220,12 @@ def add_jobs(
         print(f"\n{colored('Adding the following jobs:', 'blue', attrs=['bold'])}")
         for cmd in expanded_commands:
             priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
-            gpus_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})" if num_gpus > 1 else ""
+            if gpu_idxs:
+                gpus_str = f" (GPUs: {colored(','.join(map(str, gpu_idxs)), 'cyan')})"
+            elif num_gpus > 1:
+                gpus_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})"
+            else:
+                gpus_str = ""
             print(f"  {colored('•', 'blue')} {cmd}{priority_str}{gpus_str}")
 
         if not utils.confirm_action(
@@ -295,6 +308,7 @@ def add_jobs(
 
         created_jobs = []
         job_env_vars = dict(env_vars)
+        gpus_count = len(gpu_idxs) if gpu_idxs else num_gpus
         for cmd in expanded_commands:
             job_request = {
                 "command": cmd,
@@ -302,14 +316,15 @@ def add_jobs(
                 "artifact_id": artifact_id,
                 "git_repo_url": git_repo_url,
                 "git_branch": branch_name,
-                "num_gpus": num_gpus,
+                "num_gpus": gpus_count,
                 "priority": priority,
                 "integrations": integrations,
                 "notifications": notifications,
                 "env": job_env_vars,
                 "jobrc": jobrc_content,
-                "gpu_idxs": None,
+                "gpu_idxs": gpu_idxs,
                 "run_immediately": False,
+                "ignore_blacklist": force,
                 "git_tag_pushed": bool(cfg.enable_git_tag_push),
             }
 
@@ -321,7 +336,12 @@ def add_jobs(
         print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
         for job in created_jobs:
             priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
-            gpus_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})" if num_gpus > 1 else ""
+            if gpu_idxs:
+                gpus_str = f" (GPUs: {colored(','.join(map(str, gpu_idxs)), 'cyan')})"
+            elif num_gpus > 1:
+                gpus_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})"
+            else:
+                gpus_str = ""
             print(
                 f"  {colored('•', 'green')} Job {colored(job['id'], 'magenta')}: {job['command']}{priority_str}{gpus_str}"
             )
