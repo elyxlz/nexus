@@ -77,6 +77,7 @@ tar -xf {archive_path} -C {job_repo_dir}
 cd '{job_repo_dir}'
 {jobrc_section}
 echo "Running command..."
+echo "$ {command}"
 {command}
 """
 
