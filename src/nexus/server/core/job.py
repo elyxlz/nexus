@@ -64,7 +64,9 @@ def _build_script_content(
 ) -> str:
     jobrc_section = ""
     if jobrc and jobrc.strip():
-        jobrc_section = f'echo "Running jobrc..." && {jobrc.strip()} && '
+        jobrc_lines = [line.strip() for line in jobrc.strip().split('\n') if line.strip()]
+        jobrc_commands = ' && '.join(jobrc_lines)
+        jobrc_section = f'echo "Running jobrc..." && {jobrc_commands} && '
 
     return f"""#!/bin/bash
 script -q -e -f -c "set -e && mkdir -p {job_repo_dir} && tar -xf {archive_path} -C {job_repo_dir} && cd '{job_repo_dir}' && {jobrc_section}echo 'Running command...' && {command}" "{log_file}"
@@ -147,7 +149,16 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
             raise exc.JobError(message=f"Script not executable: {abs_script_path}")
 
     logger.info(f"Starting screen session {session_name} with script {abs_script_path}")
-    logger.info(f"Script content:\n{abs_script_path.read_text()}")
+    script_content = abs_script_path.read_text()
+    logger.info(f"Script content:\n{script_content}")
+
+    syntax_check = await asyncio.create_subprocess_exec(
+        "bash", "-n", str(abs_script_path), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    _, stderr = await syntax_check.communicate()
+    if syntax_check.returncode != 0:
+        logger.error(f"Script has syntax errors:\n{stderr.decode()}")
+        raise exc.JobError(message=f"Script syntax error: {stderr.decode()}")
 
     process = await asyncio.create_subprocess_exec(
         "screen",
@@ -195,6 +206,21 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         return int(pids[0])
 
     logger.error(f"Failed to find PID for session {session_name}")
+
+    script_dir = abs_script_path.parent
+    output_log = script_dir / "output.log"
+    if output_log.exists():
+        try:
+            log_content = output_log.read_text()
+            if log_content.strip():
+                logger.error(f"Job output log:\n{log_content}")
+            else:
+                logger.error("Job output log is empty")
+        except Exception as e:
+            logger.error(f"Could not read output log: {e}")
+    else:
+        logger.error(f"Output log does not exist at: {output_log}")
+
     raise exc.JobError(message=f"Failed to get PID for job in session {session_name}")
 
 
