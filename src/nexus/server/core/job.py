@@ -93,7 +93,7 @@ exec 2>"{error_log}"
 
 echo "Starting job execution..." >&2
 
-if ! script -q -e -f "{job_commands_script}" "{log_file}"; then
+if ! script -q -e -f -c "{job_commands_script}" "{log_file}"; then
     echo "Job script failed with exit code $?" >&2
     exit 1
 fi
