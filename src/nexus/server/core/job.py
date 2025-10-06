@@ -67,7 +67,7 @@ def _build_script_content(
         jobrc_section = f'echo "Running jobrc..." && {jobrc.strip()} && '
 
     return f"""#!/bin/bash
-script -q -e -f -c "set -e && mkdir -p {job_repo_dir} && tar -xf {archive_path} -C {job_repo_dir} && cd '{job_repo_dir}' && {jobrc_section}echo 'Running command: {command}' && {command}" "{log_file}"
+script -q -e -f -c "set -e && mkdir -p {job_repo_dir} && tar -xf {archive_path} -C {job_repo_dir} && cd '{job_repo_dir}' && {jobrc_section}echo 'Running command...' && {command}" "{log_file}"
 """
 
 
@@ -156,9 +156,18 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         stderr=asyncio.subprocess.PIPE,
     )
 
-    await process.communicate()
+    stdout, stderr = await process.communicate()
     if process.returncode != 0:
-        raise exc.JobError(message=f"Screen process exited with code {process.returncode}")
+        error_details = f"Screen process exited with code {process.returncode}"
+        if stdout:
+            error_details += f"\nStdout: {stdout.decode().strip()}"
+        if stderr:
+            error_details += f"\nStderr: {stderr.decode().strip()}"
+
+        script_content = abs_script_path.read_text()
+        logger.error(f"Failed script content:\n{script_content}")
+
+        raise exc.JobError(message=error_details)
 
     await asyncio.sleep(0.5)
 

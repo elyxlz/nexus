@@ -8,6 +8,7 @@ import os
 import pathlib as pl
 import pwd
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -725,7 +726,23 @@ Configuration can also be set using environment variables (prefix=NS_):
     return parser
 
 
+def _check_screen_permissions() -> None:
+    screen_dir = pl.Path("/run/screen")
+    try:
+        if not screen_dir.exists():
+            screen_dir.mkdir(parents=True, exist_ok=True)
+        if stat.S_IMODE(screen_dir.stat().st_mode) != 0o777:
+            screen_dir.chmod(0o777)
+    except (OSError, PermissionError) as e:
+        raise RuntimeError(
+            f"Screen requires {screen_dir} with permissions 777. Error: {e}\n"
+            f"Fix: sudo mkdir -p {screen_dir} && sudo chmod 777 {screen_dir}"
+        )
+
+
 def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext:
+    _check_screen_permissions()
+
     if server_dir and (server_dir / "config.toml").exists():
         _config = config.load_config(server_dir)
         create_persistent_directory(_config)
@@ -734,7 +751,6 @@ def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext
 
     db_path = ":memory:" if _config.server_dir is None else str(config.get_db_path(_config.server_dir))
 
-    # Create DB connection
     _db = db.create_connection(db_path=db_path)
 
     return context.NexusServerContext(db=_db, config=_config)
