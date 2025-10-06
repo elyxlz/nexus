@@ -14,6 +14,9 @@ ExecStart=/usr/local/bin/nexus-server
 KillMode=process
 Restart=on-failure
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nexus-server
 Environment=PYTHONUNBUFFERED=1
 LimitMEMLOCK=infinity
 LimitNOFILE=65536
