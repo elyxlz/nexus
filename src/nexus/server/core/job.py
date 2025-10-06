@@ -62,6 +62,7 @@ def _build_script_content(
     command: str,
     jobrc: str | None = None,
 ) -> str:
+    error_log = log_file.parent / "error.log"
     jobrc_section = ""
     if jobrc and jobrc.strip():
         jobrc_lines = [line.strip() for line in jobrc.strip().split('\n') if line.strip()]
@@ -69,6 +70,7 @@ def _build_script_content(
         jobrc_section = f'echo "Running jobrc..." && {jobrc_commands} && '
 
     return f"""#!/bin/bash
+exec 2>"{error_log}"
 script -q -e -f -c "set -e && mkdir -p {job_repo_dir} && tar -xf {archive_path} -C {job_repo_dir} && cd '{job_repo_dir}' && {jobrc_section}echo 'Running command...' && {command}" "{log_file}"
 """
 
@@ -209,6 +211,20 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
 
     script_dir = abs_script_path.parent
     output_log = script_dir / "output.log"
+    error_log = script_dir / "error.log"
+
+    if error_log.exists():
+        try:
+            error_content = error_log.read_text()
+            if error_content.strip():
+                logger.error(f"Job error log:\n{error_content}")
+            else:
+                logger.error("Job error log is empty")
+        except Exception as e:
+            logger.error(f"Could not read error log: {e}")
+    else:
+        logger.error(f"Error log does not exist at: {error_log}")
+
     if output_log.exists():
         try:
             log_content = output_log.read_text()
