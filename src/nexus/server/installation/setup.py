@@ -564,13 +564,7 @@ def handle_config_command(args: argparse.Namespace) -> None:
 def handle_logs_command(args: argparse.Namespace) -> None:
     """View nexus-server logs using journalctl."""
     try:
-        cmd = ["journalctl"]
-
-        if args.unit:
-            cmd.extend(["-u", "nexus-server.service"])
-
-        if args.follow:
-            cmd.append("-f")
+        cmd = ["journalctl", "-u", "nexus-server.service", "-f"]
 
         cmd.extend(["-n", str(args.lines)])
 
@@ -711,8 +705,6 @@ Configuration can also be set using environment variables (prefix=NS_):
 
     # Server management commands
     logs_parser = subparsers.add_parser("logs", help="View server logs")
-    logs_parser.add_argument("-f", "--follow", action="store_true", help="Follow log output")
-    logs_parser.add_argument("-u", "--unit", action="store_true", help="Use journalctl unit filter")
     logs_parser.add_argument("-n", "--lines", type=int, default=50, help="Number of log lines to show")
 
     restart_parser = subparsers.add_parser("restart", help="Restart the server")

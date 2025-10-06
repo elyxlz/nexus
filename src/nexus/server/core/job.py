@@ -55,8 +55,7 @@ def _create_directories(dir_path: pl.Path) -> tuple[pl.Path, pl.Path]:
 import pathlib as pl
 
 
-def _build_script_content(
-    log_file: pl.Path,
+def _build_job_commands_script(
     job_repo_dir: pl.Path,
     archive_path: pl.Path,
     command: str,
@@ -64,10 +63,43 @@ def _build_script_content(
 ) -> str:
     jobrc_section = ""
     if jobrc and jobrc.strip():
-        jobrc_section = f'echo "Running jobrc..." && {jobrc.strip()} && '
+        jobrc_section = f"""
+echo "Running jobrc..."
+{jobrc.strip()}
+"""
 
     return f"""#!/bin/bash
-script -q -e -f -c "set -e && mkdir -p {job_repo_dir} && tar -xf {archive_path} -C {job_repo_dir} && cd '{job_repo_dir}' && {jobrc_section}echo 'Running command...' && {command}" "{log_file}"
+set -euo pipefail
+
+echo "Extracting repository..."
+mkdir -p {job_repo_dir}
+tar -xf {archive_path} -C {job_repo_dir}
+cd '{job_repo_dir}'
+{jobrc_section}
+echo "Running command..."
+echo "$ {command}"
+{command}
+"""
+
+
+def _build_script_content(
+    log_file: pl.Path,
+    job_commands_script: pl.Path,
+) -> str:
+    error_log = log_file.parent / "error.log"
+
+    return f"""#!/bin/bash
+set -euo pipefail
+exec 2>"{error_log}"
+
+echo "Starting job execution..." >&2
+
+if ! script -q -e -f -c "bash {job_commands_script}" "{log_file}"; then
+    echo "Job script failed with exit code $?" >&2
+    exit 1
+fi
+
+echo "Job completed successfully" >&2
 """
 
 
@@ -88,7 +120,12 @@ def _create_job_script(
     command: str,
     jobrc: str | None = None,
 ) -> pl.Path:
-    script_content = _build_script_content(log_file, job_repo_dir, archive_path, command, jobrc=jobrc)
+    job_commands_script_path = job_dir / "job_commands.sh"
+    job_commands_content = _build_job_commands_script(job_repo_dir, archive_path, command, jobrc=jobrc)
+    job_commands_script_path.write_text(job_commands_content)
+    job_commands_script_path.chmod(0o755)
+
+    script_content = _build_script_content(log_file, job_commands_script_path)
     return _write_job_script(job_dir, script_content=script_content)
 
 
@@ -146,6 +183,23 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         except Exception:
             raise exc.JobError(message=f"Script not executable: {abs_script_path}")
 
+    logger.info(f"Starting screen session {session_name} with script {abs_script_path}")
+    script_content = abs_script_path.read_text()
+    logger.info(f"Outer script (run.sh):\n{script_content}")
+
+    job_commands_script = abs_script_path.parent / "job_commands.sh"
+    if job_commands_script.exists():
+        job_commands_content = job_commands_script.read_text()
+        logger.info(f"Inner script (job_commands.sh):\n{job_commands_content}")
+
+    syntax_check = await asyncio.create_subprocess_exec(
+        "bash", "-n", str(abs_script_path), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    _, stderr = await syntax_check.communicate()
+    if syntax_check.returncode != 0:
+        logger.error(f"Script has syntax errors:\n{stderr.decode()}")
+        raise exc.JobError(message=f"Script syntax error: {stderr.decode()}")
+
     process = await asyncio.create_subprocess_exec(
         "screen",
         "-dmS",
@@ -157,6 +211,12 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
     )
 
     stdout, stderr = await process.communicate()
+    logger.info(f"Screen command returncode: {process.returncode}")
+    if stdout:
+        logger.info(f"Screen stdout: {stdout.decode().strip()}")
+    if stderr:
+        logger.info(f"Screen stderr: {stderr.decode().strip()}")
+
     if process.returncode != 0:
         error_details = f"Screen process exited with code {process.returncode}"
         if stdout:
@@ -171,12 +231,49 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
 
     await asyncio.sleep(0.5)
 
+    screen_list = await asyncio.create_subprocess_exec(
+        "screen", "-ls", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    screen_stdout, _ = await screen_list.communicate()
+    logger.info(f"Active screen sessions:\n{screen_stdout.decode()}")
+
     proc = await asyncio.create_subprocess_exec("pgrep", "-f", session_name, stdout=asyncio.subprocess.PIPE)
     stdout, _ = await proc.communicate()
     pids = [p for p in stdout.decode().strip().split("\n") if p]
+    logger.info(f"pgrep results for '{session_name}': {pids}")
 
     if pids:
         return int(pids[0])
+
+    logger.error(f"Failed to find PID for session {session_name}")
+
+    script_dir = abs_script_path.parent
+    output_log = script_dir / "output.log"
+    error_log = script_dir / "error.log"
+
+    if error_log.exists():
+        try:
+            error_content = error_log.read_text()
+            if error_content.strip():
+                logger.error(f"Job error log:\n{error_content}")
+            else:
+                logger.error("Job error log is empty")
+        except Exception as e:
+            logger.error(f"Could not read error log: {e}")
+    else:
+        logger.error(f"Error log does not exist at: {error_log}")
+
+    if output_log.exists():
+        try:
+            log_content = output_log.read_text()
+            if log_content.strip():
+                logger.error(f"Job output log:\n{log_content}")
+            else:
+                logger.error("Job output log is empty")
+        except Exception as e:
+            logger.error(f"Could not read output log: {e}")
+    else:
+        logger.error(f"Output log does not exist at: {output_log}")
 
     raise exc.JobError(message=f"Failed to get PID for job in session {session_name}")
 

@@ -727,3 +727,62 @@ def test_job_with_gpu_idxs(app_client: TestClient, artifact_data: bytes) -> None
 
     # Clean up by removing from blacklist
     app_client.delete(f"/v1/gpus/{gpu_idx}/blacklist")
+
+
+def test_job_execution_file_write(app_client: TestClient, artifact_data: bytes) -> None:
+    import pathlib as pl
+
+    artifact_id = upload_test_artifact(app_client, artifact_data)
+
+    timestamp = int(time.time())
+    output_file = pl.Path(f"/tmp/nexus_test_output_{timestamp}.txt")
+    test_content = f"test_output_{timestamp}"
+
+    try:
+        job_payload = {
+            "command": f"sleep 2 && echo '{test_content}' > {output_file}",
+            "git_repo_url": "https://github.com/elyxlz/nexus.git",
+            "artifact_id": artifact_id,
+            "git_branch": "master",
+            "user": "test_user",
+            "num_gpus": 1,
+            "env": {},
+            "jobrc": None,
+            "priority": 0,
+            "integrations": [],
+            "notifications": [],
+            "run_immediately": True,
+        }
+
+        submit_response = app_client.post("/v1/jobs", json=job_payload)
+        assert submit_response.status_code == 201
+        job_id = submit_response.json()["id"]
+
+        max_attempts = 60
+        for attempt in range(max_attempts):
+            if attempt % 3 == 0:
+                app_client.get("/v1/server/status")
+
+            job_response = app_client.get(f"/v1/jobs/{job_id}")
+            job_data = job_response.json()
+
+            if job_data.get("status") == "completed":
+                break
+
+            if job_data.get("status") == "failed":
+                error = job_data.get("error_message", "No error message")
+                pytest.fail(f"Job failed: {error}")
+
+            time.sleep(0.5)
+
+        job_data = app_client.get(f"/v1/jobs/{job_id}").json()
+        assert job_data.get("status") == "completed", f"Job did not complete. Status: {job_data.get('status')}"
+
+        assert output_file.exists(), f"Output file was not created: {output_file}"
+
+        content = output_file.read_text().strip()
+        assert content == test_content, f"Expected '{test_content}', got '{content}'"
+
+    finally:
+        if output_file.exists():
+            output_file.unlink()
