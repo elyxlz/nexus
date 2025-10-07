@@ -38,9 +38,9 @@ def app_client() -> Iterator[TestClient]:
 
 
 def test_artifact_size_limit(app_client):
-    max_size_mb = 20
+    max_size_mb = 50
 
-    # Create a test file that exceeds the 20 MB limit
+    # Create a test file that exceeds the 50 MB limit
     size_bytes = (max_size_mb + 1) * 1024 * 1024
     data = os.urandom(size_bytes)
 

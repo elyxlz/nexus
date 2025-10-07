@@ -71,7 +71,7 @@ async def upload_artifact(request: fa.Request, ctx: context.NexusServerContext =
     if not raw:
         raise exc.InvalidRequestError("Empty artifact upload")
 
-    max_size_mb = 20
+    max_size_mb = 50
     max_size_bytes = max_size_mb * 1024 * 1024
     if len(raw) > max_size_bytes:
         raise exc.InvalidRequestError(f"Artifact exceeds maximum size of {max_size_mb} MB")
