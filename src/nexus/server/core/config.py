@@ -1,5 +1,6 @@
 import json
 import pathlib as pl
+import socket
 
 import pydantic as pyd
 import pydantic_settings as pyds
@@ -12,17 +13,26 @@ __all__ = [
     "get_db_path",
     "save_config",
     "load_config",
+    "get_default_node_name",
 ]
+
+
+def get_default_node_name() -> str:
+    try:
+        return socket.gethostname()
+    except Exception:
+        return "nexus-node"
 
 
 class NexusServerConfig(pyds.BaseSettings):
     model_config = pyds.SettingsConfigDict(env_prefix="ns_", frozen=True, extra="ignore")
 
-    server_dir: pl.Path | None  # if none, never persist
+    server_dir: pl.Path | None
     refresh_rate: int = pyd.Field(default=3)
     port: int = pyd.Field(default=54323)
-    node_name: str = pyd.Field(default="test_node")
+    node_name: str = pyd.Field(default_factory=get_default_node_name)
     mock_gpus: bool = pyd.Field(default=False)
+    supplementary_groups: list[str] = pyd.Field(default_factory=list)
 
     @classmethod
     def settings_customise_sources(

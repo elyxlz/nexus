@@ -1,3 +1,4 @@
+import dataclasses as dc
 import hashlib
 import itertools
 import os
@@ -15,6 +16,17 @@ from termcolor import colored
 # Types
 Color = tp.Literal["grey", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
 Attribute = tp.Literal["bold", "dark", "underline", "blink", "reverse", "concealed"]
+
+
+@dc.dataclass(frozen=True)
+class GitArtifactContext:
+    artifact_id: str | None
+    git_repo_url: str | None
+    branch_name: str
+    commit_sha: str | None
+    temp_branch: str | None
+    original_branch: str | None
+    had_stash: bool
 
 
 # CLI Output Helpers
@@ -68,6 +80,125 @@ def generate_git_tag_id() -> str:
     return base58.b58encode(hash_bytes).decode()[:6].lower()
 
 
+def is_working_tree_dirty() -> bool:
+    result = subprocess.run(["git", "status", "--porcelain"], capture_output=True)
+    return bool(result.stdout.strip())
+
+
+def save_working_state() -> tuple[str, str, str, bool]:
+    try:
+        original_branch = get_current_git_branch()
+
+        stash_result = subprocess.run(["git", "stash", "list"], capture_output=True, text=True, check=True)
+        stash_count_before = len(stash_result.stdout.strip().split("\n")) if stash_result.stdout.strip() else 0
+
+        subprocess.run(["git", "stash", "-u"], check=True, capture_output=True)
+
+        temp_branch = f"nexus-tmp-{int(time.time())}-{generate_git_tag_id()}"
+        subprocess.run(["git", "checkout", "-b", temp_branch], check=True, capture_output=True)
+        subprocess.run(["git", "stash", "apply"], check=True, capture_output=True)
+        subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Nexus temporary commit"], check=True, capture_output=True)
+
+        commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+
+        stash_result = subprocess.run(["git", "stash", "list"], capture_output=True, text=True, check=True)
+        stash_count_after = len(stash_result.stdout.strip().split("\n")) if stash_result.stdout.strip() else 0
+        had_existing_stash = stash_count_after > stash_count_before
+
+        return (original_branch, temp_branch, commit_sha, had_existing_stash)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to save working state: {e}")
+
+
+def restore_working_state(original_branch: str, temp_branch: str, had_existing_stash: bool) -> None:
+    subprocess.run(["git", "checkout", original_branch], check=True, capture_output=True)
+    if not had_existing_stash:
+        subprocess.run(["git", "stash", "pop"], check=True, capture_output=True)
+    subprocess.run(["git", "branch", "-D", temp_branch], check=True, capture_output=True)
+
+
+def prepare_git_artifact() -> GitArtifactContext:
+    from nexus.cli import api_client
+
+    branch_name = get_current_git_branch()
+
+    try:
+        subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError:
+        raise
+
+    temp_branch = None
+    original_branch = None
+    commit_sha = None
+    had_stash = False
+
+    if is_working_tree_dirty():
+        original_branch, temp_branch, commit_sha, had_stash = save_working_state()
+        branch_name = temp_branch
+
+    result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
+    git_repo_url = result.stdout.strip() or "unknown-url"
+
+    print(colored("Creating git archive...", "blue"))
+    artifact_data = create_git_archive(temp_branch or "HEAD")
+    print(colored("Uploading git archive...", "blue"))
+    artifact_id = api_client.upload_artifact(artifact_data)
+    print(colored(f"Artifact uploaded with ID: {artifact_id}", "green"))
+
+    return GitArtifactContext(
+        artifact_id=artifact_id,
+        git_repo_url=git_repo_url,
+        branch_name=branch_name,
+        commit_sha=commit_sha,
+        temp_branch=temp_branch,
+        original_branch=original_branch,
+        had_stash=had_stash,
+    )
+
+
+def cleanup_git_state(ctx: GitArtifactContext) -> None:
+    if ctx.temp_branch and ctx.original_branch:
+        restore_working_state(ctx.original_branch, ctx.temp_branch, ctx.had_stash)
+
+
+def handle_git_tag_for_job(job_id: str, enable_push: bool, commit_sha: str | None) -> None:
+    if not enable_push:
+        return
+
+    if not can_push_to_remote("origin"):
+        return
+
+    tag_name = f"nexus-{job_id}"
+    if commit_sha:
+        ensure_git_tag(tag_name, message=f"Nexus job {job_id}", commit_ref=commit_sha)
+    else:
+        ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
+
+    try:
+        push_git_tag(tag_name, remote="origin")
+        print(colored(f"Pushed git tag: {tag_name}", "green"))
+    except RuntimeError as e:
+        print(colored(f"Warning: Failed to push git tag {tag_name}: {e}", "yellow"))
+
+
+def can_push_to_remote(remote: str = "origin") -> bool:
+    try:
+        result = subprocess.run(["git", "remote", "get-url", remote], capture_output=True, check=True)
+        if not result.stdout.strip():
+            return False
+
+        subprocess.run(["git", "push", "--dry-run", remote, "HEAD"], capture_output=True, check=True, timeout=5)
+        return True
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return False
+
+
 def get_current_git_branch() -> str:
     try:
         # First check if we're in a git repository
@@ -96,26 +227,16 @@ def ensure_clean_repo() -> None:
         raise RuntimeError("Refusing to submit: working tree has uncommitted changes.")
 
 
-def create_git_archive() -> bytes:
+def create_git_archive(ref: str = "HEAD") -> bytes:
     with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as archive:
-        subprocess.run(["git", "archive", "--format=tar", "HEAD"], stdout=archive, check=True)
+        subprocess.run(["git", "archive", "--format=tar", ref], stdout=archive, check=True)
     with open(archive.name, "rb") as f:
         data = f.read()
     os.unlink(archive.name)
-
-    max_size_mb = 20
-    max_size_bytes = max_size_mb * 1024 * 1024
-    size_mb = len(data) / (1024 * 1024)
-
-    if len(data) > max_size_bytes:
-        print_warning(f"Archive size ({size_mb:.1f} MB) exceeds maximum allowed size ({max_size_mb} MB)")
-        print_warning("Try using .gitignore to exclude large files or data directories")
-        raise RuntimeError(f"Git archive exceeds maximum size of {max_size_mb} MB")
-
     return data
 
 
-def ensure_git_tag(tag_name: str, message: str | None = None) -> None:
+def ensure_git_tag(tag_name: str, message: str | None = None, commit_ref: str = "HEAD") -> None:
     try:
         res = subprocess.run(
             ["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag_name}"],
@@ -128,6 +249,7 @@ def ensure_git_tag(tag_name: str, message: str | None = None) -> None:
         args = ["git", "tag", "-a", tag_name]
         if message:
             args += ["-m", message]
+        args.append(commit_ref)
         subprocess.run(args, check=True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to create git tag {tag_name}: {e}")

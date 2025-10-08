@@ -238,7 +238,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             notification_types=args.notify,
             force=args.force,
             bypass_confirm=args.yes,
-            interactive=not args.commands,  # Interactive mode if no commands are provided
+            interactive=not args.commands,
         ),
         "queue": lambda: jobs.show_queue(),
         "history": lambda: jobs.show_history(getattr(args, "pattern", None)),

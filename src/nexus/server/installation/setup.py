@@ -216,17 +216,17 @@ def stop_system_server() -> bool:
 def create_interactive_config(default_config: config.NexusServerConfig) -> config.NexusServerConfig:
     print("\nNexus Server Configuration")
     print("=========================")
-    print("(You can also set these values with environment variables: e.g pass NS_PORT)")
-
-    port_str = input(f"Port [default: {default_config.port}]: ").strip()
-    port = int(port_str) if port_str.isdigit() else default_config.port
 
     node_name = input(f"Node name [default: {default_config.node_name}]: ").strip() or default_config.node_name
 
+    groups_input = input("Supplementary groups for nexus user (comma-separated, or leave empty for none): ").strip()
+    sup_groups = [grp.strip() for grp in groups_input.split(",") if grp.strip()] if groups_input else []
+
     return config.NexusServerConfig(
         server_dir=default_config.server_dir,
-        port=port,
+        port=default_config.port,
         node_name=node_name,
+        supplementary_groups=sup_groups,
     )
 
 
@@ -366,6 +366,18 @@ def remove_system_components() -> None:
     remove_server_files()
 
 
+def check_editable_install() -> bool:
+    try:
+        dist = importlib.metadata.distribution("nexusai")
+        direct_url_file = dist.read_text("direct_url.json")
+        if direct_url_file:
+            direct_url_data = json.loads(direct_url_file)
+            return direct_url_data.get("dir_info", {}).get("editable", False)
+    except Exception:
+        pass
+    return False
+
+
 def check_installation_prerequisites(force: bool = False) -> None:
     if importlib.util.find_spec("nexus") is None:
         sys.exit(
@@ -373,18 +385,29 @@ def check_installation_prerequisites(force: bool = False) -> None:
             "Install it with: sudo pip3 install nexusai"
         )
 
+    if check_editable_install():
+        sys.exit(
+            "ERROR: nexusai is installed in editable mode (pip install -e).\n"
+            "System installation requires a non-editable install.\n"
+            "Uninstall with: sudo pip3 uninstall nexusai\n"
+            "Then install with: sudo pip3 install nexusai"
+        )
+
     info = get_installation_info()
     if info.install_mode == "system" and not force:
         sys.exit(f"Nexus server is already installed in system mode (version {info.version}).")
 
 
-def prompt_for_supplementary_groups() -> list[str]:
-    groups_input = input(
-        "Enter supplementary groups to add to the nexus user (comma-separated, or leave empty for none): "
-    ).strip()
-    if groups_input:
-        return [grp.strip() for grp in groups_input.split(",") if grp.strip()]
-    return []
+def setup_screen_run_dir() -> None:
+    screen_dir = pl.Path("/run/screen")
+    if not screen_dir.exists():
+        screen_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Created screen directory at {screen_dir}")
+
+    current_perms = stat.S_IMODE(screen_dir.stat().st_mode)
+    if current_perms != 0o777:
+        screen_dir.chmod(0o777)
+        print(f"Set permissions 777 on {screen_dir}")
 
 
 def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
@@ -399,11 +422,28 @@ def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
     if setup_shared_screen_dir():
         print("Created shared screen directory at /tmp/screen_nexus")
 
+    setup_screen_run_dir()
+
     if setup_passwordless_nexus_attach():
         print(
             "PASSWORDLESS ACCESS ENABLED: Any user can now run 'sudo -u nexus screen -r <session>' without a password"
         )
         print("Added rule to /etc/sudoers.d/nexus_attach")
+
+
+def confirm_installation(_config: config.NexusServerConfig, sup_groups: list[str]) -> bool:
+    print("\n" + "=" * 60)
+    print("Installation Configuration")
+    print("=" * 60)
+    for key, value in _config.model_dump().items():
+        print(f"{key}: {value}")
+    print("=" * 60)
+    print("\nNote: Configuration values can be overridden with environment variables")
+    print("      using the NS_ prefix (e.g., NS_PORT=8080, NS_NODE_NAME=gpu-node-1)")
+    print("      Use 'sudo -E' to preserve environment variables when installing")
+
+    response = input("\nProceed with installation? [y/N]: ").strip().lower()
+    return response == "y"
 
 
 def print_installation_complete_message() -> None:
@@ -424,20 +464,22 @@ def install_system(
 
     print("Installing Nexus server in system mode...")
 
-    sup_groups = []
-    if interactive:
-        sup_groups = prompt_for_supplementary_groups()
-
-    prepare_system_environment(sup_groups)
-
     _config = setup_config(SYSTEM_SERVER_DIR, interactive, config_file)
+
+    if interactive:
+        if not confirm_installation(_config, _config.supplementary_groups):
+            print("Installation cancelled.")
+            return
+
+    prepare_system_environment(_config.supplementary_groups)
+
     create_persistent_directory(_config)
     print(f"Created configuration at: {config.get_config_path(SYSTEM_SERVER_DIR)}")
 
     set_system_permissions()
     print("Set proper directory permissions.")
 
-    server_ok, server_error = setup_systemd_server(sup_groups)
+    server_ok, server_error = setup_systemd_server(_config.supplementary_groups)
     if not server_ok:
         sys.exit(server_error)
     print(f"Installed server file to: {SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME}")
@@ -676,8 +718,6 @@ Examples:
   nexus-server start                # Start the server
   nexus-server stop [-y]            # Stop the server (with optional skip confirmation)
   nexus-server restart [-y]         # Restart the server (with optional skip confirmation)
-
-Configuration can also be set using environment variables (prefix=NS_):
 """,
     )
 
