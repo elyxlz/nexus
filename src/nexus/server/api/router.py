@@ -133,6 +133,7 @@ async def create_job_endpoint(
         node_name=ctx.config.node_name,
         git_repo_url=job_request.git_repo_url,
         git_branch=job_request.git_branch,
+        git_tag=job_request.git_tag,
         ignore_blacklist=ignore_blacklist,
     )
 
@@ -202,21 +203,24 @@ async def update_job_endpoint(
 ):
     _job = db.get_job(conn=ctx.db, job_id=job_id)
 
-    if _job.status != "queued":
-        raise exc.InvalidJobStateError(
-            message=f"Cannot update job {job_id} with status '{_job.status}'. Only queued jobs can be updated."
-        )
-
     update_fields = {}
 
-    if job_update.command is not None:
-        update_fields["command"] = job_update.command
+    if job_update.git_tag is not None:
+        update_fields["git_tag"] = job_update.git_tag
 
-    if job_update.priority is not None:
-        update_fields["priority"] = job_update.priority
+    if _job.status == "queued":
+        if job_update.command is not None:
+            update_fields["command"] = job_update.command
 
-    if job_update.num_gpus is not None:
-        update_fields["num_gpus"] = job_update.num_gpus
+        if job_update.priority is not None:
+            update_fields["priority"] = job_update.priority
+
+        if job_update.num_gpus is not None:
+            update_fields["num_gpus"] = job_update.num_gpus
+    elif job_update.command is not None or job_update.priority is not None or job_update.num_gpus is not None:
+        raise exc.InvalidJobStateError(
+            message=f"Cannot update command/priority/num_gpus for job {job_id} with status '{_job.status}'. Only queued jobs can be updated."
+        )
 
     if not update_fields:
         return _job

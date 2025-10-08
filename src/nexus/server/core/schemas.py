@@ -22,6 +22,7 @@ class Job:
     artifact_id: str
     git_repo_url: str | None
     git_branch: str | None
+    git_tag: str | None
     priority: int
     num_gpus: int
     node_name: str

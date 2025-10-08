@@ -294,6 +294,7 @@ def create_job(
     notifications: list[schemas.NotificationType],
     git_repo_url: str | None = None,
     git_branch: str | None = None,
+    git_tag: str | None = None,
     gpu_idxs: list[int] | None = None,
     ignore_blacklist: bool = False,
 ) -> schemas.Job:
@@ -306,6 +307,7 @@ def create_job(
         artifact_id=artifact_id,
         git_repo_url=git_repo_url,
         git_branch=git_branch,
+        git_tag=git_tag,
         node_name=node_name,
         priority=priority,
         num_gpus=num_gpus,

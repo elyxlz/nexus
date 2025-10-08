@@ -27,6 +27,7 @@ class GitArtifactContext:
     temp_branch: str | None
     original_branch: str | None
     had_stash: bool
+    git_tag: str | None
 
 
 # CLI Output Helpers
@@ -89,9 +90,6 @@ def save_working_state() -> tuple[str, str, str, bool]:
     try:
         original_branch = get_current_git_branch()
 
-        stash_result = subprocess.run(["git", "stash", "list"], capture_output=True, text=True, check=True)
-        stash_count_before = len(stash_result.stdout.strip().split("\n")) if stash_result.stdout.strip() else 0
-
         subprocess.run(["git", "stash", "-u"], check=True, capture_output=True)
 
         temp_branch = f"nexus-tmp-{int(time.time())}-{generate_git_tag_id()}"
@@ -102,9 +100,7 @@ def save_working_state() -> tuple[str, str, str, bool]:
 
         commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 
-        stash_result = subprocess.run(["git", "stash", "list"], capture_output=True, text=True, check=True)
-        stash_count_after = len(stash_result.stdout.strip().split("\n")) if stash_result.stdout.strip() else 0
-        had_existing_stash = stash_count_after > stash_count_before
+        had_existing_stash = False
 
         return (original_branch, temp_branch, commit_sha, had_existing_stash)
     except subprocess.CalledProcessError as e:
@@ -118,7 +114,7 @@ def restore_working_state(original_branch: str, temp_branch: str, had_existing_s
     subprocess.run(["git", "branch", "-D", temp_branch], check=True, capture_output=True)
 
 
-def prepare_git_artifact() -> GitArtifactContext:
+def prepare_git_artifact(enable_git_tag_push: bool) -> GitArtifactContext:
     from nexus.cli import api_client
 
     branch_name = get_current_git_branch()
@@ -140,7 +136,6 @@ def prepare_git_artifact() -> GitArtifactContext:
 
     if is_working_tree_dirty():
         original_branch, temp_branch, commit_sha, had_stash = save_working_state()
-        branch_name = temp_branch
 
     result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
     git_repo_url = result.stdout.strip() or "unknown-url"
@@ -151,6 +146,21 @@ def prepare_git_artifact() -> GitArtifactContext:
     artifact_id = api_client.upload_artifact(artifact_data)
     print(colored(f"Artifact uploaded with ID: {artifact_id}", "green"))
 
+    git_tag = None
+    if enable_git_tag_push and can_push_to_remote("origin"):
+        tag_name = f"nexus-{generate_git_tag_id()}"
+        if commit_sha:
+            ensure_git_tag(tag_name, message=f"Nexus job tag", commit_ref=commit_sha)
+        else:
+            ensure_git_tag(tag_name, message=f"Nexus job tag")
+
+        try:
+            push_git_tag(tag_name, remote="origin")
+            print(colored(f"Pushed git tag: {tag_name}", "green"))
+            git_tag = tag_name
+        except RuntimeError as e:
+            print(colored(f"Warning: Failed to push git tag {tag_name}: {e}", "yellow"))
+
     return GitArtifactContext(
         artifact_id=artifact_id,
         git_repo_url=git_repo_url,
@@ -159,6 +169,7 @@ def prepare_git_artifact() -> GitArtifactContext:
         temp_branch=temp_branch,
         original_branch=original_branch,
         had_stash=had_stash,
+        git_tag=git_tag,
     )
 
 
@@ -167,24 +178,6 @@ def cleanup_git_state(ctx: GitArtifactContext) -> None:
         restore_working_state(ctx.original_branch, ctx.temp_branch, ctx.had_stash)
 
 
-def handle_git_tag_for_job(job_id: str, enable_push: bool, commit_sha: str | None) -> None:
-    if not enable_push:
-        return
-
-    if not can_push_to_remote("origin"):
-        return
-
-    tag_name = f"nexus-{job_id}"
-    if commit_sha:
-        ensure_git_tag(tag_name, message=f"Nexus job {job_id}", commit_ref=commit_sha)
-    else:
-        ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
-
-    try:
-        push_git_tag(tag_name, remote="origin")
-        print(colored(f"Pushed git tag: {tag_name}", "green"))
-    except RuntimeError as e:
-        print(colored(f"Warning: Failed to push git tag {tag_name}: {e}", "yellow"))
 
 
 def can_push_to_remote(remote: str = "origin") -> bool:
