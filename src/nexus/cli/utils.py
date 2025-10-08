@@ -103,7 +103,7 @@ def save_working_state() -> tuple[str, str, str, bool]:
 
     stash_result = subprocess.run(["git", "stash", "list"], capture_output=True, text=True)
     stash_count_after = len(stash_result.stdout.strip().split("\n")) if stash_result.stdout.strip() else 0
-    had_existing_stash = (stash_count_after > stash_count_before)
+    had_existing_stash = stash_count_after > stash_count_before
 
     return (original_branch, temp_branch, commit_sha, had_existing_stash)
 
@@ -192,20 +192,11 @@ def handle_git_tag_for_job(job_id: str, enable_push: bool, commit_sha: str | Non
 
 def can_push_to_remote(remote: str = "origin") -> bool:
     try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", remote],
-            capture_output=True,
-            check=True
-        )
+        result = subprocess.run(["git", "remote", "get-url", remote], capture_output=True, check=True)
         if not result.stdout.strip():
             return False
 
-        subprocess.run(
-            ["git", "push", "--dry-run", remote, "HEAD"],
-            capture_output=True,
-            check=True,
-            timeout=5
-        )
+        subprocess.run(["git", "push", "--dry-run", remote, "HEAD"], capture_output=True, check=True, timeout=5)
         return True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
