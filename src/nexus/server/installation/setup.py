@@ -216,16 +216,12 @@ def stop_system_server() -> bool:
 def create_interactive_config(default_config: config.NexusServerConfig) -> config.NexusServerConfig:
     print("\nNexus Server Configuration")
     print("=========================")
-    print("(You can also set these values with environment variables: e.g pass NS_PORT)")
-
-    port_str = input(f"Port [default: {default_config.port}]: ").strip()
-    port = int(port_str) if port_str.isdigit() else default_config.port
 
     node_name = input(f"Node name [default: {default_config.node_name}]: ").strip() or default_config.node_name
 
     return config.NexusServerConfig(
         server_dir=default_config.server_dir,
-        port=port,
+        port=default_config.port,
         node_name=node_name,
     )
 
