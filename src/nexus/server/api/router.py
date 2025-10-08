@@ -47,11 +47,11 @@ async def get_status_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_
     return response
 
 
-@router.get("/v1/jobs")
+@router.get("/v1/jobs", response_model=list[schemas.Job])
 async def list_jobs_endpoint(
     request: models.JobListRequest = fa.Depends(),
     ctx: context.NexusServerContext = fa.Depends(_get_context),
-) -> list[schemas.Job]:
+):
     jobs = db.list_jobs(conn=ctx.db, status=request.status, command_regex=request.command_regex)
     if request.gpu_index is not None:
         jobs = [j for j in jobs if request.gpu_index in j.gpu_idxs]
@@ -82,10 +82,10 @@ async def upload_artifact(request: fa.Request, ctx: context.NexusServerContext =
 
 
 @db.safe_transaction
-@router.post("/v1/jobs", status_code=201)
+@router.post("/v1/jobs", response_model=schemas.Job, status_code=201)
 async def create_job_endpoint(
     job_request: models.JobRequest, ctx: context.NexusServerContext = fa.Depends(_get_context)
-) -> schemas.Job:
+):
     priority = job_request.priority if not job_request.run_immediately else 9999
     ignore_blacklist = job_request.ignore_blacklist
 
@@ -149,8 +149,8 @@ async def create_job_endpoint(
     return db.get_job(conn=ctx.db, job_id=j.id)
 
 
-@router.get("/v1/jobs/{job_id}")
-async def get_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Depends(_get_context)) -> schemas.Job:
+@router.get("/v1/jobs/{job_id}", response_model=schemas.Job)
+async def get_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Depends(_get_context)):
     job_instance = db.get_job(conn=ctx.db, job_id=job_id)
     logger.info(f"Job found: {job_instance}")
     return job_instance
@@ -198,10 +198,10 @@ async def kill_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.De
 
 
 @db.safe_transaction
-@router.patch("/v1/jobs/{job_id}")
+@router.patch("/v1/jobs/{job_id}", response_model=schemas.Job)
 async def update_job_endpoint(
     job_id: str, job_update: models.JobUpdateRequest, ctx: context.NexusServerContext = fa.Depends(_get_context)
-) -> schemas.Job:
+):
     _job = db.get_job(conn=ctx.db, job_id=job_id)
 
     update_fields = {}
