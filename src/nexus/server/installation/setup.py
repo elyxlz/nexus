@@ -387,6 +387,18 @@ def prompt_for_supplementary_groups() -> list[str]:
     return []
 
 
+def setup_screen_run_dir() -> None:
+    screen_dir = pl.Path("/run/screen")
+    if not screen_dir.exists():
+        screen_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Created screen directory at {screen_dir}")
+
+    current_perms = stat.S_IMODE(screen_dir.stat().st_mode)
+    if current_perms != 0o777:
+        screen_dir.chmod(0o777)
+        print(f"Set permissions 777 on {screen_dir}")
+
+
 def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
     create_directories(SYSTEM_SERVER_DIR)
     print(f"Created system directory: {SYSTEM_SERVER_DIR}")
@@ -398,6 +410,8 @@ def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
 
     if setup_shared_screen_dir():
         print("Created shared screen directory at /tmp/screen_nexus")
+
+    setup_screen_run_dir()
 
     if setup_passwordless_nexus_attach():
         print(
