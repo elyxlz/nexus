@@ -138,9 +138,9 @@ async def create_job_endpoint(
         job_id=job_request.job_id,
     )
 
-    if job_request.git_tag_pushed:
+    if job_request.git_tag:
         new_env = dict(j.env)
-        new_env.setdefault("NEXUS_GIT_TAG", f"nexus-{j.id}")
+        new_env.setdefault("NEXUS_GIT_TAG", job_request.git_tag)
         j = dc.replace(j, env=new_env)
 
     db.add_job(conn=ctx.db, job=j)

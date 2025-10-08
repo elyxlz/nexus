@@ -77,6 +77,12 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             data BLOB NOT NULL
         )
     """)
+
+    cur.execute("PRAGMA table_info(jobs)")
+    columns = [col[1] for col in cur.fetchall()]
+    if "git_tag" not in columns:
+        cur.execute("ALTER TABLE jobs ADD COLUMN git_tag TEXT")
+
     conn.commit()
 
 
@@ -165,7 +171,7 @@ def _row_to_job(row: sqlite3.Row) -> schemas.Job:
         artifact_id=row["artifact_id"],
         git_repo_url=row["git_repo_url"],
         git_branch=row["git_branch"],
-        git_tag=row["git_tag"] if "git_tag" in row.keys() else None,
+        git_tag=row["git_tag"],
         priority=row["priority"],
         num_gpus=row["num_gpus"],
         node_name=row["node_name"],

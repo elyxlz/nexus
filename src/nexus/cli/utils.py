@@ -27,7 +27,7 @@ class GitArtifactContext:
     commit_sha: str | None
     temp_branch: str | None
     original_branch: str | None
-    had_stash: bool
+    we_created_stash: bool
     git_tag: str | None
 
 
@@ -91,26 +91,28 @@ def save_working_state() -> tuple[str, str, str, bool]:
     try:
         original_branch = get_current_git_branch()
 
-        subprocess.run(["git", "stash", "-u"], check=True, capture_output=True)
+        is_dirty = is_working_tree_dirty()
+        if is_dirty:
+            subprocess.run(["git", "stash", "-u"], check=True, capture_output=True)
 
         temp_branch = f"nexus-tmp-{int(time.time())}-{generate_job_id()}"
         subprocess.run(["git", "checkout", "-b", temp_branch], check=True, capture_output=True)
-        subprocess.run(["git", "stash", "apply"], check=True, capture_output=True)
-        subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Nexus temporary commit"], check=True, capture_output=True)
+
+        if is_dirty:
+            subprocess.run(["git", "stash", "apply"], check=True, capture_output=True)
+            subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
+            subprocess.run(["git", "commit", "-m", "Nexus temporary commit"], check=True, capture_output=True)
 
         commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 
-        had_existing_stash = False
-
-        return (original_branch, temp_branch, commit_sha, had_existing_stash)
+        return (original_branch, temp_branch, commit_sha, is_dirty)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to save working state: {e}")
 
 
-def restore_working_state(original_branch: str, temp_branch: str, had_existing_stash: bool) -> None:
+def restore_working_state(original_branch: str, temp_branch: str, we_created_stash: bool) -> None:
     subprocess.run(["git", "checkout", original_branch], check=True, capture_output=True)
-    if not had_existing_stash:
+    if we_created_stash:
         subprocess.run(["git", "stash", "pop"], check=True, capture_output=True)
     subprocess.run(["git", "branch", "-D", temp_branch], check=True, capture_output=True)
 
@@ -134,10 +136,10 @@ def prepare_git_artifact(enable_git_tag_push: bool) -> GitArtifactContext:
     temp_branch = None
     original_branch = None
     commit_sha = None
-    had_stash = False
+    we_created_stash = False
 
     if is_working_tree_dirty():
-        original_branch, temp_branch, commit_sha, had_stash = save_working_state()
+        original_branch, temp_branch, commit_sha, we_created_stash = save_working_state()
 
     result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
     git_repo_url = result.stdout.strip() or "unknown-url"
@@ -171,14 +173,14 @@ def prepare_git_artifact(enable_git_tag_push: bool) -> GitArtifactContext:
         commit_sha=commit_sha,
         temp_branch=temp_branch,
         original_branch=original_branch,
-        had_stash=had_stash,
+        we_created_stash=we_created_stash,
         git_tag=git_tag,
     )
 
 
 def cleanup_git_state(ctx: GitArtifactContext) -> None:
     if ctx.temp_branch and ctx.original_branch:
-        restore_working_state(ctx.original_branch, ctx.temp_branch, ctx.had_stash)
+        restore_working_state(ctx.original_branch, ctx.temp_branch, ctx.we_created_stash)
 
 
 
