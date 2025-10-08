@@ -213,7 +213,9 @@ def stop_system_server() -> bool:
     return server_stopped
 
 
-def create_interactive_config(default_config: config.NexusServerConfig) -> config.NexusServerConfig:
+def create_interactive_config(
+    default_config: config.NexusServerConfig, sup_groups: list[str]
+) -> config.NexusServerConfig:
     print("\nNexus Server Configuration")
     print("=========================")
 
@@ -223,13 +225,15 @@ def create_interactive_config(default_config: config.NexusServerConfig) -> confi
         server_dir=default_config.server_dir,
         port=default_config.port,
         node_name=node_name,
+        supplementary_groups=sup_groups,
     )
 
 
 def setup_config(
-    server_dir: pl.Path, interactive: bool = True, config_file: pl.Path | None = None
+    server_dir: pl.Path, interactive: bool = True, config_file: pl.Path | None = None, sup_groups: list[str] | None = None
 ) -> config.NexusServerConfig:
     default_config = config.NexusServerConfig(server_dir=server_dir)
+    groups = sup_groups or []
 
     if config_file and config_file.exists():
         try:
@@ -243,7 +247,7 @@ def setup_config(
     if not interactive:
         return default_config
 
-    return create_interactive_config(default_config)
+    return create_interactive_config(default_config, groups)
 
 
 def display_config(_config: config.NexusServerConfig) -> None:
@@ -422,8 +426,6 @@ def confirm_installation(_config: config.NexusServerConfig, sup_groups: list[str
     print("=" * 60)
     for key, value in _config.model_dump().items():
         print(f"{key}: {value}")
-    if sup_groups:
-        print(f"supplementary_groups: {', '.join(sup_groups)}")
     print("=" * 60)
     print("\nNote: Configuration values can be overridden with environment variables")
     print("      using the NS_ prefix (e.g., NS_PORT=8080, NS_NODE_NAME=gpu-node-1)")
@@ -454,7 +456,7 @@ def install_system(
     if interactive:
         sup_groups = prompt_for_supplementary_groups()
 
-    _config = setup_config(SYSTEM_SERVER_DIR, interactive, config_file)
+    _config = setup_config(SYSTEM_SERVER_DIR, interactive, config_file, sup_groups)
 
     if interactive:
         if not confirm_installation(_config, sup_groups):
