@@ -71,7 +71,6 @@ def add_job_run_parser(subparsers) -> None:
     )
     run_parser.add_argument("-n", "--notify", nargs="+", help="Additional notification types for this job")
     run_parser.add_argument("-f", "--force", action="store_true", help="Ignore GPU blacklist")
-    run_parser.add_argument("-d", "--dirty", action="store_true", help="Allow uncommitted changes")
     run_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
     run_parser.add_argument("--interactive", action="store_true", help="Start an interactive shell session on GPU(s)")
 
@@ -88,7 +87,6 @@ def add_job_management_parsers(subparsers) -> None:
     )
     add_parser.add_argument("-g", "--gpus", type=int, default=1, help="Number of GPUs to use for the job")
     add_parser.add_argument("-f", "--force", action="store_true", help="Ignore GPU blacklist")
-    add_parser.add_argument("-d", "--dirty", action="store_true", help="Allow uncommitted changes")
     add_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     # Show queue
@@ -231,7 +229,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             notification_types=args.notify,
             force=args.force,
             bypass_confirm=args.yes,
-            dirty=args.dirty,
+            dirty=True,
         ),
         "run": lambda: jobs.run_job(
             cfg,
@@ -242,7 +240,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             force=args.force,
             bypass_confirm=args.yes,
             interactive=not args.commands,
-            dirty=args.dirty,
+            dirty=True,
         ),
         "queue": lambda: jobs.show_queue(),
         "history": lambda: jobs.show_history(getattr(args, "pattern", None)),
