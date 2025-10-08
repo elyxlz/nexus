@@ -424,6 +424,7 @@ def confirm_installation(_config: config.NexusServerConfig, sup_groups: list[str
     print("=" * 60)
     print("\nNote: Configuration values can be overridden with environment variables")
     print("      using the NS_ prefix (e.g., NS_PORT=8080, NS_NODE_NAME=gpu-node-1)")
+    print("      Use 'sudo -E' to preserve environment variables when installing")
 
     response = input("\nProceed with installation? [y/N]: ").strip().lower()
     return response == "y"
