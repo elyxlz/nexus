@@ -274,7 +274,12 @@ def dispatch_command(command_name: str, handlers: dict) -> bool:
 
 def main() -> None:
     parser = create_parser()
-    args = parser.parse_args()
+    args, remaining_args = parser.parse_known_args()
+
+    if hasattr(args, "commands") and isinstance(args.commands, list):
+        args.commands = args.commands + remaining_args
+    elif remaining_args:
+        args.commands = remaining_args
 
     # First-time setup check
     if not setup.check_config_exists() and (not isinstance(args.command, list) and args.command != "setup"):
