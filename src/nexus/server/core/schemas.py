@@ -14,7 +14,7 @@ NotificationType = tp.Literal["discord", "phone"]
 IntegrationType = tp.Literal["wandb", "nullpointer"]
 
 
-@dc.dataclass(frozen=True, slots=True)
+@dc.dataclass(frozen=True)
 class Job:
     id: str
     command: str
