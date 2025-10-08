@@ -368,11 +368,31 @@ def remove_system_components() -> None:
     remove_server_files()
 
 
+def check_editable_install() -> bool:
+    try:
+        dist = importlib.metadata.distribution("nexusai")
+        direct_url_file = dist.read_text("direct_url.json")
+        if direct_url_file:
+            direct_url_data = json.loads(direct_url_file)
+            return direct_url_data.get("dir_info", {}).get("editable", False)
+    except Exception:
+        pass
+    return False
+
+
 def check_installation_prerequisites(force: bool = False) -> None:
     if importlib.util.find_spec("nexus") is None:
         sys.exit(
             "ERROR: The 'nexus' package is not available in the system Python environment.\n"
             "Install it with: sudo pip3 install nexusai"
+        )
+
+    if check_editable_install():
+        sys.exit(
+            "ERROR: nexusai is installed in editable mode (pip install -e).\n"
+            "System installation requires a non-editable install.\n"
+            "Uninstall with: sudo pip3 uninstall nexusai\n"
+            "Then install with: sudo pip3 install nexusai"
         )
 
     info = get_installation_info()
