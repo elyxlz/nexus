@@ -420,6 +420,22 @@ def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
         print("Added rule to /etc/sudoers.d/nexus_attach")
 
 
+def confirm_installation(_config: config.NexusServerConfig, sup_groups: list[str]) -> bool:
+    print("\n" + "=" * 60)
+    print("Installation Configuration")
+    print("=" * 60)
+    for key, value in _config.model_dump().items():
+        print(f"{key}: {value}")
+    if sup_groups:
+        print(f"supplementary_groups: {', '.join(sup_groups)}")
+    print("=" * 60)
+    print("\nNote: Configuration values can be overridden with environment variables")
+    print("      using the NS_ prefix (e.g., NS_PORT=8080, NS_NODE_NAME=gpu-node-1)")
+
+    response = input("\nProceed with installation? [y/N]: ").strip().lower()
+    return response == "y"
+
+
 def print_installation_complete_message() -> None:
     print("\nSystem installation complete.")
     print("To uninstall: nexus-server uninstall")
@@ -442,9 +458,15 @@ def install_system(
     if interactive:
         sup_groups = prompt_for_supplementary_groups()
 
+    _config = setup_config(SYSTEM_SERVER_DIR, interactive, config_file)
+
+    if interactive:
+        if not confirm_installation(_config, sup_groups):
+            print("Installation cancelled.")
+            return
+
     prepare_system_environment(sup_groups)
 
-    _config = setup_config(SYSTEM_SERVER_DIR, interactive, config_file)
     create_persistent_directory(_config)
     print(f"Created configuration at: {config.get_config_path(SYSTEM_SERVER_DIR)}")
 
