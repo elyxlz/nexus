@@ -354,16 +354,13 @@ def show_history(regex: str | None = None) -> None:
                 print(colored(f"Invalid regex pattern: {e}", "red"))
                 return
 
-        valid_jobs = [j for j in jobs if j.get("completed_at") is not None]
-        if not valid_jobs:
-            print(colored("No jobs with valid completion times found", "yellow"))
-            return
+        def get_sort_timestamp(job):
+            return job.get("completed_at") or job.get("started_at") or job.get("created_at") or 0
 
-        valid_jobs.sort(key=lambda x: x.get("completed_at", 0), reverse=False)
-        jobs = valid_jobs
+        jobs.sort(key=get_sort_timestamp, reverse=True)
 
         print(colored("Job History:", "blue", attrs=["bold"]))
-        for job in jobs[-25:]:
+        for job in jobs[:25]:
             runtime = utils.calculate_runtime(job)
             started_time = utils.format_timestamp(job.get("started_at"))
             status_color = (
@@ -397,7 +394,7 @@ def show_history(regex: str | None = None) -> None:
 
         total_jobs = len(jobs)
         if total_jobs > 25:
-            print(f"\n{colored('Showing last 25 of', 'blue', attrs=['bold'])} {colored(str(total_jobs), 'cyan')}")
+            print(f"\n{colored('Showing most recent 25 of', 'blue', attrs=['bold'])} {colored(str(total_jobs), 'cyan')}")
 
         completed_count = sum(1 for j in jobs if j["status"] == "completed")
         failed_count = sum(1 for j in jobs if j["status"] == "failed")
@@ -448,10 +445,6 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False) ->
             print(f"  {colored('•', 'blue')} Runtime: {colored(runtime_str, 'cyan')}")
             if latest_job.get("user"):
                 print(f"  {colored('•', 'blue')} User: {colored(latest_job['user'], 'cyan')}")
-
-            if not utils.confirm_action(f"Kill job {colored(job_id, 'magenta')}?", bypass=bypass_confirm):
-                print(colored("Operation cancelled.", "yellow"))
-                return
 
             jobs_to_kill.add(job_id)
             jobs_info.append(
@@ -587,33 +580,35 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
         for pattern in job_ids:
             if any(j["id"] == pattern for j in queued_jobs):
                 j = next(jj for jj in queued_jobs if jj["id"] == pattern)
-                jobs_to_remove.add(pattern)
-                created_time = utils.format_timestamp(j.get("created_at"))
-                jobs_info.append(
-                    {
-                        "id": j["id"],
-                        "command": j["command"],
-                        "queue_time": created_time,
-                        "user": j.get("user", ""),
-                        "priority": j.get("priority", 0),
-                    }
-                )
+                if pattern not in jobs_to_remove:
+                    jobs_to_remove.add(pattern)
+                    created_time = utils.format_timestamp(j.get("created_at"))
+                    jobs_info.append(
+                        {
+                            "id": j["id"],
+                            "command": j["command"],
+                            "queue_time": created_time,
+                            "user": j.get("user", ""),
+                            "priority": j.get("priority", 0),
+                        }
+                    )
             else:
                 try:
                     regex = re.compile(pattern)
                     matched = [jj for jj in queued_jobs if regex.search(jj["command"])]
                     for m in matched:
-                        jobs_to_remove.add(m["id"])
-                        created_time = utils.format_timestamp(m.get("created_at"))
-                        jobs_info.append(
-                            {
-                                "id": m["id"],
-                                "command": m["command"],
-                                "queue_time": created_time,
-                                "user": m.get("user", ""),
-                                "priority": m.get("priority", 0),
-                            }
-                        )
+                        if m["id"] not in jobs_to_remove:
+                            jobs_to_remove.add(m["id"])
+                            created_time = utils.format_timestamp(m.get("created_at"))
+                            jobs_info.append(
+                                {
+                                    "id": m["id"],
+                                    "command": m["command"],
+                                    "queue_time": created_time,
+                                    "user": m.get("user", ""),
+                                    "priority": m.get("priority", 0),
+                                }
+                            )
                 except re.error as e:
                     print(colored(f"Invalid regex pattern '{pattern}': {e}", "red"))
 
