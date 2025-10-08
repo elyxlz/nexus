@@ -102,6 +102,7 @@ def run_job(
                     jobrc_content = f.read()
 
             job_request = {
+                "job_id": git_ctx.job_id,
                 "command": command,
                 "user": user,
                 "artifact_id": git_ctx.artifact_id,
@@ -247,7 +248,9 @@ def add_jobs(
             job_env_vars = dict(env_vars)
             gpus_count = len(gpu_idxs) if gpu_idxs else num_gpus
             for cmd in expanded_commands:
+                queued_job_id = utils.generate_job_id()
                 job_request = {
+                    "job_id": queued_job_id,
                     "command": cmd,
                     "user": user,
                     "artifact_id": git_ctx.artifact_id,

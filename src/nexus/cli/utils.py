@@ -20,6 +20,7 @@ Attribute = tp.Literal["bold", "dark", "underline", "blink", "reverse", "conceal
 
 @dc.dataclass(frozen=True)
 class GitArtifactContext:
+    job_id: str
     artifact_id: str | None
     git_repo_url: str | None
     branch_name: str
@@ -73,7 +74,7 @@ def is_sensitive_key(key: str) -> bool:
     return any(keyword in key.lower() for keyword in sensitive_keywords)
 
 
-def generate_git_tag_id() -> str:
+def generate_job_id() -> str:
     timestamp = str(time.time()).encode()
     random_bytes = os.urandom(4)
     hash_input = timestamp + random_bytes
@@ -92,7 +93,7 @@ def save_working_state() -> tuple[str, str, str, bool]:
 
         subprocess.run(["git", "stash", "-u"], check=True, capture_output=True)
 
-        temp_branch = f"nexus-tmp-{int(time.time())}-{generate_git_tag_id()}"
+        temp_branch = f"nexus-tmp-{int(time.time())}-{generate_job_id()}"
         subprocess.run(["git", "checkout", "-b", temp_branch], check=True, capture_output=True)
         subprocess.run(["git", "stash", "apply"], check=True, capture_output=True)
         subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
@@ -117,6 +118,7 @@ def restore_working_state(original_branch: str, temp_branch: str, had_existing_s
 def prepare_git_artifact(enable_git_tag_push: bool) -> GitArtifactContext:
     from nexus.cli import api_client
 
+    job_id = generate_job_id()
     branch_name = get_current_git_branch()
 
     try:
@@ -148,11 +150,11 @@ def prepare_git_artifact(enable_git_tag_push: bool) -> GitArtifactContext:
 
     git_tag = None
     if enable_git_tag_push and can_push_to_remote("origin"):
-        tag_name = f"nexus-{generate_git_tag_id()}"
+        tag_name = f"nexus-{job_id}"
         if commit_sha:
-            ensure_git_tag(tag_name, message=f"Nexus job tag", commit_ref=commit_sha)
+            ensure_git_tag(tag_name, message=f"Nexus job {job_id}", commit_ref=commit_sha)
         else:
-            ensure_git_tag(tag_name, message=f"Nexus job tag")
+            ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
 
         try:
             push_git_tag(tag_name, remote="origin")
@@ -162,6 +164,7 @@ def prepare_git_artifact(enable_git_tag_push: bool) -> GitArtifactContext:
             print(colored(f"Warning: Failed to push git tag {tag_name}: {e}", "yellow"))
 
     return GitArtifactContext(
+        job_id=job_id,
         artifact_id=artifact_id,
         git_repo_url=git_repo_url,
         branch_name=branch_name,

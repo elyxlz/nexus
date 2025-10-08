@@ -53,6 +53,7 @@ def _check_required_vars(kinds: tp.Sequence[str], env: dict[str, str], for_type:
 
 
 class JobRequest(FrozenBaseModel):
+    job_id: str | None = None
     artifact_id: str
     command: str
     user: str

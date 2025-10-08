@@ -135,6 +135,7 @@ async def create_job_endpoint(
         git_branch=job_request.git_branch,
         git_tag=job_request.git_tag,
         ignore_blacklist=ignore_blacklist,
+        job_id=job_request.job_id,
     )
 
     if job_request.git_tag_pushed:

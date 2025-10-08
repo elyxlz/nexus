@@ -297,9 +297,10 @@ def create_job(
     git_tag: str | None = None,
     gpu_idxs: list[int] | None = None,
     ignore_blacklist: bool = False,
+    job_id: str | None = None,
 ) -> schemas.Job:
     return schemas.Job(
-        id=_generate_job_id(),
+        id=job_id or _generate_job_id(),
         command=command.strip(),
         status="queued",
         created_at=dt.datetime.now().timestamp(),
