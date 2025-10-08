@@ -664,7 +664,7 @@ def test_update_nonqueued_job(app_client: TestClient, artifact_data: bytes) -> N
 
     update_response = app_client.patch(f"/v1/jobs/{job_id}", json=update_data)
     assert update_response.status_code == 400
-    assert "Cannot update job" in update_response.text
+    assert "Cannot update command/priority/num_gpus" in update_response.text
 
 
 def test_job_with_gpu_idxs(app_client: TestClient, artifact_data: bytes) -> None:
