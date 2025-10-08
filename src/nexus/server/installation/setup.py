@@ -710,8 +710,6 @@ Examples:
   nexus-server start                # Start the server
   nexus-server stop [-y]            # Stop the server (with optional skip confirmation)
   nexus-server restart [-y]         # Restart the server (with optional skip confirmation)
-
-Configuration can also be set using environment variables (prefix=NS_):
 """,
     )
 
