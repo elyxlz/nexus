@@ -53,6 +53,7 @@ def _check_required_vars(kinds: tp.Sequence[str], env: dict[str, str], for_type:
 
 
 class JobRequest(FrozenBaseModel):
+    job_id: str | None = None
     artifact_id: str
     command: str
     user: str
@@ -67,7 +68,7 @@ class JobRequest(FrozenBaseModel):
     ignore_blacklist: bool = False
     git_repo_url: str | None = None
     git_branch: str | None = None
-    git_tag_pushed: bool = False
+    git_tag: str | None = None
 
     @pyd.model_validator(mode="after")
     def check_requirements(self) -> tpe.Self:
@@ -135,6 +136,7 @@ class JobUpdateRequest(FrozenBaseModel):
     command: str | None = None
     priority: int | None = None
     num_gpus: int | None = None
+    git_tag: str | None = None
 
 
 class JobListRequest(FrozenBaseModel):

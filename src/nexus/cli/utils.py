@@ -20,13 +20,15 @@ Attribute = tp.Literal["bold", "dark", "underline", "blink", "reverse", "conceal
 
 @dc.dataclass(frozen=True)
 class GitArtifactContext:
+    job_id: str
     artifact_id: str | None
     git_repo_url: str | None
     branch_name: str
     commit_sha: str | None
     temp_branch: str | None
     original_branch: str | None
-    had_stash: bool
+    we_created_stash: bool
+    git_tag: str | None
 
 
 # CLI Output Helpers
@@ -72,7 +74,7 @@ def is_sensitive_key(key: str) -> bool:
     return any(keyword in key.lower() for keyword in sensitive_keywords)
 
 
-def generate_git_tag_id() -> str:
+def generate_job_id() -> str:
     timestamp = str(time.time()).encode()
     random_bytes = os.urandom(4)
     hash_input = timestamp + random_bytes
@@ -89,38 +91,36 @@ def save_working_state() -> tuple[str, str, str, bool]:
     try:
         original_branch = get_current_git_branch()
 
-        stash_result = subprocess.run(["git", "stash", "list"], capture_output=True, text=True, check=True)
-        stash_count_before = len(stash_result.stdout.strip().split("\n")) if stash_result.stdout.strip() else 0
+        is_dirty = is_working_tree_dirty()
+        if is_dirty:
+            subprocess.run(["git", "stash", "-u"], check=True, capture_output=True)
 
-        subprocess.run(["git", "stash", "-u"], check=True, capture_output=True)
-
-        temp_branch = f"nexus-tmp-{int(time.time())}-{generate_git_tag_id()}"
+        temp_branch = f"nexus-tmp-{int(time.time())}-{generate_job_id()}"
         subprocess.run(["git", "checkout", "-b", temp_branch], check=True, capture_output=True)
-        subprocess.run(["git", "stash", "apply"], check=True, capture_output=True)
-        subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Nexus temporary commit"], check=True, capture_output=True)
+
+        if is_dirty:
+            subprocess.run(["git", "stash", "apply"], check=True, capture_output=True)
+            subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
+            subprocess.run(["git", "commit", "-m", "Nexus temporary commit"], check=True, capture_output=True)
 
         commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 
-        stash_result = subprocess.run(["git", "stash", "list"], capture_output=True, text=True, check=True)
-        stash_count_after = len(stash_result.stdout.strip().split("\n")) if stash_result.stdout.strip() else 0
-        had_existing_stash = stash_count_after > stash_count_before
-
-        return (original_branch, temp_branch, commit_sha, had_existing_stash)
+        return (original_branch, temp_branch, commit_sha, is_dirty)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to save working state: {e}")
 
 
-def restore_working_state(original_branch: str, temp_branch: str, had_existing_stash: bool) -> None:
+def restore_working_state(original_branch: str, temp_branch: str, we_created_stash: bool) -> None:
     subprocess.run(["git", "checkout", original_branch], check=True, capture_output=True)
-    if not had_existing_stash:
+    if we_created_stash:
         subprocess.run(["git", "stash", "pop"], check=True, capture_output=True)
     subprocess.run(["git", "branch", "-D", temp_branch], check=True, capture_output=True)
 
 
-def prepare_git_artifact() -> GitArtifactContext:
+def prepare_git_artifact(enable_git_tag_push: bool) -> GitArtifactContext:
     from nexus.cli import api_client
 
+    job_id = generate_job_id()
     branch_name = get_current_git_branch()
 
     try:
@@ -136,11 +136,10 @@ def prepare_git_artifact() -> GitArtifactContext:
     temp_branch = None
     original_branch = None
     commit_sha = None
-    had_stash = False
+    we_created_stash = False
 
     if is_working_tree_dirty():
-        original_branch, temp_branch, commit_sha, had_stash = save_working_state()
-        branch_name = temp_branch
+        original_branch, temp_branch, commit_sha, we_created_stash = save_working_state()
 
     result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
     git_repo_url = result.stdout.strip() or "unknown-url"
@@ -151,40 +150,39 @@ def prepare_git_artifact() -> GitArtifactContext:
     artifact_id = api_client.upload_artifact(artifact_data)
     print(colored(f"Artifact uploaded with ID: {artifact_id}", "green"))
 
+    git_tag = None
+    if enable_git_tag_push and can_push_to_remote("origin"):
+        tag_name = f"nexus-{job_id}"
+        if commit_sha:
+            ensure_git_tag(tag_name, message=f"Nexus job {job_id}", commit_ref=commit_sha)
+        else:
+            ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
+
+        try:
+            push_git_tag(tag_name, remote="origin")
+            print(colored(f"Pushed git tag: {tag_name}", "green"))
+            git_tag = tag_name
+        except RuntimeError as e:
+            print(colored(f"Warning: Failed to push git tag {tag_name}: {e}", "yellow"))
+
     return GitArtifactContext(
+        job_id=job_id,
         artifact_id=artifact_id,
         git_repo_url=git_repo_url,
         branch_name=branch_name,
         commit_sha=commit_sha,
         temp_branch=temp_branch,
         original_branch=original_branch,
-        had_stash=had_stash,
+        we_created_stash=we_created_stash,
+        git_tag=git_tag,
     )
 
 
 def cleanup_git_state(ctx: GitArtifactContext) -> None:
     if ctx.temp_branch and ctx.original_branch:
-        restore_working_state(ctx.original_branch, ctx.temp_branch, ctx.had_stash)
+        restore_working_state(ctx.original_branch, ctx.temp_branch, ctx.we_created_stash)
 
 
-def handle_git_tag_for_job(job_id: str, enable_push: bool, commit_sha: str | None) -> None:
-    if not enable_push:
-        return
-
-    if not can_push_to_remote("origin"):
-        return
-
-    tag_name = f"nexus-{job_id}"
-    if commit_sha:
-        ensure_git_tag(tag_name, message=f"Nexus job {job_id}", commit_ref=commit_sha)
-    else:
-        ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
-
-    try:
-        push_git_tag(tag_name, remote="origin")
-        print(colored(f"Pushed git tag: {tag_name}", "green"))
-    except RuntimeError as e:
-        print(colored(f"Warning: Failed to push git tag {tag_name}: {e}", "yellow"))
 
 
 def can_push_to_remote(remote: str = "origin") -> bool:

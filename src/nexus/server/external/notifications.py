@@ -73,7 +73,10 @@ def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction
     gpu_idxs = ", ".join(str(idx) for idx in job.gpu_idxs) if job.gpu_idxs else "None"
     message_title = f"{EMOJI_MAPPING[job_action]} **Job {job.id} {job_action} on GPU(s) {gpu_idxs} - ({job.node_name})** - {user_mention}"
     command = str(job.command)
-    git_info = f"{job.artifact_id} ({job.git_repo_url}) - Branch: {job.git_branch}"
+    if job.git_tag:
+        git_info = f"{job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}"
+    else:
+        git_info = f"({job.git_repo_url}) - Branch: {job.git_branch}"
     fields = [
         {"name": "Command", "value": command},
         {"name": "Git", "value": git_info},

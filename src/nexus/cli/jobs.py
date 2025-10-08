@@ -71,7 +71,7 @@ def run_job(
 
         git_ctx = None
         try:
-            git_ctx = utils.prepare_git_artifact()
+            git_ctx = utils.prepare_git_artifact(cfg.enable_git_tag_push)
             env_vars = setup.load_current_env()
             job_env_vars = dict(env_vars)
 
@@ -102,11 +102,13 @@ def run_job(
                     jobrc_content = f.read()
 
             job_request = {
+                "job_id": git_ctx.job_id,
                 "command": command,
                 "user": user,
                 "artifact_id": git_ctx.artifact_id,
                 "git_repo_url": git_ctx.git_repo_url,
                 "git_branch": git_ctx.branch_name,
+                "git_tag": git_ctx.git_tag,
                 "num_gpus": gpus_count,
                 "priority": 0,
                 "integrations": integrations,
@@ -121,8 +123,6 @@ def run_job(
 
             result = api_client.add_job(job_request)
             job_id = result["id"]
-
-            utils.handle_git_tag_for_job(job_id, cfg.enable_git_tag_push, git_ctx.commit_sha)
 
             print(colored("\nJob started:", "green", attrs=["bold"]))
             print(f"  {colored('•', 'green')} Job {colored(job_id, 'magenta')}: {result['command']}")
@@ -237,7 +237,7 @@ def add_jobs(
 
         git_ctx = None
         try:
-            git_ctx = utils.prepare_git_artifact()
+            git_ctx = utils.prepare_git_artifact(enable_git_tag_push=False)
             jobrc_content = None
             jobrc_path = setup.get_jobrc_path()
             if jobrc_path.exists():
@@ -248,12 +248,15 @@ def add_jobs(
             job_env_vars = dict(env_vars)
             gpus_count = len(gpu_idxs) if gpu_idxs else num_gpus
             for cmd in expanded_commands:
+                queued_job_id = utils.generate_job_id()
                 job_request = {
+                    "job_id": queued_job_id,
                     "command": cmd,
                     "user": user,
                     "artifact_id": git_ctx.artifact_id,
                     "git_repo_url": git_ctx.git_repo_url,
                     "git_branch": git_ctx.branch_name,
+                    "git_tag": git_ctx.git_tag,
                     "num_gpus": gpus_count,
                     "priority": priority,
                     "integrations": integrations,
@@ -263,12 +266,11 @@ def add_jobs(
                     "gpu_idxs": gpu_idxs,
                     "run_immediately": False,
                     "ignore_blacklist": force,
-                    "git_tag_pushed": bool(cfg.enable_git_tag_push),
+                    "git_tag_pushed": False,
                 }
 
                 result = api_client.add_job(job_request)
                 created_jobs.append(result)
-                utils.handle_git_tag_for_job(result["id"], cfg.enable_git_tag_push, git_ctx.commit_sha)
 
             print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
             for job in created_jobs:
