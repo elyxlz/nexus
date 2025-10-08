@@ -213,13 +213,16 @@ def stop_system_server() -> bool:
     return server_stopped
 
 
-def create_interactive_config(
-    default_config: config.NexusServerConfig, sup_groups: list[str]
-) -> config.NexusServerConfig:
+def create_interactive_config(default_config: config.NexusServerConfig) -> config.NexusServerConfig:
     print("\nNexus Server Configuration")
     print("=========================")
 
     node_name = input(f"Node name [default: {default_config.node_name}]: ").strip() or default_config.node_name
+
+    groups_input = input(
+        "Supplementary groups for nexus user (comma-separated, or leave empty for none): "
+    ).strip()
+    sup_groups = [grp.strip() for grp in groups_input.split(",") if grp.strip()] if groups_input else []
 
     return config.NexusServerConfig(
         server_dir=default_config.server_dir,
@@ -230,10 +233,9 @@ def create_interactive_config(
 
 
 def setup_config(
-    server_dir: pl.Path, interactive: bool = True, config_file: pl.Path | None = None, sup_groups: list[str] | None = None
+    server_dir: pl.Path, interactive: bool = True, config_file: pl.Path | None = None
 ) -> config.NexusServerConfig:
     default_config = config.NexusServerConfig(server_dir=server_dir)
-    groups = sup_groups or []
 
     if config_file and config_file.exists():
         try:
@@ -247,7 +249,7 @@ def setup_config(
     if not interactive:
         return default_config
 
-    return create_interactive_config(default_config, groups)
+    return create_interactive_config(default_config)
 
 
 def display_config(_config: config.NexusServerConfig) -> None:
@@ -378,13 +380,6 @@ def check_installation_prerequisites(force: bool = False) -> None:
         sys.exit(f"Nexus server is already installed in system mode (version {info.version}).")
 
 
-def prompt_for_supplementary_groups() -> list[str]:
-    groups_input = input(
-        "Enter supplementary groups to add to the nexus user (comma-separated, or leave empty for none): "
-    ).strip()
-    if groups_input:
-        return [grp.strip() for grp in groups_input.split(",") if grp.strip()]
-    return []
 
 
 def setup_screen_run_dir() -> None:
@@ -452,18 +447,14 @@ def install_system(
 
     print("Installing Nexus server in system mode...")
 
-    sup_groups = []
-    if interactive:
-        sup_groups = prompt_for_supplementary_groups()
-
-    _config = setup_config(SYSTEM_SERVER_DIR, interactive, config_file, sup_groups)
+    _config = setup_config(SYSTEM_SERVER_DIR, interactive, config_file)
 
     if interactive:
-        if not confirm_installation(_config, sup_groups):
+        if not confirm_installation(_config, _config.supplementary_groups):
             print("Installation cancelled.")
             return
 
-    prepare_system_environment(sup_groups)
+    prepare_system_environment(_config.supplementary_groups)
 
     create_persistent_directory(_config)
     print(f"Created configuration at: {config.get_config_path(SYSTEM_SERVER_DIR)}")
@@ -471,7 +462,7 @@ def install_system(
     set_system_permissions()
     print("Set proper directory permissions.")
 
-    server_ok, server_error = setup_systemd_server(sup_groups)
+    server_ok, server_error = setup_systemd_server(_config.supplementary_groups)
     if not server_ok:
         sys.exit(server_error)
     print(f"Installed server file to: {SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME}")
