@@ -229,7 +229,6 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             notification_types=args.notify,
             force=args.force,
             bypass_confirm=args.yes,
-            dirty=True,
         ),
         "run": lambda: jobs.run_job(
             cfg,
@@ -240,7 +239,6 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             force=args.force,
             bypass_confirm=args.yes,
             interactive=not args.commands,
-            dirty=True,
         ),
         "queue": lambda: jobs.show_queue(),
         "history": lambda: jobs.show_history(getattr(args, "pattern", None)),
@@ -272,12 +270,7 @@ def dispatch_command(command_name: str, handlers: dict) -> bool:
 
 def main() -> None:
     parser = create_parser()
-    args, remaining_args = parser.parse_known_args()
-
-    if hasattr(args, "commands") and isinstance(args.commands, list):
-        args.commands = args.commands + remaining_args
-    elif remaining_args:
-        args.commands = remaining_args
+    args = parser.parse_args()
 
     # First-time setup check
     if not setup.check_config_exists() and (not isinstance(args.command, list) and args.command != "setup"):

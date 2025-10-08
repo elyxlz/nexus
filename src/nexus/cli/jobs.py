@@ -19,7 +19,6 @@ def run_job(
     force: bool = False,
     bypass_confirm: bool = False,
     interactive: bool = False,
-    dirty: bool = False,
 ) -> None:
     """Run a job immediately on the server"""
     try:
@@ -70,9 +69,9 @@ def run_job(
                 if integration_type not in integrations:
                     integrations.append(integration_type)
 
-        git_ctx = utils.prepare_git_artifact(dirty)
-
+        git_ctx = None
         try:
+            git_ctx = utils.prepare_git_artifact()
             env_vars = setup.load_current_env()
             job_env_vars = dict(env_vars)
 
@@ -151,7 +150,8 @@ def run_job(
             print(f"  - Use 'nx logs -t 20 {job_id}' to see just the last 20 lines")
 
         finally:
-            utils.cleanup_git_state(git_ctx)
+            if git_ctx:
+                utils.cleanup_git_state(git_ctx)
 
     except Exception as e:
         print(colored(f"\nError: {e}", "red"))
@@ -169,7 +169,6 @@ def add_jobs(
     integration_types: list[IntegrationType] | None = None,
     force: bool = False,
     bypass_confirm: bool = False,
-    dirty: bool = False,
 ) -> None:
     try:
         gpu_idxs = None
@@ -236,9 +235,9 @@ def add_jobs(
 
             notifications = [n for n in notifications if n not in invalid_notifications]
 
-        git_ctx = utils.prepare_git_artifact(dirty)
-
+        git_ctx = None
         try:
+            git_ctx = utils.prepare_git_artifact()
             jobrc_content = None
             jobrc_path = setup.get_jobrc_path()
             if jobrc_path.exists():
@@ -285,7 +284,8 @@ def add_jobs(
                 )
 
         finally:
-            utils.cleanup_git_state(git_ctx)
+            if git_ctx:
+                utils.cleanup_git_state(git_ctx)
 
     except Exception as e:
         print(colored(f"\nError: {e}", "red"))

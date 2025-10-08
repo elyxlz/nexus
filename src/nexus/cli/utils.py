@@ -86,26 +86,29 @@ def is_working_tree_dirty() -> bool:
 
 
 def save_working_state() -> tuple[str, str, str, bool]:
-    original_branch = get_current_git_branch()
+    try:
+        original_branch = get_current_git_branch()
 
-    stash_result = subprocess.run(["git", "stash", "list"], capture_output=True, text=True)
-    stash_count_before = len(stash_result.stdout.strip().split("\n")) if stash_result.stdout.strip() else 0
+        stash_result = subprocess.run(["git", "stash", "list"], capture_output=True, text=True, check=True)
+        stash_count_before = len(stash_result.stdout.strip().split("\n")) if stash_result.stdout.strip() else 0
 
-    subprocess.run(["git", "stash", "-u"], check=True, capture_output=True)
+        subprocess.run(["git", "stash", "-u"], check=True, capture_output=True)
 
-    temp_branch = f"nexus-tmp-{int(time.time())}-{generate_git_tag_id()}"
-    subprocess.run(["git", "checkout", "-b", temp_branch], check=True, capture_output=True)
-    subprocess.run(["git", "stash", "apply"], check=True, capture_output=True)
-    subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "Nexus temporary commit"], check=True, capture_output=True)
+        temp_branch = f"nexus-tmp-{int(time.time())}-{generate_git_tag_id()}"
+        subprocess.run(["git", "checkout", "-b", temp_branch], check=True, capture_output=True)
+        subprocess.run(["git", "stash", "apply"], check=True, capture_output=True)
+        subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Nexus temporary commit"], check=True, capture_output=True)
 
-    commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
 
-    stash_result = subprocess.run(["git", "stash", "list"], capture_output=True, text=True)
-    stash_count_after = len(stash_result.stdout.strip().split("\n")) if stash_result.stdout.strip() else 0
-    had_existing_stash = stash_count_after > stash_count_before
+        stash_result = subprocess.run(["git", "stash", "list"], capture_output=True, text=True, check=True)
+        stash_count_after = len(stash_result.stdout.strip().split("\n")) if stash_result.stdout.strip() else 0
+        had_existing_stash = stash_count_after > stash_count_before
 
-    return (original_branch, temp_branch, commit_sha, had_existing_stash)
+        return (original_branch, temp_branch, commit_sha, had_existing_stash)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to save working state: {e}")
 
 
 def restore_working_state(original_branch: str, temp_branch: str, had_existing_stash: bool) -> None:
@@ -115,7 +118,7 @@ def restore_working_state(original_branch: str, temp_branch: str, had_existing_s
     subprocess.run(["git", "branch", "-D", temp_branch], check=True, capture_output=True)
 
 
-def prepare_git_artifact(dirty: bool) -> GitArtifactContext:
+def prepare_git_artifact() -> GitArtifactContext:
     from nexus.cli import api_client
 
     branch_name = get_current_git_branch()
@@ -128,7 +131,6 @@ def prepare_git_artifact(dirty: bool) -> GitArtifactContext:
             stderr=subprocess.DEVNULL,
         )
     except subprocess.CalledProcessError:
-        print(colored("Error: Not in a git repository.", "red"))
         raise
 
     temp_branch = None
@@ -137,13 +139,8 @@ def prepare_git_artifact(dirty: bool) -> GitArtifactContext:
     had_stash = False
 
     if is_working_tree_dirty():
-        if not dirty:
-            ensure_clean_repo()
-        else:
-            original_branch, temp_branch, commit_sha, had_stash = save_working_state()
-            branch_name = temp_branch
-    else:
-        ensure_clean_repo()
+        original_branch, temp_branch, commit_sha, had_stash = save_working_state()
+        branch_name = temp_branch
 
     result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
     git_repo_url = result.stdout.strip() or "unknown-url"
@@ -186,8 +183,8 @@ def handle_git_tag_for_job(job_id: str, enable_push: bool, commit_sha: str | Non
     try:
         push_git_tag(tag_name, remote="origin")
         print(colored(f"Pushed git tag: {tag_name}", "green"))
-    except RuntimeError:
-        pass
+    except RuntimeError as e:
+        print(colored(f"Warning: Failed to push git tag {tag_name}: {e}", "yellow"))
 
 
 def can_push_to_remote(remote: str = "origin") -> bool:
