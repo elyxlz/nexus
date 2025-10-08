@@ -307,10 +307,17 @@ def show_queue() -> None:
 
             priority = job.get("priority")
             num_gpus = job.get("num_gpus")
+            gpu_idxs = job.get("gpu_idxs")
             assert priority is not None and num_gpus is not None
 
             priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
-            gpu_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})" if num_gpus > 1 else ""
+
+            if gpu_idxs:
+                gpu_str = f" (GPUs: {colored(','.join(map(str, gpu_idxs)), 'cyan')})"
+            elif num_gpus > 1:
+                gpu_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})"
+            else:
+                gpu_str = ""
 
             print(
                 f"{total_jobs - idx + 1}. {colored(job['id'], 'magenta')} - "

@@ -219,9 +219,7 @@ def create_interactive_config(default_config: config.NexusServerConfig) -> confi
 
     node_name = input(f"Node name [default: {default_config.node_name}]: ").strip() or default_config.node_name
 
-    groups_input = input(
-        "Supplementary groups for nexus user (comma-separated, or leave empty for none): "
-    ).strip()
+    groups_input = input("Supplementary groups for nexus user (comma-separated, or leave empty for none): ").strip()
     sup_groups = [grp.strip() for grp in groups_input.split(",") if grp.strip()] if groups_input else []
 
     return config.NexusServerConfig(
@@ -398,8 +396,6 @@ def check_installation_prerequisites(force: bool = False) -> None:
     info = get_installation_info()
     if info.install_mode == "system" and not force:
         sys.exit(f"Nexus server is already installed in system mode (version {info.version}).")
-
-
 
 
 def setup_screen_run_dir() -> None:
