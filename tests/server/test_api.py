@@ -556,22 +556,25 @@ def test_job_submission_minimal(app_client: TestClient, artifact_data: bytes) ->
 
 def test_create_job_with_git_tag_enabled(app_client: TestClient, artifact_data: bytes) -> None:
     artifact_id = upload_test_artifact(app_client, artifact_data)
+    job_id = "test123"
+    git_tag = f"nexus-{job_id}"
     payload = {
+        "job_id": job_id,
         "command": "echo 'tagged'",
         "git_repo_url": "https://example.com/repo.git",
         "git_branch": "main",
+        "git_tag": git_tag,
         "artifact_id": artifact_id,
         "user": "test_user",
         "num_gpus": 1,
         "env": {},
         "notifications": [],
         "integrations": [],
-        "git_tag_pushed": True,
     }
     resp = app_client.post("/v1/jobs", json=payload)
     assert resp.status_code == 201
     job = resp.json()
-    assert job["env"].get("NEXUS_GIT_TAG") == f"nexus-{job['id']}"
+    assert job["env"].get("NEXUS_GIT_TAG") == git_tag
 
 
 def test_remove_queued_jobs(app_client: TestClient, created_job: dict) -> None:
