@@ -8,6 +8,7 @@ __all__ = [
     "SingleFieldResponse",
     "JobRequest",
     "JobUpdateRequest",
+    "JobKillRequest",
     "JobListRequest",
     "JobLogsResponse",
     "ServerLogsResponse",
@@ -137,6 +138,10 @@ class JobUpdateRequest(FrozenBaseModel):
     priority: int | None = None
     num_gpus: int | None = None
     git_tag: str | None = None
+
+
+class JobKillRequest(FrozenBaseModel):
+    silent: bool = False
 
 
 class JobListRequest(FrozenBaseModel):

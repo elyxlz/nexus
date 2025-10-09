@@ -103,6 +103,7 @@ def add_job_management_parsers(subparsers) -> None:
         nargs="*",
         help="List of GPU indices, job IDs, or command regex patterns (optional, kills latest job if omitted)",
     )
+    kill_parser.add_argument("-s", "--silent", action="store_true", help="Disable all notifications for killed jobs")
     kill_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     # Remove jobs
@@ -246,7 +247,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
         ),
         "queue": lambda: jobs.show_queue(),
         "history": lambda: jobs.show_history(getattr(args, "pattern", None)),
-        "kill": lambda: jobs.kill_jobs(getattr(args, "targets", None), bypass_confirm=args.yes),
+        "kill": lambda: jobs.kill_jobs(getattr(args, "targets", None), bypass_confirm=args.yes, silent=args.silent),
         "remove": lambda: jobs.remove_jobs(args.job_ids, bypass_confirm=args.yes),
         "blacklist": lambda: jobs.handle_blacklist(args),
         "logs": lambda: jobs.view_logs(args.id, tail=args.tail),

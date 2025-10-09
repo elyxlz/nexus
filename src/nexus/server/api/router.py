@@ -183,8 +183,9 @@ async def delete_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.
 
 @db.safe_transaction
 @router.post("/v1/jobs/{job_id}/kill", status_code=204)
-async def kill_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    """Kill a running job. Cannot be used for queued jobs."""
+async def kill_job_endpoint(
+    job_id: str, kill_request: models.JobKillRequest, ctx: context.NexusServerContext = fa.Depends(_get_context)
+):
     _job = db.get_job(conn=ctx.db, job_id=job_id)
 
     if _job.status != "running":
@@ -192,7 +193,11 @@ async def kill_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.De
             message=f"Cannot kill job {job_id} with status '{_job.status}'. Only running jobs can be killed."
         )
 
-    updated = dc.replace(_job, marked_for_kill=True)
+    if kill_request.silent:
+        updated = dc.replace(_job, marked_for_kill=True, notifications=[])
+    else:
+        updated = dc.replace(_job, marked_for_kill=True)
+
     db.update_job(conn=ctx.db, job=updated)
     logger.info(f"Marked running job {job_id} for termination")
 

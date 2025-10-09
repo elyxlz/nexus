@@ -150,17 +150,16 @@ def add_job(job_request: dict) -> dict:
 
 
 @handle_api_errors
-def kill_running_jobs(job_ids: list[str]) -> dict:
-    # In the new API, we need to make individual kill requests per job
+def kill_running_jobs(job_ids: list[str], silent: bool = False) -> dict:
     results = {"killed": [], "failed": []}
 
     for job_id in job_ids:
         try:
-            response = requests.post(f"{get_api_base_url()}/jobs/{job_id}/kill")
+            response = requests.post(f"{get_api_base_url()}/jobs/{job_id}/kill", json={"silent": silent})
             if response.status_code == 204:
                 results["killed"].append(job_id)
             else:
-                response.raise_for_status()  # Will raise an exception for other errors
+                response.raise_for_status()
         except Exception as e:
             results["failed"].append({"id": job_id, "error": str(e)})
 

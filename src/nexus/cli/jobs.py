@@ -414,7 +414,7 @@ def show_history(regex: str | None = None) -> None:
         print(colored(f"Error fetching history: {e}", "red"))
 
 
-def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False) -> None:
+def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False, silent: bool = False) -> None:
     try:
         jobs_to_kill: set[str] = set()
         jobs_info: list[dict] = []
@@ -553,7 +553,7 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False) ->
             print(colored("Operation cancelled.", "yellow"))
             return
 
-        result = api_client.kill_running_jobs(list(jobs_to_kill))
+        result = api_client.kill_running_jobs(list(jobs_to_kill), silent=silent)
 
         print(colored("\nOperation results:", "green", attrs=["bold"]))
         for job_id in result.get("killed", []):
