@@ -92,6 +92,8 @@ def _parse_json(json_obj: str | None) -> dict[str, str]:
         return {}
     if isinstance(json_obj, float | int | bool):
         return {}
+    if isinstance(json_obj, str) and not json_obj.strip():
+        return {}
     return json.loads(json_obj)
 
 
