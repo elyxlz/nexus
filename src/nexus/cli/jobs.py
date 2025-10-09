@@ -19,6 +19,7 @@ def run_job(
     force: bool = False,
     bypass_confirm: bool = False,
     interactive: bool = False,
+    silent: bool = False,
 ) -> None:
     """Run a job immediately on the server"""
     try:
@@ -56,7 +57,7 @@ def run_job(
 
         user = cfg.user or "anonymous"
 
-        notifications = list(cfg.default_notifications)
+        notifications = [] if silent else list(cfg.default_notifications)
         integrations = list(cfg.default_integrations)
 
         if notification_types:
@@ -169,6 +170,7 @@ def add_jobs(
     integration_types: list[IntegrationType] | None = None,
     force: bool = False,
     bypass_confirm: bool = False,
+    silent: bool = False,
 ) -> None:
     try:
         gpu_idxs = None
@@ -203,7 +205,7 @@ def add_jobs(
 
         user = cfg.user or "anonymous"
 
-        notifications = list(cfg.default_notifications)
+        notifications = [] if silent else list(cfg.default_notifications)
         integrations = list(cfg.default_integrations)
 
         if notification_types:
