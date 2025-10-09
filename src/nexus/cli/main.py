@@ -70,6 +70,7 @@ def add_job_run_parser(subparsers) -> None:
         "-g", "--gpus", type=int, default=1, help="Number of GPUs to use (ignored if --gpu-idxs is specified)"
     )
     run_parser.add_argument("-n", "--notify", nargs="+", help="Additional notification types for this job")
+    run_parser.add_argument("-s", "--silent", action="store_true", help="Disable all notifications for this job")
     run_parser.add_argument("-f", "--force", action="store_true", help="Ignore GPU blacklist")
     run_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
     run_parser.add_argument("--interactive", action="store_true", help="Start an interactive shell session on GPU(s)")
@@ -82,6 +83,7 @@ def add_job_management_parsers(subparsers) -> None:
     add_parser.add_argument("-r", "--repeat", type=int, default=1, help="Repeat the command multiple times")
     add_parser.add_argument("-p", "--priority", type=int, default=0, help="Set job priority (higher values run first)")
     add_parser.add_argument("-n", "--notify", nargs="+", help="Additional notification types for this job")
+    add_parser.add_argument("-s", "--silent", action="store_true", help="Disable all notifications for this job")
     add_parser.add_argument(
         "-i", "--gpu-idxs", dest="gpu_idxs", help="Specific GPU indices to run on (e.g., '0' or '0,1' for multi-GPU)"
     )
@@ -229,6 +231,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             notification_types=args.notify,
             force=args.force,
             bypass_confirm=args.yes,
+            silent=args.silent,
         ),
         "run": lambda: jobs.run_job(
             cfg,
@@ -239,6 +242,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             force=args.force,
             bypass_confirm=args.yes,
             interactive=not args.commands,
+            silent=args.silent,
         ),
         "queue": lambda: jobs.show_queue(),
         "history": lambda: jobs.show_history(getattr(args, "pattern", None)),
