@@ -183,8 +183,6 @@ def cleanup_git_state(ctx: GitArtifactContext) -> None:
         restore_working_state(ctx.original_branch, ctx.temp_branch, ctx.we_created_stash)
 
 
-
-
 def can_push_to_remote(remote: str = "origin") -> bool:
     try:
         result = subprocess.run(["git", "remote", "get-url", remote], capture_output=True, check=True)

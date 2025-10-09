@@ -186,7 +186,13 @@ def remove_queued_jobs(job_ids: list[str]) -> dict:
 
 
 @handle_api_errors
-def edit_job(job_id: str, command: str | None = None, priority: int | None = None, num_gpus: int | None = None, git_tag: str | None = None) -> dict:
+def edit_job(
+    job_id: str,
+    command: str | None = None,
+    priority: int | None = None,
+    num_gpus: int | None = None,
+    git_tag: str | None = None,
+) -> dict:
     update_data = {}
     if command is not None:
         update_data["command"] = command

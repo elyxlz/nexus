@@ -396,7 +396,9 @@ def show_history(regex: str | None = None) -> None:
 
         total_jobs = len(jobs)
         if total_jobs > 25:
-            print(f"\n{colored('Showing most recent 25 of', 'blue', attrs=['bold'])} {colored(str(total_jobs), 'cyan')}")
+            print(
+                f"\n{colored('Showing most recent 25 of', 'blue', attrs=['bold'])} {colored(str(total_jobs), 'cyan')}"
+            )
 
         completed_count = sum(1 for j in jobs if j["status"] == "completed")
         failed_count = sum(1 for j in jobs if j["status"] == "failed")
