@@ -92,6 +92,8 @@ def _parse_json(json_obj: str | None) -> dict[str, str]:
         return {}
     if isinstance(json_obj, float | int | bool):
         return {}
+    if isinstance(json_obj, str) and not json_obj.strip():
+        return {}
     return json.loads(json_obj)
 
 
@@ -241,7 +243,16 @@ def _query_jobs(conn: sqlite3.Connection, status: str | None, command_regex: str
 
     cur.execute(query, params)
     rows = cur.fetchall()
-    return [_row_to_job(row=row) for row in rows]
+
+    jobs = []
+    for row in rows:
+        try:
+            jobs.append(_row_to_job(row=row))
+        except Exception as e:
+            job_id = row["id"] if "id" in row.keys() else "unknown"
+            logger.error(f"Failed to load job {job_id} from database: {e}. Skipping corrupted record.")
+
+    return jobs
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query job status")
