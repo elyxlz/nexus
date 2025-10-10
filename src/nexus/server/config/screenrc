@@ -1,3 +1,0 @@
-termcapinfo xterm*|rxvt*|kterm*|Eterm*|alacritty*|kitty*|screen* ti@:te@
-
-defscrollback 10000

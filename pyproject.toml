@@ -1,6 +1,6 @@
 [project]
 name = "nexusai"
-version = "0.4.35"
+version = "0.4.36"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -34,9 +34,6 @@ dev = [
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
-
-[tool.setuptools.package-data]
-"nexus.server.config" = ["screenrc"]
 
 [tool.ruff]
 line-length = 120

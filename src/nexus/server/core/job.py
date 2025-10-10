@@ -2,7 +2,6 @@ import asyncio
 import dataclasses as dc
 import datetime as dt
 import hashlib
-import importlib.resources
 import os
 import pathlib as pl
 import re
@@ -29,6 +28,11 @@ __all__ = [
     "kill_job",
     "get_queue",
 ]
+
+SCREENRC_CONTENT = """termcapinfo xterm*|rxvt*|kterm*|Eterm*|alacritty*|kitty*|screen* ti@:te@
+
+defscrollback 10000
+"""
 
 
 def _generate_job_id() -> str:
@@ -170,13 +174,10 @@ def _parse_exit_code(last_line: str) -> int:
     return int(match.group(1))
 
 
-def _get_screenrc_path() -> pl.Path:
-    try:
-        files = importlib.resources.files("nexus.server.config")
-        screenrc = files / "screenrc"
-        return pl.Path(str(screenrc))
-    except Exception:
-        return pl.Path(__file__).parent.parent / "config" / "screenrc"
+def _create_screenrc() -> pl.Path:
+    screenrc_path = pl.Path(tempfile.mktemp(suffix=".screenrc"))
+    screenrc_path.write_text(SCREENRC_CONTENT)
+    return screenrc_path
 
 
 @exc.handle_exception(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
@@ -210,7 +211,7 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         logger.error(f"Script has syntax errors:\n{stderr.decode()}")
         raise exc.JobError(message=f"Script syntax error: {stderr.decode()}")
 
-    screenrc_path = _get_screenrc_path()
+    screenrc_path = _create_screenrc()
     process = await asyncio.create_subprocess_exec(
         "screen",
         "-c",
