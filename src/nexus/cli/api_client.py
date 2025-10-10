@@ -151,7 +151,6 @@ def add_job(job_request: dict) -> dict:
 
 @handle_api_errors
 def kill_running_jobs(job_ids: list[str]) -> dict:
-    # In the new API, we need to make individual kill requests per job
     results = {"killed": [], "failed": []}
 
     for job_id in job_ids:
