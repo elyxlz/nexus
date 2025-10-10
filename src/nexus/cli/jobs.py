@@ -137,6 +137,9 @@ def run_job(
                     job = api_client.get_job(job_id)
                     if job["status"] == "running" and job.get("screen_session_name"):
                         print(colored(f"Job {job_id} running, attaching to screen session...", "green"))
+                        if git_ctx:
+                            utils.cleanup_git_state(git_ctx)
+                            git_ctx = None
                         attach_to_job(cfg, job_id)
                         return
                 except Exception:
