@@ -184,7 +184,6 @@ async def delete_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.
 @db.safe_transaction
 @router.post("/v1/jobs/{job_id}/kill", status_code=204)
 async def kill_job_endpoint(job_id: str, ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    """Kill a running job. Cannot be used for queued jobs."""
     _job = db.get_job(conn=ctx.db, job_id=job_id)
 
     if _job.status != "running":
