@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  version-check:
+  pr-validation:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,11 +32,6 @@ jobs:
           fi
 
           echo "✓ Version bumped from $BASE_VERSION to $PR_VERSION"
-
-  lockfile-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
       - name: Set up uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
