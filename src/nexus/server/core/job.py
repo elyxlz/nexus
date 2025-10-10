@@ -2,6 +2,7 @@ import asyncio
 import dataclasses as dc
 import datetime as dt
 import hashlib
+import importlib.resources
 import os
 import pathlib as pl
 import re
@@ -169,6 +170,15 @@ def _parse_exit_code(last_line: str) -> int:
     return int(match.group(1))
 
 
+def _get_screenrc_path() -> pl.Path:
+    try:
+        files = importlib.resources.files("nexus.server.config")
+        screenrc = files / "screenrc"
+        return pl.Path(str(screenrc))
+    except Exception:
+        return pl.Path(__file__).parent.parent / "config" / "screenrc"
+
+
 @exc.handle_exception(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
 @exc.handle_exception(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
 async def _launch_screen_process(session_name: str, script_path: str, env: dict[str, str]) -> int:
@@ -200,8 +210,11 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         logger.error(f"Script has syntax errors:\n{stderr.decode()}")
         raise exc.JobError(message=f"Script syntax error: {stderr.decode()}")
 
+    screenrc_path = _get_screenrc_path()
     process = await asyncio.create_subprocess_exec(
         "screen",
+        "-c",
+        str(screenrc_path),
         "-dmS",
         session_name,
         str(abs_script_path),

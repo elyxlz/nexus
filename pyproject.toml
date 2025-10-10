@@ -35,6 +35,12 @@ dev = [
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+packages = ["nexus"]
+
+[tool.setuptools.package-data]
+"nexus.server.config" = ["screenrc"]
+
 [tool.ruff]
 line-length = 120
 indent-width = 4
