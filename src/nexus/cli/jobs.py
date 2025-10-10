@@ -371,7 +371,7 @@ def show_history(regex: str | None = None) -> None:
         def get_sort_timestamp(job):
             return job.get("completed_at") or job.get("started_at") or job.get("created_at") or 0
 
-        jobs.sort(key=get_sort_timestamp, reverse=True)
+        jobs.sort(key=get_sort_timestamp, reverse=False)
 
         print(colored("Job History:", "blue", attrs=["bold"]))
         for job in jobs[:25]:
