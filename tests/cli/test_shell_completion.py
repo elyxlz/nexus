@@ -3,7 +3,6 @@ import pathlib as pl
 import tempfile
 from unittest.mock import patch
 
-import pytest
 
 from nexus.cli import shell_completion
 

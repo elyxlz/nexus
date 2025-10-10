@@ -86,7 +86,13 @@ def _create_tables(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-@exc.handle_exception(json.JSONDecodeError, exc.DatabaseError, message="Invalid environment data in database", reraise=False, default_return={})
+@exc.handle_exception(
+    json.JSONDecodeError,
+    exc.DatabaseError,
+    message="Invalid environment data in database",
+    reraise=False,
+    default_return={},
+)
 def _parse_json(json_obj: str | None) -> dict[str, str]:
     if not json_obj:
         return {}

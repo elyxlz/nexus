@@ -1,7 +1,6 @@
 import os
 import pathlib as pl
 import sys
-import typing as tp
 from dataclasses import dataclass
 
 from termcolor import colored
@@ -126,10 +125,7 @@ def show_completion_prompt(shell_info: ShellInfo) -> bool:
 def show_success_message(shell_info: ShellInfo) -> None:
     print()
     print(colored("✓ Autocomplete installed!", "green", attrs=["bold"]))
-    print(
-        colored("→ Reload your shell: ", "cyan")
-        + colored(f"source {shell_info.rc_path}", "yellow", attrs=["bold"])
-    )
+    print(colored("→ Reload your shell: ", "cyan") + colored(f"source {shell_info.rc_path}", "yellow", attrs=["bold"]))
     print(colored("  Or open a new terminal", "cyan"))
     print()
 
@@ -147,11 +143,11 @@ def show_manual_instructions() -> None:
     print(colored("To enable autocomplete manually:", "cyan"))
     print()
     print(colored("For bash:", "white", attrs=["bold"]))
-    print(colored('  echo \'eval "$(register-python-argcomplete nx)"\' >> ~/.bashrc', "yellow"))
+    print(colored("  echo 'eval \"$(register-python-argcomplete nx)\"' >> ~/.bashrc", "yellow"))
     print(colored("  source ~/.bashrc", "yellow"))
     print()
     print(colored("For zsh:", "white", attrs=["bold"]))
-    print(colored('  echo \'eval "$(register-python-argcomplete nx)"\' >> ~/.zshrc', "yellow"))
+    print(colored("  echo 'eval \"$(register-python-argcomplete nx)\"' >> ~/.zshrc", "yellow"))
     print(colored("  source ~/.zshrc", "yellow"))
     print()
 
