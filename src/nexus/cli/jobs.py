@@ -128,6 +128,9 @@ def run_job(
             print(colored("\nJob started:", "green", attrs=["bold"]))
             print(f"  {colored('•', 'green')} Job {colored(job_id, 'magenta')}: {result['command']}")
 
+            utils.cleanup_git_state(git_ctx)
+            git_ctx = None
+
             print(colored("\nWaiting for job to initialize...", "blue"))
 
             max_attempts = 10
@@ -1145,7 +1148,7 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None
                         exit_code_color = "green" if updated_job["exit_code"] == 0 else "red"
                         print(colored(f"Exit code: {updated_job['exit_code']}", exit_code_color))
                 else:
-                    print(colored(f"\nJob {job_id} is still running. Recent logs:", "blue"))
+                    print(colored("\nRecent logs:", "blue"))
 
                 runtime = utils.calculate_runtime(updated_job)
                 runtime_str = utils.format_runtime(runtime) if runtime else "N/A"
