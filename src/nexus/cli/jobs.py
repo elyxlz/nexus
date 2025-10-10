@@ -1136,13 +1136,16 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None
 
         try:
             updated_job = api_client.get_job(job_id)
-            if updated_job and updated_job["status"] != starting_status:
-                status_color = "green" if updated_job["status"] == "completed" else "red"
-                print(colored(f"\nJob {job_id} has {updated_job['status']}. Displaying logs:", status_color))
+            if updated_job:
+                if updated_job["status"] != starting_status:
+                    status_color = "green" if updated_job["status"] == "completed" else "red"
+                    print(colored(f"\nJob {job_id} has {updated_job['status']}. Displaying logs:", status_color))
 
-                if updated_job.get("exit_code") is not None:
-                    exit_code_color = "green" if updated_job["exit_code"] == 0 else "red"
-                    print(colored(f"Exit code: {updated_job['exit_code']}", exit_code_color))
+                    if updated_job.get("exit_code") is not None:
+                        exit_code_color = "green" if updated_job["exit_code"] == 0 else "red"
+                        print(colored(f"Exit code: {updated_job['exit_code']}", exit_code_color))
+                else:
+                    print(colored(f"\nJob {job_id} is still running. Recent logs:", "blue"))
 
                 runtime = utils.calculate_runtime(updated_job)
                 runtime_str = utils.format_runtime(runtime) if runtime else "N/A"
