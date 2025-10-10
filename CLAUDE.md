@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 ## CRITICAL INSTRUCTIONS - READ FIRST
 
 - ⚠️ **ABSOLUTE REQUIREMENT**: Thoroughly review ALL guidelines in this document BEFORE modifying code
@@ -7,11 +11,80 @@
 - ⚠️ **ZERO TOLERANCE**: The user will not accept violations of these guidelines
 - ❌ **REPEATED MISTAKES**: Will result in degraded user trust and experience
 
-## Package Management
+## Project Overview
 
-- **uv**: This project uses `uv` for Python package management
-- **Run Commands**: Use `uv run script.py` to run scripts
-- **Install Packages**: Use `uv add package` to add dependencies
+Nexus is a GPU job management system with a client-server architecture. It schedules and runs jobs on GPUs, manages job queues, and provides monitoring capabilities.
+
+### Architecture
+
+**Client-Server Model:**
+- **CLI Client** (`nexus.cli`): Command-line interface for users to submit jobs, view status, attach to sessions
+- **FastAPI Server** (`nexus.server`): Backend service that manages jobs, schedules work, and monitors system health
+- **Communication**: Client talks to server via REST API on localhost (default port configurable)
+
+**Server Components:**
+- **Core** (`nexus.server.core`): Job management, database operations, configuration, context
+  - `schemas.py`: Frozen dataclass definitions for Job, statuses, and types
+  - `job.py`: Pure functions for job lifecycle (create, start, end, cleanup, kill)
+  - `db.py`: SQLite operations for jobs, GPU blacklist, and code artifacts
+  - `context.py`: Server context that bundles config and database connection
+- **API** (`nexus.server.api`): FastAPI routes and request/response models
+  - `router.py`: All HTTP endpoints for jobs, GPUs, health, artifacts
+  - `scheduler.py`: Background scheduler loop that starts queued jobs and monitors running jobs
+- **External** (`nexus.server.external`): Integrations with external systems
+  - `gpu.py`: GPU detection via nvidia-smi, availability checking
+  - `wandb_finder.py`: Automatic W&B run URL detection for jobs
+  - `notifications.py`: Job status notifications (Discord, phone via Twilio)
+  - `system.py`: System health monitoring (CPU, memory, disk, network)
+
+**Job Execution:**
+- Jobs are packaged as tar archives (code artifacts) stored in SQLite
+- Jobs run in GNU Screen sessions with unique session names
+- Output captured to `output.log` and `error.log` in job directory
+- Exit codes extracted from logs to determine success/failure
+- Job repos cleaned up after completion to save disk space
+
+**State Management:**
+- All state lives in SQLite database (`jobs.db`)
+- Jobs flow through states: queued → running → completed/failed/killed
+- Scheduler polls database every N seconds (configurable refresh_rate)
+- GPU allocation tracked via `gpu_idxs` field on Job dataclass
+
+## Development Commands
+
+### Package Management
+- **Install dependencies**: `uv sync`
+- **Add package**: `uv add package-name`
+- **Add dev package**: `uv add --dev package-name`
+
+### Running the Application
+- **Start server**: `uv run nexus-server` or `nexus-server` if installed
+- **CLI commands**: `uv run nx <command>` or `nx <command>` if installed
+- **First-time setup**: `nx setup`
+
+### Testing
+- **Run all tests**: `uv run pytest`
+- **Run specific test file**: `uv run pytest tests/server/test_api.py`
+- **Run specific test**: `uv run pytest tests/server/test_api.py::test_function_name`
+- **Run with coverage**: `uv run pytest --cov=nexus`
+
+### Type Checking
+- **Check types**: `uv run pyright` (run from `src/` directory or project root)
+- **Project uses strict type checking**: All code must pass pyright without errors
+
+### Building
+- **Build package**: `uv build`
+- **Install locally**: `uv pip install -e .`
+
+### Key CLI Commands
+- `nx run <command>`: Run a command on GPU(s) immediately
+- `nx add <command>`: Add command(s) to the job queue
+- `nx queue`: Show pending jobs
+- `nx logs [job_id]`: View job logs
+- `nx attach [job_id]`: Attach to running job's screen session
+- `nx kill [job_id]`: Kill running job(s)
+- `nx history`: Show completed/failed jobs
+- `nx health`: Display system health metrics
 
 ## Memory & Learning
 
