@@ -176,11 +176,20 @@ def add_jobs(
     silent: bool = False,
 ) -> None:
     try:
+        if not commands:
+            print(colored("Error: No command provided", "red"))
+            print(colored("Usage: nx add [flags] command", "yellow"))
+            print(colored("Example: nx add -r 4 python train.py --lr 0.001", "yellow"))
+            return
+
+        command_str = " ".join(commands)
+        commands_list = [command_str]
+
         gpu_idxs = None
         if gpu_idxs_str:
             gpu_idxs = utils.parse_gpu_list(gpu_idxs_str)
 
-        expanded_commands = utils.expand_job_commands(commands, repeat=repeat)
+        expanded_commands = utils.expand_job_commands(commands_list, repeat=repeat)
         if not expanded_commands:
             return
 
@@ -362,7 +371,7 @@ def show_history(regex: str | None = None) -> None:
         def get_sort_timestamp(job):
             return job.get("completed_at") or job.get("started_at") or job.get("created_at") or 0
 
-        jobs.sort(key=get_sort_timestamp, reverse=True)
+        jobs.sort(key=get_sort_timestamp, reverse=False)
 
         print(colored("Job History:", "blue", attrs=["bold"]))
         for job in jobs[:25]:

@@ -2,9 +2,9 @@ import argparse
 import importlib.metadata
 import sys
 
-# Import utils instead of colored directly, as we use utils.print_* helpers
+import argcomplete
 
-from nexus.cli import api_client, config, jobs, setup, utils
+from nexus.cli import api_client, config, jobs, setup, shell_completion, utils
 from nexus.cli.config import NexusCliConfig
 
 try:
@@ -59,11 +59,6 @@ def show_version() -> None:
 def add_job_run_parser(subparsers) -> None:
     run_parser = subparsers.add_parser("run", help="Run a job")
     run_parser.add_argument(
-        "commands",
-        nargs="*",
-        help='Command to run, e.g., "python train.py". If not provided, starts an interactive shell.',
-    )
-    run_parser.add_argument(
         "-i", "--gpu-idxs", dest="gpu_idxs", help="Specific GPU indices to run on (e.g., '0' or '0,1' for multi-GPU)"
     )
     run_parser.add_argument(
@@ -74,12 +69,16 @@ def add_job_run_parser(subparsers) -> None:
     run_parser.add_argument("-f", "--force", action="store_true", help="Ignore GPU blacklist")
     run_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
     run_parser.add_argument("--interactive", action="store_true", help="Start an interactive shell session on GPU(s)")
+    run_parser.add_argument(
+        "commands",
+        nargs=argparse.REMAINDER,
+        help="Command to run (everything after flags, no quotes needed). If not provided, starts an interactive shell.",
+    )
 
 
 def add_job_management_parsers(subparsers) -> None:
     # Add jobs to queue
     add_parser = subparsers.add_parser("add", help="Add job(s) to queue")
-    add_parser.add_argument("commands", nargs="+", help='Command(s) to add, e.g., "python train.py"')
     add_parser.add_argument("-r", "--repeat", type=int, default=1, help="Repeat the command multiple times")
     add_parser.add_argument("-p", "--priority", type=int, default=0, help="Set job priority (higher values run first)")
     add_parser.add_argument("-n", "--notify", nargs="+", help="Additional notification types for this job")
@@ -90,6 +89,9 @@ def add_job_management_parsers(subparsers) -> None:
     add_parser.add_argument("-g", "--gpus", type=int, default=1, help="Number of GPUs to use for the job")
     add_parser.add_argument("-f", "--force", action="store_true", help="Ignore GPU blacklist")
     add_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+    add_parser.add_argument(
+        "commands", nargs=argparse.REMAINDER, help="Command to add (everything after flags, no quotes needed)"
+    )
 
     # Show queue
     subparsers.add_parser("queue", help="Show pending jobs (queued)")
@@ -274,6 +276,11 @@ def dispatch_command(command_name: str, handlers: dict) -> bool:
 
 def main() -> None:
     parser = create_parser()
+
+    argcomplete.autocomplete(parser)
+
+    shell_completion.check_and_prompt_completion()
+
     args = parser.parse_args()
 
     # First-time setup check
