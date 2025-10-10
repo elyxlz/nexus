@@ -29,6 +29,11 @@ __all__ = [
     "get_queue",
 ]
 
+SCREENRC_CONTENT = """termcapinfo xterm*|rxvt*|kterm*|Eterm*|alacritty*|kitty*|screen* ti@:te@
+
+defscrollback 10000
+"""
+
 
 def _generate_job_id() -> str:
     timestamp = str(time.time()).encode()
@@ -169,6 +174,12 @@ def _parse_exit_code(last_line: str) -> int:
     return int(match.group(1))
 
 
+def _create_screenrc() -> pl.Path:
+    screenrc_path = pl.Path(tempfile.mktemp(suffix=".screenrc"))
+    screenrc_path.write_text(SCREENRC_CONTENT)
+    return screenrc_path
+
+
 @exc.handle_exception(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
 @exc.handle_exception(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
 async def _launch_screen_process(session_name: str, script_path: str, env: dict[str, str]) -> int:
@@ -200,8 +211,11 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         logger.error(f"Script has syntax errors:\n{stderr.decode()}")
         raise exc.JobError(message=f"Script syntax error: {stderr.decode()}")
 
+    screenrc_path = _create_screenrc()
     process = await asyncio.create_subprocess_exec(
         "screen",
+        "-c",
+        str(screenrc_path),
         "-dmS",
         session_name,
         str(abs_script_path),
