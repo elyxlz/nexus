@@ -123,6 +123,13 @@ def prepare_git_artifact(enable_git_tag_push: bool) -> GitArtifactContext:
     job_id = generate_job_id()
     branch_name = get_current_git_branch()
 
+    if branch_name.startswith("nexus-tmp-"):
+        raise RuntimeError(
+            f"Cannot create job while on temporary Nexus branch '{branch_name}'. "
+            "This usually means a previous job submission was interrupted. "
+            "Please switch back to your original branch first."
+        )
+
     try:
         subprocess.run(
             ["git", "rev-parse", "--is-inside-work-tree"],
