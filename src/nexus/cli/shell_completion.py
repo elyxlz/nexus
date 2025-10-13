@@ -96,7 +96,7 @@ def install_completion(shell_info: ShellInfo) -> tuple[bool, str]:
     return True, "installed"
 
 
-def show_completion_prompt(shell_info: ShellInfo) -> bool:
+def show_completion_prompt(shell_info: ShellInfo) -> bool | None:
     print()
     print(colored("Nexus CLI Autocomplete Setup", "blue", attrs=["bold"]))
     print()
@@ -117,9 +117,15 @@ def show_completion_prompt(shell_info: ShellInfo) -> bool:
 
     try:
         response = input(colored("Install autocomplete? [Y/n]: ", "blue", attrs=["bold"]))
-        return response.lower() in ["", "y", "yes"]
+        response_lower = response.lower()
+        if response_lower in ["", "y", "yes"]:
+            return True
+        elif response_lower in ["n", "no"]:
+            return False
+        else:
+            return None
     except (EOFError, KeyboardInterrupt):
-        return False
+        return None
 
 
 def show_success_message(shell_info: ShellInfo) -> None:
@@ -167,13 +173,19 @@ def check_and_prompt_completion() -> None:
         set_completion_flag()
         return
 
-    if show_completion_prompt(shell_info):
+    result = show_completion_prompt(shell_info)
+
+    if result is True:
         success, message = install_completion(shell_info)
         if success:
             show_success_message(shell_info)
         else:
             print(colored(f"Installation failed: {message}", "red"))
             show_manual_instructions()
-    else:
+    elif result is False:
         set_completion_flag()
         show_skip_message()
+    elif result is None:
+        print()
+        print(colored("Prompt interrupted. You'll be asked again next time.", "yellow"))
+        print()
