@@ -76,6 +76,8 @@ echo "Running jobrc..."
     return f"""#!/bin/bash
 set -euo pipefail
 
+echo "### PRESS CTRL+A, THEN D TO DISCONNECT FROM SCREEN SESSION ###"
+echo ""
 echo "Extracting repository..."
 mkdir -p {job_repo_dir}
 tar -xf {archive_path} -C {job_repo_dir}
