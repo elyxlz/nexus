@@ -1126,7 +1126,7 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None
             return
 
         print(colored(f"Attaching to job {target} screen session '{screen_session_name}'", "blue"))
-        print(colored("Press Ctrl+A Ctrl+D to detach from the screen session", "blue"))
+        print("\n" + colored("### PRESS CTRL+A, THEN D TO DISCONNECT FROM SCREEN SESSION ###", "yellow", attrs=["bold"]) + "\n")
         time.sleep(1)
 
         job_id = job["id"]
