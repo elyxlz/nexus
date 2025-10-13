@@ -20,6 +20,7 @@ def run_job(
     bypass_confirm: bool = False,
     interactive: bool = False,
     silent: bool = False,
+    local: bool = False,
 ) -> None:
     """Run a job immediately on the server"""
     try:
@@ -72,7 +73,7 @@ def run_job(
 
         git_ctx = None
         try:
-            git_ctx = utils.prepare_git_artifact(cfg.enable_git_tag_push)
+            git_ctx = utils.prepare_git_artifact(cfg.enable_git_tag_push and not local)
             env_vars = setup.load_current_env()
             job_env_vars = dict(env_vars)
 
@@ -119,7 +120,7 @@ def run_job(
                 "gpu_idxs": gpu_idxs,
                 "run_immediately": True,
                 "ignore_blacklist": force,
-                "git_tag_pushed": bool(cfg.enable_git_tag_push),
+                "git_tag_pushed": bool(cfg.enable_git_tag_push and not local),
             }
 
             result = api_client.add_job(job_request)
@@ -174,6 +175,7 @@ def add_jobs(
     force: bool = False,
     bypass_confirm: bool = False,
     silent: bool = False,
+    local: bool = False,
 ) -> None:
     try:
         if not commands:

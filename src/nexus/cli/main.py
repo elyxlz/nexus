@@ -68,6 +68,7 @@ def add_job_run_parser(subparsers) -> None:
     run_parser.add_argument("-s", "--silent", action="store_true", help="Disable all notifications for this job")
     run_parser.add_argument("-f", "--force", action="store_true", help="Ignore GPU blacklist")
     run_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+    run_parser.add_argument("-l", "--local", action="store_true", help="Keep git tag local (don't push to remote)")
     run_parser.add_argument("--interactive", action="store_true", help="Start an interactive shell session on GPU(s)")
     run_parser.add_argument(
         "commands",
@@ -89,6 +90,7 @@ def add_job_management_parsers(subparsers) -> None:
     add_parser.add_argument("-g", "--gpus", type=int, default=1, help="Number of GPUs to use for the job")
     add_parser.add_argument("-f", "--force", action="store_true", help="Ignore GPU blacklist")
     add_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+    add_parser.add_argument("-l", "--local", action="store_true", help="Keep git tag local (don't push to remote)")
     add_parser.add_argument(
         "commands", nargs=argparse.REMAINDER, help="Command to add (everything after flags, no quotes needed)"
     )
@@ -234,6 +236,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             force=args.force,
             bypass_confirm=args.yes,
             silent=args.silent,
+            local=args.local,
         ),
         "run": lambda: jobs.run_job(
             cfg,
@@ -245,6 +248,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             bypass_confirm=args.yes,
             interactive=not args.commands,
             silent=args.silent,
+            local=args.local,
         ),
         "queue": lambda: jobs.show_queue(),
         "history": lambda: jobs.show_history(getattr(args, "pattern", None)),
