@@ -143,5 +143,5 @@ class JobListRequest(FrozenBaseModel):
     status: schemas.JobStatus | None = None
     gpu_index: int | None = None
     command_regex: str | None = None
-    limit: int = 100
+    limit: int = 10000
     offset: int = 0
