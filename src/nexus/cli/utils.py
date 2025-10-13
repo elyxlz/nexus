@@ -308,12 +308,41 @@ def parse_targets(targets: list[str]) -> tuple[list[int], list[str]]:
     return gpu_indices, job_ids
 
 
+def _expand_zip_mode(command: str) -> list[str]:
+    zip_pattern = r"\{\{([^}]+)\}\}"
+    zip_matches = re.findall(zip_pattern, command)
+
+    if not zip_matches:
+        return [command]
+
+    param_lists = [[v.strip() for v in match.split(",")] for match in zip_matches]
+
+    max_len = max(len(lst) for lst in param_lists)
+    padded_lists = []
+    for lst in param_lists:
+        if len(lst) < max_len:
+            padded = lst + [lst[-1]] * (max_len - len(lst))
+            padded_lists.append(padded)
+        else:
+            padded_lists.append(lst)
+
+    expanded = []
+    for values in zip(*padded_lists):
+        temp_cmd = command
+        for value in values:
+            temp_cmd = re.sub(zip_pattern, value, temp_cmd, count=1)
+        expanded.append(temp_cmd)
+
+    return expanded
+
+
 def expand_job_commands(commands: list[str], repeat: int = 1) -> list[str]:
     expanded_commands = []
 
     for command in commands:
-        if "{" in command and "}" in command:
-            # Handle RANDINT special case
+        if "{{" in command and "}}" in command:
+            expanded_commands.extend(_expand_zip_mode(command))
+        elif "{" in command and "}" in command:
             randint_matches = re.findall(r"\{RANDINT(?::(\d+)(?:,(\d+))?)?\}", command)
             if randint_matches:
                 temp_cmd = command
@@ -323,7 +352,6 @@ def expand_job_commands(commands: list[str], repeat: int = 1) -> list[str]:
                     rand_val = str(random.randint(min_val, max_val))
                     temp_cmd = re.sub(r"\{RANDINT(?::\d+(?:,\d+)?)?\}", rand_val, temp_cmd, count=1)
                 expanded_commands.append(temp_cmd)
-            # Handle normal parameter expansion
             elif re.search(r"\{[^}]+\}", command):
                 param_str = re.findall(r"\{([^}]+)\}", command)
                 if not param_str:
