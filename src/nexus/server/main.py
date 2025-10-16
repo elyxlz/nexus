@@ -16,10 +16,11 @@ def _run_server(server_dir: pl.Path | None) -> None:
     if ctx.config.server_dir is not None and ctx.config.api_token:
         key_path, cert_path = setup.generate_self_signed_cert(ctx.config.server_dir)
 
-        updated_config = dc.replace(
-            ctx.config,
-            ssl_keyfile=str(key_path),
-            ssl_certfile=str(cert_path),
+        updated_config = ctx.config.model_copy(
+            update={
+                "ssl_keyfile": str(key_path),
+                "ssl_certfile": str(cert_path),
+            }
         )
         ctx = dc.replace(ctx, config=updated_config)
 
