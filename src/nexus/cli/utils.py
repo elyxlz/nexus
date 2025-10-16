@@ -140,7 +140,6 @@ def prepare_git_artifact(enable_git_tag_push: bool) -> GitArtifactContext:
 
     if is_working_tree_dirty():
         original_branch, temp_branch, commit_sha, we_created_stash = save_working_state()
-        branch_name = original_branch
 
     result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
     git_repo_url = result.stdout.strip() or "unknown-url"

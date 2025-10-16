@@ -163,6 +163,42 @@ def setup_passwordless_nexus_attach() -> bool:
         return False
 
 
+def generate_self_signed_cert(server_dir: pl.Path) -> tuple[pl.Path, pl.Path]:
+    import socket
+
+    ssl_dir = server_dir / "ssl"
+    ssl_dir.mkdir(exist_ok=True)
+
+    key_path = ssl_dir / "key.pem"
+    cert_path = ssl_dir / "cert.pem"
+
+    if key_path.exists() and cert_path.exists():
+        return key_path, cert_path
+
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:4096",
+            "-nodes",
+            "-keyout",
+            str(key_path),
+            "-out",
+            str(cert_path),
+            "-days",
+            "3650",
+            "-subj",
+            f"/CN={socket.gethostname()}",
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    return key_path, cert_path
+
+
 def set_system_permissions() -> None:
     subprocess.run(["chown", "-R", f"{SERVER_USER}:{SERVER_USER}", str(SYSTEM_SERVER_DIR)], check=True)
     subprocess.run(["chmod", "-R", "770", str(SYSTEM_SERVER_DIR)], check=True)
@@ -219,12 +255,15 @@ def create_interactive_config(default_config: config.NexusServerConfig) -> confi
 
     node_name = input(f"Node name [default: {default_config.node_name}]: ").strip() or default_config.node_name
 
-    groups_input = input("Supplementary groups for nexus user (comma-separated, or leave empty for none): ").strip()
+    port_input = input(f"Port [default: {default_config.port}]: ").strip()
+    port = int(port_input) if port_input else default_config.port
+
+    groups_input = input("Unix groups for nexus user (comma-separated, or leave empty for none): ").strip()
     sup_groups = [grp.strip() for grp in groups_input.split(",") if grp.strip()] if groups_input else []
 
     return config.NexusServerConfig(
         server_dir=default_config.server_dir,
-        port=default_config.port,
+        port=port,
         node_name=node_name,
         supplementary_groups=sup_groups,
     )
@@ -238,23 +277,58 @@ def setup_config(
     if config_file and config_file.exists():
         try:
             file_config = config.load_config(server_dir)
-            file_config.server_dir = server_dir
-            return file_config
+            return file_config.model_copy(update={"server_dir": server_dir})
         except Exception as e:
             print(f"Error loading config file: {e}")
             print("Falling back to default configuration.")
 
-    if not interactive:
-        return default_config
+    base_config = create_interactive_config(default_config) if interactive else default_config
 
-    return create_interactive_config(default_config)
+    if base_config.api_token:
+        key_path, cert_path = generate_self_signed_cert(server_dir)
+        return config.NexusServerConfig(
+            server_dir=base_config.server_dir,
+            port=base_config.port,
+            node_name=base_config.node_name,
+            supplementary_groups=base_config.supplementary_groups,
+            api_token=base_config.api_token,
+            external_ip=base_config.external_ip,
+            ssl_keyfile=str(key_path),
+            ssl_certfile=str(cert_path),
+        )
+
+    return base_config
 
 
 def display_config(_config: config.NexusServerConfig) -> None:
+    import socket
+
     print("\nCurrent Configuration")
     print("======================")
-    for key, value in _config.model_dump().items():
+
+    config_dict = _config.model_dump()
+    api_token = config_dict.pop("api_token", None)
+
+    for key, value in config_dict.items():
         print(f"{key}: {value}")
+
+    external_ip = None
+    try:
+        result = subprocess.run(["curl", "-s", "ifconfig.me"], capture_output=True, text=True, timeout=3)
+        if result.returncode == 0:
+            external_ip = result.stdout.strip()
+    except Exception:
+        pass
+
+    print(f"\nhostname: {socket.gethostname()}")
+    if external_ip:
+        print(f"external_ip: {external_ip}")
+
+    if api_token:
+        print("\n🔑 API Token:")
+        print(f"   {api_token}")
+        print("   ⚠️  Required for remote CLI connections")
+
     print()
 
 
@@ -431,29 +505,84 @@ def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
         print("Added rule to /etc/sudoers.d/nexus_attach")
 
 
-def confirm_installation(_config: config.NexusServerConfig, sup_groups: list[str]) -> bool:
-    print("\n" + "=" * 60)
-    print("Installation Configuration")
-    print("=" * 60)
+def confirm_installation(_config: config.NexusServerConfig) -> bool:
+    print("\n" + "=" * 80)
+    print(" " * 25 + "INSTALLATION PREVIEW")
+    print("=" * 80)
+
+    print("\n📁 Files and Directories:")
+    print(f"   Server directory:  {SYSTEM_SERVER_DIR}")
+    print(f"   Config file:       {SYSTEM_SERVER_DIR / 'config.toml'}")
+    print(f"   Database:          {SYSTEM_SERVER_DIR / 'nexus_server.db'}")
+    print(f"   SSL certificates:  {SYSTEM_SERVER_DIR / 'ssl/'}")
+    print(f"   Systemd service:   {SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME}")
+
+    print("\n⚙️  Configuration:")
     for key, value in _config.model_dump().items():
-        print(f"{key}: {value}")
-    print("=" * 60)
-    print("\nNote: Configuration values can be overridden with environment variables")
-    print("      using the NS_ prefix (e.g., NS_PORT=8080, NS_NODE_NAME=gpu-node-1)")
-    print("      Use 'sudo -E' to preserve environment variables when installing")
+        if key == "api_token":
+            continue
+        print(f"   {key:20} {value}")
 
-    response = input("\nProceed with installation? [y/N]: ").strip().lower()
-    return response == "y"
+    print("\n🔑 API Token:")
+    print(f"   {_config.api_token}")
+    print("   ⚠️  SAVE THIS - Required for remote CLI connections")
+
+    print("\n" + "=" * 80)
+    print("Note: Environment variables (NS_*) override config during installation")
+    print("=" * 80)
+
+    response = input("\nProceed with installation? [Y/n]: ").strip().lower()
+    return response != "n"
 
 
-def print_installation_complete_message() -> None:
-    print("\nSystem installation complete.")
-    print("To uninstall: nexus-server uninstall")
-    print("To start: nexus-server start")
-    print("To stop: nexus-server stop")
-    print("To restart: nexus-server restart")
-    print("To check status: nexus-server status")
-    print("To attach to a job: sudo -u nexus screen -r <session_name>")
+def print_installation_complete_message(_config: config.NexusServerConfig) -> None:
+    import socket
+
+    hostname = socket.gethostname()
+    external_ip = _config.external_ip
+
+    print("\n" + "=" * 80)
+    print(" " * 25 + "INSTALLATION COMPLETE")
+    print("=" * 80)
+
+    print("\n🎉 Nexus Server is now installed and running!")
+
+    print("\n📋 Server Details:")
+    print(f"   Node name:    {_config.node_name}")
+    print(f"   Hostname:     {hostname}")
+
+    print("\n💻 Remote Connection Info:")
+    if external_ip:
+        print(f"   External IP:  {external_ip}")
+    print(f"   Port:         {_config.port}")
+    print(f"   API Token:    {_config.api_token}")
+
+    print("\n   To connect from CLI, run:")
+    print("   nx target add")
+    print("   # Then enter the values above when prompted")
+
+    if external_ip:
+        print(f"\n   ℹ️  Use {external_ip} to connect from outside the network")
+        print(f"   ℹ️  Use {hostname} to connect from the local network")
+
+    print("\n⚠️  Port Forwarding Note:")
+    print(f"   If connecting from outside the network, ensure port {_config.port}")
+    print("   is forwarded to this machine.")
+
+    print("\n📝 View Config Anytime:")
+    print("   sudo nexus-server config")
+
+    print("\n🔧 Server Management:")
+    print("   Start:   sudo nexus-server start")
+    print("   Stop:    sudo nexus-server stop")
+    print("   Restart: sudo nexus-server restart")
+    print("   Status:  sudo nexus-server status")
+    print("   Logs:    sudo nexus-server logs")
+
+    print("\n📦 Uninstall:")
+    print("   sudo nexus-server uninstall")
+
+    print("\n" + "=" * 80)
 
 
 def install_system(
@@ -467,11 +596,14 @@ def install_system(
     _config = setup_config(SYSTEM_SERVER_DIR, interactive, config_file)
 
     if interactive:
-        if not confirm_installation(_config, _config.supplementary_groups):
+        if not confirm_installation(_config):
             print("Installation cancelled.")
             return
 
     prepare_system_environment(_config.supplementary_groups)
+
+    if _config.api_token:
+        print(f"Generated SSL certificates in: {SYSTEM_SERVER_DIR / 'ssl'}")
 
     create_persistent_directory(_config)
     print(f"Created configuration at: {config.get_config_path(SYSTEM_SERVER_DIR)}")
@@ -491,7 +623,7 @@ def install_system(
     current_version = write_installation_marker(server_started)
     print(f"Installed version {current_version}")
 
-    print_installation_complete_message()
+    print_installation_complete_message(_config)
 
 
 def uninstall(keep_config: bool = False, force: bool = False, yes: bool = False) -> None:

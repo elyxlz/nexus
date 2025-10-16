@@ -58,6 +58,7 @@ def show_version() -> None:
 
 def add_job_run_parser(subparsers) -> None:
     run_parser = subparsers.add_parser("run", help="Run a job")
+    run_parser.add_argument("-t", "--target", help="Target server (name or 'local')")
     run_parser.add_argument(
         "-i", "--gpu-idxs", dest="gpu_idxs", help="Specific GPU indices to run on (e.g., '0' or '0,1' for multi-GPU)"
     )
@@ -80,6 +81,7 @@ def add_job_run_parser(subparsers) -> None:
 def add_job_management_parsers(subparsers) -> None:
     # Add jobs to queue
     add_parser = subparsers.add_parser("add", help="Add job(s) to queue")
+    add_parser.add_argument("-t", "--target", help="Target server (name or 'local')")
     add_parser.add_argument("-r", "--repeat", type=int, default=1, help="Repeat the command multiple times")
     add_parser.add_argument("-p", "--priority", type=int, default=0, help="Set job priority (higher values run first)")
     add_parser.add_argument("-n", "--notify", nargs="+", help="Additional notification types for this job")
@@ -96,12 +98,14 @@ def add_job_management_parsers(subparsers) -> None:
     )
 
     # Show queue
-    subparsers.add_parser("queue", help="Show pending jobs (queued)")
+    queue_parser = subparsers.add_parser("queue", help="Show pending jobs (queued)")
+    queue_parser.add_argument("-t", "--target", help="Target server (name or 'local')")
 
     # Kill jobs
     kill_parser = subparsers.add_parser(
         "kill", help="Kill running job(s) by GPU index, job ID, or regex (latest job if no arguments)"
     )
+    kill_parser.add_argument("-t", "--target", help="Target server (name or 'local')")
     kill_parser.add_argument(
         "targets",
         nargs="*",
@@ -111,11 +115,13 @@ def add_job_management_parsers(subparsers) -> None:
 
     # Remove jobs
     remove_parser = subparsers.add_parser("remove", help="Remove queued job(s) by ID or regex")
+    remove_parser.add_argument("-t", "--target", help="Target server (name or 'local')")
     remove_parser.add_argument("job_ids", nargs="+", help="List of job IDs or command regex patterns")
     remove_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
 
     # Edit jobs
     edit_parser = subparsers.add_parser("edit", help="Edit a queued job's command, priority or GPU count")
+    edit_parser.add_argument("-t", "--target", help="Target server (name or 'local')")
     edit_parser.add_argument("job_id", help="Job ID to edit")
     edit_parser.add_argument("-c", "--command", dest="new_command", help="New command to run")
     edit_parser.add_argument("-p", "--priority", type=int, help="New priority value")
@@ -126,25 +132,30 @@ def add_job_management_parsers(subparsers) -> None:
 def add_job_monitoring_parsers(subparsers) -> None:
     # Logs command
     logs_parser = subparsers.add_parser("logs", help="View logs for job")
+    logs_parser.add_argument("-t", "--target", help="Target server (name or 'local')")
     logs_parser.add_argument("id", nargs="?", help="Job ID or GPU index (optional, most recent job if omitted)")
-    logs_parser.add_argument("-t", "--tail", type=int, metavar="N", help="Show only the last N lines")
+    logs_parser.add_argument("-n", "--tail", type=int, metavar="N", help="Show only the last N lines")
 
     # Attach command
     attach_parser = subparsers.add_parser("attach", help="Attach to a running job's screen session")
+    attach_parser.add_argument("-t", "--target", help="Target server (name or 'local')")
     attach_parser.add_argument(
         "id", nargs="?", help="Job ID or GPU index to attach to (optional, last job ran if omitted)"
     )
 
     # History command
     history_parser = subparsers.add_parser("history", help="Show completed, failed, or killed jobs")
+    history_parser.add_argument("-t", "--target", help="Target server (name or 'local')")
     history_parser.add_argument("pattern", nargs="?", help="Filter jobs by command regex pattern")
 
     # Get command
     get_parser = subparsers.add_parser("get", help="Get detailed information about a job")
+    get_parser.add_argument("-t", "--target", help="Target server (name or 'local')")
     get_parser.add_argument("job_id", help="Job ID to get information about")
 
     # Health command
     health_parser = subparsers.add_parser("health", help="Show detailed node health information")
+    health_parser.add_argument("-t", "--target", help="Target server (name or 'local')")
     health_parser.add_argument("-r", "--refresh", action="store_true", help="Force refresh of health metrics")
 
 
@@ -174,6 +185,7 @@ def add_config_parsers(subparsers) -> None:
 def add_utility_parsers(subparsers) -> None:
     # GPU blacklist management
     blacklist_parser = subparsers.add_parser("blacklist", help="Manage GPU blacklist")
+    blacklist_parser.add_argument("-t", "--target", help="Target server (name or 'local')")
     blacklist_subparsers = blacklist_parser.add_subparsers(
         dest="blacklist_action", help="Blacklist commands", required=True
     )
@@ -187,6 +199,20 @@ def add_utility_parsers(subparsers) -> None:
     setup_parser.add_argument(
         "--non-interactive", action="store_true", help="Set up non-interactively using environment variables"
     )
+    setup_parser.add_argument("--remote", action="store_true", help="Set up connection to a remote Nexus server")
+
+    target_parser = subparsers.add_parser("target", help="Manage target servers")
+    target_subs = target_parser.add_subparsers(dest="target_command", required=True)
+
+    target_subs.add_parser("add", help="Add target server")
+    target_subs.add_parser("list", help="List all targets")
+
+    default_p = target_subs.add_parser("default", help="Set default target")
+    default_p.add_argument("name", help="Target name or 'local'")
+
+    remove_p = target_subs.add_parser("remove", help="Remove a target")
+    remove_p.add_argument("name", help="Target name to remove")
+
     subparsers.add_parser("version", help="Show version information")
     subparsers.add_parser("help", help="Show help information")
 
@@ -217,6 +243,7 @@ def get_command_handlers(args, cfg: NexusCliConfig, parser: argparse.ArgumentPar
         "env": lambda: handle_env(args),
         "jobrc": lambda: handle_jobrc(args),
         "setup": lambda: handle_setup(args),
+        "target": lambda: handle_target(args),
         "version": lambda: show_version(),
         "help": lambda: parser.print_help(),
     }
@@ -224,6 +251,7 @@ def get_command_handlers(args, cfg: NexusCliConfig, parser: argparse.ArgumentPar
 
 def get_api_command_handlers(args, cfg: NexusCliConfig):
     """Returns a dictionary of command handlers that require API connection."""
+    target_name = getattr(args, "target", None)
     return {
         "add": lambda: jobs.add_jobs(
             cfg,
@@ -237,6 +265,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             bypass_confirm=args.yes,
             silent=args.silent,
             local=args.local,
+            target_name=target_name,
         ),
         "run": lambda: jobs.run_job(
             cfg,
@@ -249,22 +278,26 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             interactive=not args.commands,
             silent=args.silent,
             local=args.local,
+            target_name=target_name,
         ),
-        "queue": lambda: jobs.show_queue(),
-        "history": lambda: jobs.show_history(getattr(args, "pattern", None)),
-        "kill": lambda: jobs.kill_jobs(getattr(args, "targets", None), bypass_confirm=args.yes),
-        "remove": lambda: jobs.remove_jobs(args.job_ids, bypass_confirm=args.yes),
-        "blacklist": lambda: jobs.handle_blacklist(args),
-        "logs": lambda: jobs.view_logs(args.id, tail=args.tail),
-        "attach": lambda: jobs.attach_to_job(cfg, args.id),
-        "health": lambda: jobs.show_health(refresh=args.refresh),
-        "get": lambda: jobs.get_job_info(args.job_id),
+        "queue": lambda: jobs.show_queue(target_name=target_name),
+        "history": lambda: jobs.show_history(getattr(args, "pattern", None), target_name=target_name),
+        "kill": lambda: jobs.kill_jobs(
+            getattr(args, "targets", None), bypass_confirm=args.yes, target_name=target_name
+        ),
+        "remove": lambda: jobs.remove_jobs(args.job_ids, bypass_confirm=args.yes, target_name=target_name),
+        "blacklist": lambda: jobs.handle_blacklist(args, target_name=target_name),
+        "logs": lambda: jobs.view_logs(args.id, tail=args.tail, target_name=target_name),
+        "attach": lambda: jobs.attach_to_job(cfg, args.id, target_name=target_name),
+        "health": lambda: jobs.show_health(refresh=args.refresh, target_name=target_name),
+        "get": lambda: jobs.get_job_info(args.job_id, target_name=target_name),
         "edit": lambda: jobs.edit_job_command(
             args.job_id,
             command=args.new_command,
             priority=args.priority,
             num_gpus=args.num_gpus,
             bypass_confirm=args.yes,
+            target_name=target_name,
         ),
     }
 
@@ -411,10 +444,23 @@ def handle_jobrc(args) -> None:
 
 
 def handle_setup(args) -> None:
-    if args.non_interactive:
+    if args.remote:
+        setup.add_target()
+    elif args.non_interactive:
         setup.setup_non_interactive()
     else:
         setup.setup_wizard()
+
+
+def handle_target(args) -> None:
+    if args.target_command == "add":
+        setup.add_target()
+    elif args.target_command == "list":
+        setup.list_targets()
+    elif args.target_command == "default":
+        setup.set_default_target(args.name)
+    elif args.target_command == "remove":
+        setup.remove_target(args.name)
 
 
 if __name__ == "__main__":
