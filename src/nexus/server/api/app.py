@@ -1,16 +1,37 @@
 import asyncio
 import contextlib
 import importlib.metadata
+import secrets
 
 import fastapi as fa
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from nexus.server.api import router, scheduler
 from nexus.server.core import context
 from nexus.server.core import exceptions as exc
 from nexus.server.utils import logger
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.url.path in ["/health", "/v1/health"]:
+            return await call_next(request)
+
+        ctx = request.app.state.ctx
+        if not ctx.config.api_token:
+            return await call_next(request)
+
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return JSONResponse(status_code=401, content={"error": "Missing token"})
+
+        if not secrets.compare_digest(auth[7:], ctx.config.api_token):
+            return JSONResponse(status_code=401, content={"error": "Invalid token"})
+
+        return await call_next(request)
 
 
 def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
@@ -28,6 +49,8 @@ def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    app.add_middleware(AuthMiddleware)
 
     def _register_handler(app: fa.FastAPI, exc_cls: type, status: int, *, level: str = "warning"):
         @app.exception_handler(exc_cls)

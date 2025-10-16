@@ -101,6 +101,7 @@ class ServerStatusResponse(FrozenBaseModel):
     completed_jobs: int
     server_user: str
     server_version: str
+    node_name: str
 
 
 class DiskStatsResponse(FrozenBaseModel):
@@ -143,5 +144,5 @@ class JobListRequest(FrozenBaseModel):
     status: schemas.JobStatus | None = None
     gpu_index: int | None = None
     command_regex: str | None = None
-    limit: int = 10000
+    limit: int = 100
     offset: int = 0
