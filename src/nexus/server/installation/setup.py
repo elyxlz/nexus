@@ -274,8 +274,7 @@ def setup_config(
     if config_file and config_file.exists():
         try:
             file_config = config.load_config(server_dir)
-            file_config.server_dir = server_dir
-            return file_config
+            return file_config.model_copy(update={"server_dir": server_dir})
         except Exception as e:
             print(f"Error loading config file: {e}")
             print("Falling back to default configuration.")
@@ -516,7 +515,7 @@ def install_system(
         import secrets
 
         token = secrets.token_urlsafe(32)
-        _config = dc.replace(_config, api_token=token)
+        _config = _config.model_copy(update={"api_token": token})
         config.save_config(_config)
 
         print("\n" + "=" * 60)
