@@ -167,7 +167,7 @@ def generate_self_signed_cert(server_dir: pl.Path) -> tuple[pl.Path, pl.Path]:
     import socket
 
     ssl_dir = server_dir / "ssl"
-    ssl_dir.mkdir(exist_ok=True)
+    ssl_dir.mkdir(parents=True, exist_ok=True)
 
     key_path = ssl_dir / "key.pem"
     cert_path = ssl_dir / "cert.pem"
@@ -285,7 +285,9 @@ def setup_config(
     base_config = create_interactive_config(default_config) if interactive else default_config
 
     if base_config.api_token:
-        key_path, cert_path = generate_self_signed_cert(server_dir)
+        ssl_dir = server_dir / "ssl"
+        key_path = ssl_dir / "key.pem"
+        cert_path = ssl_dir / "cert.pem"
         return config.NexusServerConfig(
             server_dir=base_config.server_dir,
             port=base_config.port,
@@ -603,6 +605,7 @@ def install_system(
     prepare_system_environment(_config.supplementary_groups)
 
     if _config.api_token:
+        generate_self_signed_cert(SYSTEM_SERVER_DIR)
         print(f"Generated SSL certificates in: {SYSTEM_SERVER_DIR / 'ssl'}")
 
     create_persistent_directory(_config)
