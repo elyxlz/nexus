@@ -400,18 +400,22 @@ def add_target() -> None:
         if not utils.ask_yes_no("Overwrite existing target?"):
             return
 
+    ssh_key_path = _generate_ssh_key(host, port)
+    pub_key_path = pl.Path(str(ssh_key_path) + ".pub")
+    public_key = pub_key_path.read_text().strip()
+
+    success = _register_ssh_key_with_server(public_key, server_name)
+    if not success:
+        print(colored("\n✗ Failed to register SSH key with server", "red"))
+        print(colored("Target not saved. Please resolve the issue and try again.", "yellow"))
+        return
+
     cfg.targets[server_name] = config.TargetConfig(host=host, port=port, protocol=protocol, api_token=api_token)
 
     if not cfg.default_target:
         cfg.default_target = server_name
 
     config.save_config(cfg)
-
-    ssh_key_path = _generate_ssh_key(host, port)
-    pub_key_path = ssh_key_path.with_suffix(".pub")
-    public_key = pub_key_path.read_text().strip()
-
-    _register_ssh_key_with_server(public_key, server_name)
 
     print(colored(f"\n✓ Target '{server_name}' configured", "green", attrs=["bold"]))
     print(f"Configuration saved to: {config.get_config_path()}")
