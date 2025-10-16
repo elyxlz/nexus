@@ -21,8 +21,8 @@ def run_job(
     interactive: bool = False,
     silent: bool = False,
     local: bool = False,
+    target_name: str | None = None,
 ) -> None:
-    """Run a job immediately on the server"""
     try:
         gpu_idxs = None
         gpu_info = ""
@@ -33,7 +33,7 @@ def run_job(
         elif num_gpus:
             gpu_info = f" using {colored(str(num_gpus), 'cyan')} GPU(s)"
 
-        health = api_client.get_detailed_health(refresh=False)
+        health = api_client.get_detailed_health(refresh=False, target_name=target_name)
         if health.get("status") == "unhealthy":
             utils.print_health_warning()
 
@@ -123,7 +123,9 @@ def run_job(
                 "git_tag_pushed": bool(cfg.enable_git_tag_push and not local),
             }
 
-            result = api_client.add_job(job_request)
+            result = api_client.add_job(job_request, target_name=target_name)
+            if "id" not in result:
+                raise ValueError(f"API response missing 'id' field: {result}")
             job_id = result["id"]
 
             print(colored("\nJob started:", "green", attrs=["bold"]))
@@ -138,10 +140,10 @@ def run_job(
             for i in range(max_attempts):
                 time.sleep(1)
                 try:
-                    job = api_client.get_job(job_id)
+                    job = api_client.get_job(job_id, target_name=target_name)
                     if job["status"] == "running" and job.get("screen_session_name"):
                         print(colored(f"Job {job_id} running, attaching to screen session...", "green"))
-                        attach_to_job(cfg, job_id)
+                        attach_to_job(cfg, job_id, target_name=target_name)
                         return
                 except Exception:
                     pass
@@ -176,6 +178,7 @@ def add_jobs(
     bypass_confirm: bool = False,
     silent: bool = False,
     local: bool = False,
+    target_name: str | None = None,
 ) -> None:
     try:
         if not commands:
@@ -195,7 +198,7 @@ def add_jobs(
         if not expanded_commands:
             return
 
-        health = api_client.get_detailed_health(refresh=False)
+        health = api_client.get_detailed_health(refresh=False, target_name=target_name)
         if health.get("status") == "unhealthy":
             utils.print_health_warning()
 
@@ -285,7 +288,7 @@ def add_jobs(
                     "git_tag_pushed": False,
                 }
 
-                result = api_client.add_job(job_request)
+                result = api_client.add_job(job_request, target_name=target_name)
                 created_jobs.append(result)
 
             print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
@@ -310,9 +313,9 @@ def add_jobs(
         sys.exit(1)
 
 
-def show_queue() -> None:
+def show_queue(target_name: str | None = None) -> None:
     try:
-        jobs = api_client.get_jobs("queued")
+        jobs = api_client.get_jobs("queued", target_name=target_name)
 
         if not jobs:
             print(colored("No pending jobs.", "green"))
@@ -321,12 +324,13 @@ def show_queue() -> None:
         print(colored("Pending Jobs:", "blue", attrs=["bold"]))
         total_jobs = len(jobs)
         for idx, job in enumerate(reversed(jobs), 1):
-            created_time = utils.format_timestamp(job.get("created_at"))
+            if "created_at" not in job or "priority" not in job or "num_gpus" not in job:
+                raise ValueError(f"Job missing required fields: {job}")
 
-            priority = job.get("priority")
-            num_gpus = job.get("num_gpus")
+            created_time = utils.format_timestamp(job["created_at"])
+            priority = job["priority"]
+            num_gpus = job["num_gpus"]
             gpu_idxs = job.get("gpu_idxs")
-            assert priority is not None and num_gpus is not None
 
             priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
 
@@ -348,12 +352,12 @@ def show_queue() -> None:
         print(colored(f"Error fetching queue: {e}", "red"))
 
 
-def show_history(regex: str | None = None) -> None:
+def show_history(regex: str | None = None, target_name: str | None = None) -> None:
     try:
         statuses = ["completed", "failed", "killed"]
         jobs = []
         for status in statuses:
-            jobs.extend(api_client.get_jobs(status))
+            jobs.extend(api_client.get_jobs(status, target_name=target_name))
 
         if not jobs:
             print(colored("No completed/failed/killed jobs.", "green"))
@@ -371,12 +375,18 @@ def show_history(regex: str | None = None) -> None:
                 return
 
         def get_sort_timestamp(job):
-            return job.get("completed_at") or job.get("started_at") or job.get("created_at") or 0
+            if "completed_at" in job and job["completed_at"]:
+                return job["completed_at"]
+            if "started_at" in job and job["started_at"]:
+                return job["started_at"]
+            if "created_at" in job and job["created_at"]:
+                return job["created_at"]
+            return 0
 
-        jobs.sort(key=get_sort_timestamp, reverse=True)
+        jobs.sort(key=get_sort_timestamp, reverse=False)
 
         print(colored("Job History:", "blue", attrs=["bold"]))
-        for job in reversed(jobs[:25]):
+        for job in jobs[:25]:
             runtime = utils.calculate_runtime(job)
             started_time = utils.format_timestamp(job.get("started_at"))
             status_color = (
@@ -428,14 +438,14 @@ def show_history(regex: str | None = None) -> None:
         print(colored(f"Error fetching history: {e}", "red"))
 
 
-def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False) -> None:
+def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False, target_name: str | None = None) -> None:
     try:
         jobs_to_kill: set[str] = set()
         jobs_info: list[dict] = []
 
         # If no targets provided, get the latest running job
         if not targets:
-            running_jobs = api_client.get_jobs("running")
+            running_jobs = api_client.get_jobs("running", target_name=target_name)
 
             if not running_jobs:
                 print(colored("No running jobs found to kill.", "yellow"))
@@ -480,8 +490,8 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False) ->
             gpu_indices, job_ids = utils.parse_targets(targets)
 
             if gpu_indices:
-                gpus = api_client.get_gpus()
-                running_jobs = api_client.get_jobs("running")
+                gpus = api_client.get_gpus(target_name=target_name)
+                running_jobs = api_client.get_jobs("running", target_name=target_name)
 
                 for gpu_idx in gpu_indices:
                     gmatch = next((g for g in gpus if g["index"] == gpu_idx), None)
@@ -504,7 +514,7 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False) ->
                         )
 
             if job_ids:
-                running_jobs = api_client.get_jobs("running")
+                running_jobs = api_client.get_jobs("running", target_name=target_name)
 
                 for pattern in job_ids:
                     if any(j["id"] == pattern for j in running_jobs):
@@ -567,7 +577,7 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False) ->
             print(colored("Operation cancelled.", "yellow"))
             return
 
-        result = api_client.kill_running_jobs(list(jobs_to_kill))
+        result = api_client.kill_running_jobs(list(jobs_to_kill), target_name=target_name)
 
         print(colored("\nOperation results:", "green", attrs=["bold"]))
         for job_id in result.get("killed", []):
@@ -588,9 +598,9 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False) ->
         print(colored(f"Error killing jobs: {e}", "red"))
 
 
-def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
+def remove_jobs(job_ids: list[str], bypass_confirm: bool = False, target_name: str | None = None) -> None:
     try:
-        queued_jobs = api_client.get_jobs("queued")
+        queued_jobs = api_client.get_jobs("queued", target_name=target_name)
 
         jobs_to_remove: set[str] = set()
         jobs_info: list[dict] = []
@@ -658,7 +668,7 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
             print(colored("Operation cancelled.", "yellow"))
             return
 
-        result = api_client.remove_queued_jobs(list(jobs_to_remove))
+        result = api_client.remove_queued_jobs(list(jobs_to_remove), target_name=target_name)
 
         print(colored("\nOperation results:", "green", attrs=["bold"]))
         for job_id in result.get("removed", []):
@@ -679,13 +689,13 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False) -> None:
         print(colored(f"Error removing jobs: {e}", "red"))
 
 
-def view_logs(target: str | None = None, tail: int | None = None) -> None:
+def view_logs(target: str | None = None, tail: int | None = None, target_name: str | None = None) -> None:
     try:
         job_id: str = ""
         if target is None:
             jobs = []
             for status in ["running", "completed", "failed", "killed"]:
-                jobs.extend(api_client.get_jobs(status))
+                jobs.extend(api_client.get_jobs(status, target_name=target_name))
 
             if not jobs:
                 print(colored("No jobs found", "yellow"))
@@ -704,7 +714,7 @@ def view_logs(target: str | None = None, tail: int | None = None) -> None:
             print(colored(f"Viewing logs for most recent job: {job_id} ({job_status})", "blue"))
         elif target.isdigit():
             gpu_idx = int(target)
-            gpus = api_client.get_gpus()
+            gpus = api_client.get_gpus(target_name=target_name)
 
             gmatch = next((g for g in gpus if g["index"] == gpu_idx), None)
             if not gmatch:
@@ -720,7 +730,7 @@ def view_logs(target: str | None = None, tail: int | None = None) -> None:
         else:
             job_id = target
 
-        job = api_client.get_job(job_id)
+        job = api_client.get_job(job_id, target_name=target_name)
         if not job:
             print(colored(f"Job {job_id} not found", "red"))
             return
@@ -730,13 +740,13 @@ def view_logs(target: str | None = None, tail: int | None = None) -> None:
             print(colored(f"Job {job_id} is {job['status']}. Showing last {tail} lines:", "blue"))
 
         if tail:
-            logs = api_client.get_job_logs(job_id, last_n_lines=tail)
+            logs = api_client.get_job_logs(job_id, last_n_lines=tail, target_name=target_name)
             if logs:
                 print(logs)
             else:
                 print(colored("No logs available", "yellow"))
         else:
-            logs = api_client.get_job_logs(job_id)
+            logs = api_client.get_job_logs(job_id, target_name=target_name)
             if logs:
                 print(logs)
             else:
@@ -746,9 +756,9 @@ def view_logs(target: str | None = None, tail: int | None = None) -> None:
         print(colored(f"Error fetching logs: {e}", "red"))
 
 
-def show_health(refresh: bool = False) -> None:
+def show_health(refresh: bool = False, target_name: str | None = None) -> None:
     try:
-        health = api_client.get_detailed_health(refresh=refresh)
+        health = api_client.get_detailed_health(refresh=refresh, target_name=target_name)
 
         print(colored("Node Health Status:", "blue", attrs=["bold"]))
         status = health.get("status", "unknown")
@@ -826,9 +836,10 @@ def edit_job_command(
     priority: int | None = None,
     num_gpus: int | None = None,
     bypass_confirm: bool = False,
+    target_name: str | None = None,
 ) -> None:
     try:
-        job = api_client.get_job(job_id)
+        job = api_client.get_job(job_id, target_name=target_name)
 
         if not job:
             print(colored(f"Job {job_id} not found", "red"))
@@ -857,7 +868,7 @@ def edit_job_command(
             print(colored("Operation cancelled.", "yellow"))
             return
 
-        result = api_client.edit_job(job_id, command, priority, num_gpus)
+        result = api_client.edit_job(job_id, command, priority, num_gpus, target_name=target_name)
 
         print(colored("\nJob edited successfully:", "green", attrs=["bold"]))
         print(f"  {colored('•', 'green')} ID: {colored(result['id'], 'magenta')}")
@@ -870,9 +881,9 @@ def edit_job_command(
         sys.exit(1)
 
 
-def get_job_info(job_id: str) -> None:
+def get_job_info(job_id: str, target_name: str | None = None) -> None:
     try:
-        job = api_client.get_job(job_id)
+        job = api_client.get_job(job_id, target_name=target_name)
 
         if not job:
             print(colored(f"Job {job_id} not found", "red"))
@@ -973,10 +984,10 @@ def get_job_info(job_id: str) -> None:
         print(colored(f"Error getting job information: {e}", "red"))
 
 
-def handle_blacklist(args) -> None:
+def handle_blacklist(args, target_name: str | None = None) -> None:
     try:
         gpu_idxs = utils.parse_gpu_list(args.gpus)
-        gpus = api_client.get_gpus()
+        gpus = api_client.get_gpus(target_name=target_name)
 
         valid_idxs = {gpu["index"] for gpu in gpus}
         invalid_idxs = [idx for idx in gpu_idxs if idx not in valid_idxs]
@@ -984,7 +995,7 @@ def handle_blacklist(args) -> None:
             print(colored(f"Invalid GPU idxs: {', '.join(map(str, invalid_idxs))}", "red"))
             return
 
-        result = api_client.manage_blacklist(gpu_idxs, args.blacklist_action)
+        result = api_client.manage_blacklist(gpu_idxs, args.blacklist_action, target_name=target_name)
 
         action_word = "blacklisted" if args.blacklist_action == "add" else "removed from blacklist"
         successful = result.get("blacklisted" if args.blacklist_action == "add" else "removed", [])
@@ -1001,19 +1012,24 @@ def handle_blacklist(args) -> None:
         print(colored(f"Error managing blacklist: {e}", "red"))
 
 
-def print_status() -> None:
+def print_status(target_name: str | None = None) -> None:
     try:
         import importlib.metadata
 
-        if not api_client.check_api_connection():
-            raise RuntimeError("Cannot connect to Nexus API")
+        if not api_client.check_api_connection(target_name=target_name):
+            active_target_name, target_cfg = config.get_active_target(target_name)
+            if target_cfg:
+                error_msg = f"Cannot connect to target '{active_target_name}' ({target_cfg.host}:{target_cfg.port})"
+            else:
+                error_msg = "Cannot connect to local server (localhost:54323)"
+            raise RuntimeError(error_msg)
 
         try:
             VERSION = importlib.metadata.version("nexusai")
         except importlib.metadata.PackageNotFoundError:
             VERSION = "unknown"
 
-        status = api_client.get_server_status()
+        status = api_client.get_server_status(target_name=target_name)
 
         server_version = status.get("server_version", "unknown")
         if server_version != VERSION:
@@ -1025,19 +1041,21 @@ def print_status() -> None:
                 )
             )
 
-        health = api_client.get_detailed_health(refresh=False)
+        health = api_client.get_detailed_health(refresh=False, target_name=target_name)
         if health.get("status") == "unhealthy":
             utils.print_health_warning()
 
+        node_name = status.get("node_name", "unknown")
         queued = status.get("queued_jobs", 0)
         running = status.get("running_jobs", 0)
         completed = status.get("completed_jobs", 0)
 
+        print(f"Node: {colored(node_name, 'cyan')}")
         print(f"Queue: {queued} jobs pending")
         print(f"Running: {running} jobs in progress")
         print(f"History: {colored(str(completed), 'blue')} jobs completed\n")
 
-        gpus = api_client.get_gpus()
+        gpus = api_client.get_gpus(target_name=target_name)
 
         print(colored("GPUs:", "white"))
         for gpu in gpus:
@@ -1050,7 +1068,7 @@ def print_status() -> None:
             if gpu.get("running_job_id"):
                 job_id = gpu["running_job_id"]
 
-                job = api_client.get_job(job_id)
+                job = api_client.get_job(job_id, target_name=target_name)
 
                 runtime = utils.calculate_runtime(job)
                 runtime_str = utils.format_runtime(runtime)
@@ -1076,12 +1094,12 @@ def print_status() -> None:
         print(colored(f"Error: {e}", "red"))
 
 
-def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None:
+def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_name: str | None = None) -> None:
     try:
         user = cfg.user or "anonymous"
 
         if target is None:
-            running_jobs = api_client.get_jobs("running")
+            running_jobs = api_client.get_jobs("running", target_name=target_name)
             user_jobs = [j for j in running_jobs if j.get("user") == user]
 
             if not user_jobs:
@@ -1098,7 +1116,7 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None
             print(colored(f"Attaching to most recent job: {target}", "blue"))
         elif target.isdigit():
             gpu_idx = int(target)
-            gpus = api_client.get_gpus()
+            gpus = api_client.get_gpus(target_name=target_name)
             gmatch = next((g for g in gpus if g["index"] == gpu_idx), None)
             if not gmatch:
                 print(colored(f"No GPU found with index {gpu_idx}", "red"))
@@ -1113,7 +1131,7 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None
             print(colored("No job target specified", "red"))
             return
 
-        job = api_client.get_job(target)
+        job = api_client.get_job(target, target_name=target_name)
         if not job:
             print(colored(f"Job {target} not found", "red"))
             return
@@ -1128,28 +1146,68 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None
             return
 
         print(colored(f"Attaching to job {target} screen session '{screen_session_name}'", "blue"))
-        print("\n" + colored("### PRESS CTRL+A, THEN D TO DISCONNECT FROM SCREEN SESSION ###", "yellow", attrs=["bold"]) + "\n")
+        print(
+            "\n"
+            + colored("### PRESS CTRL+A, THEN D TO DISCONNECT FROM SCREEN SESSION ###", "yellow", attrs=["bold"])
+            + "\n"
+        )
         time.sleep(2)
 
         job_id = job["id"]
         starting_status = job["status"]
 
-        current_user_exit_code = os.system(f"screen -r {screen_session_name}")
+        active_target_name, target_cfg = config.get_active_target(target_name)
+        if target_cfg is not None:
+            import subprocess
 
-        if current_user_exit_code != 0:
-            exit_code = os.system(f"sudo -u nexus screen -r {screen_session_name}")
-
-            if exit_code != 0:
-                print(colored("Screen session not found. Available sessions:", "yellow"))
-                os.system("screen -ls")
-                print(colored("\nTroubleshooting tips:", "yellow"))
-                print("  1. Verify that the job is still running and the session name is correct.")
-                print("  2. Check if you have the proper permissions to access the screen session.")
-                print(f"  3. You can always view job logs with: nx logs {job_id}")
+            ssh_key = config.get_ssh_key_path(target_cfg.host, target_cfg.port)
+            if not ssh_key.exists():
+                print(colored(f"SSH key not found at {ssh_key}", "red"))
+                print(colored("Run 'nx targets add' to configure remote access", "yellow"))
                 return
 
+            import os as os_module
+
+            env = os_module.environ.copy()
+            env["TERM"] = "xterm-256color"
+
+            exit_code = subprocess.call(
+                [
+                    "ssh",
+                    "-t",
+                    "-i",
+                    str(ssh_key),
+                    "-o",
+                    "StrictHostKeyChecking=accept-new",
+                    f"nexus@{target_cfg.host}",
+                    "screen",
+                    "-r",
+                    screen_session_name,
+                ],
+                env=env,
+            )
+
+            if exit_code != 0:
+                print(colored(f"\nSSH attach failed (exit {exit_code})", "red"))
+                print(colored(f"View logs: nx logs {job_id}", "yellow"))
+                return
+        else:
+            current_user_exit_code = os.system(f"screen -r {screen_session_name}")
+
+            if current_user_exit_code != 0:
+                exit_code = os.system(f"sudo -u nexus screen -r {screen_session_name}")
+
+                if exit_code != 0:
+                    print(colored("Screen session not found. Available sessions:", "yellow"))
+                    os.system("screen -ls")
+                    print(colored("\nTroubleshooting tips:", "yellow"))
+                    print("  1. Verify that the job is still running and the session name is correct.")
+                    print("  2. Check if you have the proper permissions to access the screen session.")
+                    print(f"  3. You can always view job logs with: nx logs {job_id}")
+                    return
+
         try:
-            updated_job = api_client.get_job(job_id)
+            updated_job = api_client.get_job(job_id, target_name=target_name)
             if updated_job:
                 if updated_job["status"] != starting_status:
                     status_color = "green" if updated_job["status"] == "completed" else "red"
@@ -1165,7 +1223,7 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None) -> None
                 runtime_str = utils.format_runtime(runtime) if runtime else "N/A"
                 print(colored(f"Runtime: {runtime_str}", "cyan"))
 
-                logs = api_client.get_job_logs(job_id, last_n_lines=1000) or ""
+                logs = api_client.get_job_logs(job_id, last_n_lines=1000, target_name=target_name) or ""
                 if logs:
                     print("\n" + logs)
                 else:

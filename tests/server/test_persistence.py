@@ -29,6 +29,7 @@ def server_config() -> NexusServerConfig:
         port=54325,
         node_name="test_persistence_node",
         mock_gpus=True,
+        api_token=None,
     )
 
 

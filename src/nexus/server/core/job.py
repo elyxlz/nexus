@@ -196,14 +196,14 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         except Exception:
             raise exc.JobError(message=f"Script not executable: {abs_script_path}")
 
-    logger.info(f"Starting screen session {session_name} with script {abs_script_path}")
+    logger.debug(f"Starting screen session {session_name} with script {abs_script_path}")
     script_content = abs_script_path.read_text()
-    logger.info(f"Outer script (run.sh):\n{script_content}")
+    logger.debug(f"Outer script (run.sh):\n{script_content}")
 
     job_commands_script = abs_script_path.parent / "job_commands.sh"
     if job_commands_script.exists():
         job_commands_content = job_commands_script.read_text()
-        logger.info(f"Inner script (job_commands.sh):\n{job_commands_content}")
+        logger.debug(f"Inner script (job_commands.sh):\n{job_commands_content}")
 
     syntax_check = await asyncio.create_subprocess_exec(
         "bash", "-n", str(abs_script_path), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -227,11 +227,11 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
     )
 
     stdout, stderr = await process.communicate()
-    logger.info(f"Screen command returncode: {process.returncode}")
+    logger.debug(f"Screen command returncode: {process.returncode}")
     if stdout:
-        logger.info(f"Screen stdout: {stdout.decode().strip()}")
+        logger.debug(f"Screen stdout: {stdout.decode().strip()}")
     if stderr:
-        logger.info(f"Screen stderr: {stderr.decode().strip()}")
+        logger.debug(f"Screen stderr: {stderr.decode().strip()}")
 
     if process.returncode != 0:
         error_details = f"Screen process exited with code {process.returncode}"
@@ -251,12 +251,12 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         "screen", "-ls", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     screen_stdout, _ = await screen_list.communicate()
-    logger.info(f"Active screen sessions:\n{screen_stdout.decode()}")
+    logger.debug(f"Active screen sessions:\n{screen_stdout.decode()}")
 
     proc = await asyncio.create_subprocess_exec("pgrep", "-f", session_name, stdout=asyncio.subprocess.PIPE)
     stdout, _ = await proc.communicate()
     pids = [p for p in stdout.decode().strip().split("\n") if p]
-    logger.info(f"pgrep results for '{session_name}': {pids}")
+    logger.debug(f"pgrep results for '{session_name}': {pids}")
 
     if pids:
         return int(pids[0])
@@ -395,7 +395,7 @@ async def async_cleanup_job_repo(job_dir: pl.Path | None) -> None:
     job_repo_dir = job_dir / "repo"
     if job_repo_dir.exists():
         shutil.rmtree(job_repo_dir, ignore_errors=True)
-        logger.info(f"Successfully cleaned up {job_repo_dir}")
+        logger.debug(f"Successfully cleaned up {job_repo_dir}")
 
 
 async def async_end_job(_job: schemas.Job, killed: bool) -> schemas.Job:
