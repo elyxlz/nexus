@@ -545,6 +545,8 @@ def print_installation_complete_message(_config: config.NexusServerConfig) -> No
     print(f"   Node name:    {_config.node_name}")
 
     print("\n💻 Remote Connection Info:")
+    if _config.external_ip:
+        print(f"   Address:      {_config.external_ip}")
     print(f"   Port:         {_config.port}")
     print(f"   API Token:    {_config.api_token}")
 

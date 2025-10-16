@@ -73,7 +73,7 @@ def run_job(
 
         git_ctx = None
         try:
-            git_ctx = utils.prepare_git_artifact(cfg.enable_git_tag_push and not local)
+            git_ctx = utils.prepare_git_artifact(cfg.enable_git_tag_push and not local, target_name=target_name)
             env_vars = setup.load_current_env()
             job_env_vars = dict(env_vars)
 
@@ -151,10 +151,11 @@ def run_job(
                 if i < max_attempts - 1:
                     print(".", end="", flush=True)
 
+            target_flag = f" -t {target_name}" if target_name else ""
             print(colored("\nCouldn't automatically attach to job. You can:", "yellow"))
-            print(f"  - Run 'nx attach {job_id}' to attach to the job's screen session")
-            print(f"  - Run 'nx logs {job_id}' to view the job output")
-            print(f"  - Use 'nx logs -t 20 {job_id}' to see just the last 20 lines")
+            print(f"  - Run 'nx attach{target_flag} {job_id}' to attach to the job's screen session")
+            print(f"  - Run 'nx logs{target_flag} {job_id}' to view the job output")
+            print(f"  - Use 'nx logs -n 20{target_flag} {job_id}' to see just the last 20 lines")
 
         finally:
             if git_ctx:
@@ -256,7 +257,7 @@ def add_jobs(
 
         git_ctx = None
         try:
-            git_ctx = utils.prepare_git_artifact(enable_git_tag_push=False)
+            git_ctx = utils.prepare_git_artifact(enable_git_tag_push=False, target_name=target_name)
             jobrc_content = None
             jobrc_path = setup.get_jobrc_path()
             if jobrc_path.exists():
