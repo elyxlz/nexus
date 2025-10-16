@@ -8,7 +8,7 @@ from termcolor import colored
 from nexus.cli import config
 
 
-def _get_verify(target_name: str | None) -> str | bool:
+def _get_verify(target_name: str | None) -> bool:
     active_name, target_cfg = config.get_active_target(target_name)
 
     if target_cfg is None:
@@ -17,10 +17,7 @@ def _get_verify(target_name: str | None) -> str | bool:
     if target_cfg.protocol == "http":
         return True
 
-    cert = config.get_server_cert_path(target_cfg.host, target_cfg.port)
-    if not cert.exists():
-        raise FileNotFoundError(f"SSL certificate not found at {cert}. Run 'nx targets add' to reconfigure.")
-    return str(cert)
+    return False
 
 
 def _print_error_response(response):

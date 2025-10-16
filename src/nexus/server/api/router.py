@@ -43,6 +43,7 @@ async def get_status_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_
         completed_jobs=completed,
         server_user=getpass.getuser(),
         server_version=importlib.metadata.version("nexusai"),
+        node_name=ctx.config.node_name,
     )
     logger.info(f"Server status: {response}")
     return response

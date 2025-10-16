@@ -277,15 +277,45 @@ def open_jobrc_editor() -> None:
 
 
 def _download_server_certificate(host: str, port: int) -> pl.Path:
+    import socket
     import ssl
 
     print(colored("\nDownloading server certificate...", "cyan"))
-    cert_pem = ssl.get_server_certificate((host, port), timeout=10)
-    cert_path = config.get_server_cert_path(host, port)
-    cert_path.parent.mkdir(exist_ok=True)
-    cert_path.write_text(cert_pem)
-    print(colored("Certificate saved", "green"))
-    return cert_path
+
+    try:
+        cert_pem = ssl.get_server_certificate((host, port), timeout=10)
+        cert_path = config.get_server_cert_path(host, port)
+        cert_path.parent.mkdir(exist_ok=True)
+        cert_path.write_text(cert_pem)
+        print(colored("Certificate saved", "green"))
+        return cert_path
+    except socket.timeout:
+        print(colored(f"\n✗ Connection to {host}:{port} timed out", "red"))
+        print(colored("\nPossible causes:", "yellow"))
+        print(colored("  • Server is not running", "yellow"))
+        print(colored("  • Firewall is blocking port access", "yellow"))
+        print(colored("  • Network connectivity issues", "yellow"))
+        print(colored("\nTo fix firewall issues on the server, run:", "cyan"))
+        print(colored(f"  sudo ufw allow {port}/tcp", "white"))
+        print(colored("  or", "white"))
+        print(colored(f"  sudo firewall-cmd --permanent --add-port={port}/tcp", "white"))
+        print(colored(f"  sudo firewall-cmd --reload", "white"))
+        raise
+    except ConnectionRefusedError:
+        print(colored(f"\n✗ Connection to {host}:{port} refused", "red"))
+        print(colored("\nPossible causes:", "yellow"))
+        print(colored("  • Server is not running on this port", "yellow"))
+        print(colored("  • Server is not listening on external interfaces", "yellow"))
+        print(colored("\nVerify the server is running:", "cyan"))
+        print(colored("  sudo systemctl status nexus-server", "white"))
+        raise
+    except ssl.SSLError as e:
+        print(colored(f"\n✗ SSL error: {e}", "red"))
+        print(colored("\nThe server may not have SSL enabled yet.", "yellow"))
+        raise
+    except Exception as e:
+        print(colored(f"\n✗ Failed to download certificate: {e}", "red"))
+        raise
 
 
 def _generate_ssh_key(host: str, port: int) -> pl.Path:
@@ -342,16 +372,14 @@ def add_target() -> None:
     cert_path = None
     try:
         cert_path = _download_server_certificate(host, port)
-    except Exception as e:
-        print(colored(f"Failed to download certificate: {e}", "red"))
+    except Exception:
         return
 
     try:
         url = f"{protocol}://{host}:{port}/v1/server/status"
         headers = {"Authorization": f"Bearer {api_token}"}
-        verify = str(cert_path) if cert_path else False
 
-        response = requests.get(url, headers=headers, verify=verify, timeout=10)
+        response = requests.get(url, headers=headers, verify=False, timeout=10)
         response.raise_for_status()
         status = response.json()
 

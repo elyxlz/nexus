@@ -101,6 +101,7 @@ class ServerStatusResponse(FrozenBaseModel):
     completed_jobs: int
     server_user: str
     server_version: str
+    node_name: str
 
 
 class DiskStatsResponse(FrozenBaseModel):
