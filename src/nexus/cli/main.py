@@ -187,6 +187,20 @@ def add_utility_parsers(subparsers) -> None:
     setup_parser.add_argument(
         "--non-interactive", action="store_true", help="Set up non-interactively using environment variables"
     )
+    setup_parser.add_argument("--remote", action="store_true", help="Set up connection to a remote Nexus server")
+
+    targets_parser = subparsers.add_parser("targets", help="Manage target servers")
+    targets_subs = targets_parser.add_subparsers(dest="targets_command", required=True)
+
+    targets_subs.add_parser("add", help="Add target server")
+    targets_subs.add_parser("list", help="List all targets")
+
+    default_p = targets_subs.add_parser("default", help="Set default target")
+    default_p.add_argument("name", help="Target name or 'local'")
+
+    remove_p = targets_subs.add_parser("remove", help="Remove a target")
+    remove_p.add_argument("name", help="Target name to remove")
+
     subparsers.add_parser("version", help="Show version information")
     subparsers.add_parser("help", help="Show help information")
 
@@ -197,6 +211,8 @@ def create_parser() -> argparse.ArgumentParser:
         description="Nexus: GPU Job Management CLI",
         formatter_class=argparse.RawTextHelpFormatter,
     )
+
+    parser.add_argument("--target", "-t", help="Target server (name or 'local')")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -217,6 +233,7 @@ def get_command_handlers(args, cfg: NexusCliConfig, parser: argparse.ArgumentPar
         "env": lambda: handle_env(args),
         "jobrc": lambda: handle_jobrc(args),
         "setup": lambda: handle_setup(args),
+        "targets": lambda: handle_targets(args),
         "version": lambda: show_version(),
         "help": lambda: parser.print_help(),
     }
@@ -224,6 +241,7 @@ def get_command_handlers(args, cfg: NexusCliConfig, parser: argparse.ArgumentPar
 
 def get_api_command_handlers(args, cfg: NexusCliConfig):
     """Returns a dictionary of command handlers that require API connection."""
+    target_name = getattr(args, "target", None)
     return {
         "add": lambda: jobs.add_jobs(
             cfg,
@@ -237,6 +255,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             bypass_confirm=args.yes,
             silent=args.silent,
             local=args.local,
+            target_name=target_name,
         ),
         "run": lambda: jobs.run_job(
             cfg,
@@ -249,22 +268,26 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             interactive=not args.commands,
             silent=args.silent,
             local=args.local,
+            target_name=target_name,
         ),
-        "queue": lambda: jobs.show_queue(),
-        "history": lambda: jobs.show_history(getattr(args, "pattern", None)),
-        "kill": lambda: jobs.kill_jobs(getattr(args, "targets", None), bypass_confirm=args.yes),
-        "remove": lambda: jobs.remove_jobs(args.job_ids, bypass_confirm=args.yes),
-        "blacklist": lambda: jobs.handle_blacklist(args),
-        "logs": lambda: jobs.view_logs(args.id, tail=args.tail),
-        "attach": lambda: jobs.attach_to_job(cfg, args.id),
-        "health": lambda: jobs.show_health(refresh=args.refresh),
-        "get": lambda: jobs.get_job_info(args.job_id),
+        "queue": lambda: jobs.show_queue(target_name=target_name),
+        "history": lambda: jobs.show_history(getattr(args, "pattern", None), target_name=target_name),
+        "kill": lambda: jobs.kill_jobs(
+            getattr(args, "targets", None), bypass_confirm=args.yes, target_name=target_name
+        ),
+        "remove": lambda: jobs.remove_jobs(args.job_ids, bypass_confirm=args.yes, target_name=target_name),
+        "blacklist": lambda: jobs.handle_blacklist(args, target_name=target_name),
+        "logs": lambda: jobs.view_logs(args.id, tail=args.tail, target_name=target_name),
+        "attach": lambda: jobs.attach_to_job(cfg, args.id, target_name=target_name),
+        "health": lambda: jobs.show_health(refresh=args.refresh, target_name=target_name),
+        "get": lambda: jobs.get_job_info(args.job_id, target_name=target_name),
         "edit": lambda: jobs.edit_job_command(
             args.job_id,
             command=args.new_command,
             priority=args.priority,
             num_gpus=args.num_gpus,
             bypass_confirm=args.yes,
+            target_name=target_name,
         ),
     }
 
@@ -411,10 +434,23 @@ def handle_jobrc(args) -> None:
 
 
 def handle_setup(args) -> None:
-    if args.non_interactive:
+    if args.remote:
+        setup.add_target()
+    elif args.non_interactive:
         setup.setup_non_interactive()
     else:
         setup.setup_wizard()
+
+
+def handle_targets(args) -> None:
+    if args.targets_command == "add":
+        setup.add_target()
+    elif args.targets_command == "list":
+        setup.list_targets()
+    elif args.targets_command == "default":
+        setup.set_default_target(args.name)
+    elif args.targets_command == "remove":
+        setup.remove_target(args.name)
 
 
 if __name__ == "__main__":

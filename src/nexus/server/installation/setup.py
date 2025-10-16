@@ -163,6 +163,42 @@ def setup_passwordless_nexus_attach() -> bool:
         return False
 
 
+def generate_self_signed_cert(server_dir: pl.Path) -> tuple[pl.Path, pl.Path]:
+    import socket
+
+    ssl_dir = server_dir / "ssl"
+    ssl_dir.mkdir(exist_ok=True)
+
+    key_path = ssl_dir / "key.pem"
+    cert_path = ssl_dir / "cert.pem"
+
+    if key_path.exists() and cert_path.exists():
+        return key_path, cert_path
+
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:4096",
+            "-nodes",
+            "-keyout",
+            str(key_path),
+            "-out",
+            str(cert_path),
+            "-days",
+            "3650",
+            "-subj",
+            f"/CN={socket.gethostname()}",
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    return key_path, cert_path
+
+
 def set_system_permissions() -> None:
     subprocess.run(["chown", "-R", f"{SERVER_USER}:{SERVER_USER}", str(SYSTEM_SERVER_DIR)], check=True)
     subprocess.run(["chmod", "-R", "770", str(SYSTEM_SERVER_DIR)], check=True)
@@ -475,6 +511,19 @@ def install_system(
 
     create_persistent_directory(_config)
     print(f"Created configuration at: {config.get_config_path(SYSTEM_SERVER_DIR)}")
+
+    if not _config.api_token:
+        import secrets
+
+        token = secrets.token_urlsafe(32)
+        _config = dc.replace(_config, api_token=token)
+        config.save_config(_config)
+
+        print("\n" + "=" * 60)
+        print("🔑 API Token (SAVE THIS):")
+        print(f"   {token}")
+        print("\n⚠️  Required for remote client connections")
+        print("=" * 60 + "\n")
 
     set_system_permissions()
     print("Set proper directory permissions.")

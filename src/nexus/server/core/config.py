@@ -33,6 +33,9 @@ class NexusServerConfig(pyds.BaseSettings):
     node_name: str = pyd.Field(default_factory=get_default_node_name)
     mock_gpus: bool = pyd.Field(default=False)
     supplementary_groups: list[str] = pyd.Field(default_factory=list)
+    api_token: str | None = pyd.Field(default=None)
+    ssl_keyfile: str | None = pyd.Field(default=None)
+    ssl_certfile: str | None = pyd.Field(default=None)
 
     @classmethod
     def settings_customise_sources(
