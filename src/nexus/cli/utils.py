@@ -117,7 +117,7 @@ def restore_working_state(original_branch: str, temp_branch: str, we_created_sta
     subprocess.run(["git", "branch", "-D", temp_branch], check=True, capture_output=True)
 
 
-def prepare_git_artifact(enable_git_tag_push: bool) -> GitArtifactContext:
+def prepare_git_artifact(enable_git_tag_push: bool, target_name: str | None = None) -> GitArtifactContext:
     from nexus.cli import api_client
 
     job_id = generate_job_id()
@@ -147,7 +147,7 @@ def prepare_git_artifact(enable_git_tag_push: bool) -> GitArtifactContext:
     print(colored("Creating git archive...", "blue"))
     artifact_data = create_git_archive(temp_branch or "HEAD")
     print(colored("Uploading git archive...", "blue"))
-    artifact_id = api_client.upload_artifact(artifact_data)
+    artifact_id = api_client.upload_artifact(artifact_data, target_name=target_name)
     print(colored(f"Artifact uploaded with ID: {artifact_id}", "green"))
 
     git_tag = None
