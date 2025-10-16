@@ -53,8 +53,9 @@ def handle_api_errors(func):
     return wrapper
 
 
-def get_api_base_url(target_name: str | None) -> str:
-    _, target_cfg = config.get_active_target(target_name)
+def get_api_base_url(target_name: str | None = None, target_cfg: config.TargetConfig | None = None) -> str:
+    if target_cfg is None:
+        _, target_cfg = config.get_active_target(target_name)
 
     if target_cfg is None:
         return "http://localhost:54323/v1"
@@ -62,8 +63,9 @@ def get_api_base_url(target_name: str | None) -> str:
     return f"{target_cfg.protocol}://{target_cfg.host}:{target_cfg.port}/v1"
 
 
-def _get_headers(target_name: str | None) -> dict[str, str]:
-    _, target_cfg = config.get_active_target(target_name)
+def _get_headers(target_name: str | None = None, target_cfg: config.TargetConfig | None = None) -> dict[str, str]:
+    if target_cfg is None:
+        _, target_cfg = config.get_active_target(target_name)
     if target_cfg and target_cfg.api_token:
         return {"Authorization": f"Bearer {target_cfg.api_token}"}
     return {}
@@ -294,11 +296,13 @@ def manage_blacklist(
 
 
 @handle_api_errors
-def register_ssh_key(public_key: str, target_name: str | None = None) -> dict:
+def register_ssh_key(
+    public_key: str, target_name: str | None = None, target_cfg: config.TargetConfig | None = None
+) -> dict:
     response = requests.post(
-        f"{get_api_base_url(target_name)}/auth/ssh-key",
+        f"{get_api_base_url(target_name, target_cfg)}/auth/ssh-key",
         data=public_key,
-        headers=_get_headers(target_name),
+        headers=_get_headers(target_name, target_cfg),
         verify=False,
     )
     response.raise_for_status()

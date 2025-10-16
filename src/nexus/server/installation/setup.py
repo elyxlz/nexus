@@ -535,8 +535,6 @@ def confirm_installation(_config: config.NexusServerConfig) -> bool:
 
 
 def print_installation_complete_message(_config: config.NexusServerConfig) -> None:
-    external_ip = _config.external_ip
-
     print("\n" + "=" * 80)
     print(" " * 25 + "INSTALLATION COMPLETE")
     print("=" * 80)
@@ -547,21 +545,12 @@ def print_installation_complete_message(_config: config.NexusServerConfig) -> No
     print(f"   Node name:    {_config.node_name}")
 
     print("\n💻 Remote Connection Info:")
-    if external_ip:
-        print(f"   External IP:  {external_ip}")
     print(f"   Port:         {_config.port}")
     print(f"   API Token:    {_config.api_token}")
 
     print("\n   To connect from CLI, run:")
     print("   nx target add")
     print("   # Then enter the values above when prompted")
-
-    if external_ip:
-        print(f"\n   ℹ️  Use {external_ip} to connect from outside the network")
-
-    print("\n⚠️  Port Forwarding Note:")
-    print(f"   If connecting from outside the network, ensure port {_config.port}")
-    print("   is forwarded to this machine.")
 
     print("\n📝 View Config Anytime:")
     print("   sudo nexus-server config")

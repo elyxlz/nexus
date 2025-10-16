@@ -334,12 +334,12 @@ def _generate_ssh_key(host: str, port: int) -> pl.Path:
     return ssh_key_path
 
 
-def _register_ssh_key_with_server(public_key: str, target_name: str | None = None) -> bool:
+def _register_ssh_key_with_server(public_key: str, target_cfg: config.TargetConfig) -> bool:
     from nexus.cli import api_client
 
     print(colored("\nRegistering SSH key with remote server...", "cyan"))
     try:
-        result = api_client.register_ssh_key(public_key, target_name=target_name)
+        result = api_client.register_ssh_key(public_key, target_cfg=target_cfg)
         if result.get("status") == "exists":
             print(colored("SSH key already registered", "yellow"))
         else:
@@ -364,7 +364,7 @@ def add_target() -> None:
         config.create_default_config()
         cfg = config.load_config()
 
-    host = utils.get_user_input("Remote server hostname", required=True)
+    host = utils.get_user_input("Remote server address", required=True)
     port = int(utils.get_user_input("Remote server port", default="54323"))
     api_token = utils.get_user_input("API token", required=True, mask_input=True)
     protocol = "https"
@@ -406,13 +406,15 @@ def add_target() -> None:
     pub_key_path = pl.Path(str(ssh_key_path) + ".pub")
     public_key = pub_key_path.read_text().strip()
 
-    success = _register_ssh_key_with_server(public_key, server_name)
+    target_cfg = config.TargetConfig(host=host, port=port, protocol=protocol, api_token=api_token)
+
+    success = _register_ssh_key_with_server(public_key, target_cfg)
     if not success:
         print(colored("\n✗ Failed to register SSH key with server", "red"))
         print(colored("Target not saved. Please resolve the issue and try again.", "yellow"))
         return
 
-    cfg.targets[server_name] = config.TargetConfig(host=host, port=port, protocol=protocol, api_token=api_token)
+    cfg.targets[server_name] = target_cfg
 
     if not cfg.default_target:
         cfg.default_target = server_name
@@ -459,6 +461,22 @@ def remove_target(target_name: str) -> None:
         print(colored("Operation cancelled.", "yellow"))
         return
 
+    target = cfg.targets[target_name]
+    ssh_key_path = config.get_ssh_key_path(target.host, target.port)
+    pub_key_path = pl.Path(str(ssh_key_path) + ".pub")
+    cert_path = config.get_server_cert_path(target.host, target.port)
+
+    deleted_files = []
+    if ssh_key_path.exists():
+        ssh_key_path.unlink()
+        deleted_files.append(str(ssh_key_path))
+    if pub_key_path.exists():
+        pub_key_path.unlink()
+        deleted_files.append(str(pub_key_path))
+    if cert_path.exists():
+        cert_path.unlink()
+        deleted_files.append(str(cert_path))
+
     del cfg.targets[target_name]
 
     if cfg.default_target == target_name:
@@ -466,7 +484,8 @@ def remove_target(target_name: str) -> None:
 
     config.save_config(cfg)
     print(colored(f"✓ Removed target '{target_name}'", "green"))
-    print(colored("Note: SSH keys and certificates in ~/.ssh and ~/.nexus were not deleted", "yellow"))
+    if deleted_files:
+        print(colored(f"Deleted {len(deleted_files)} associated file(s)", "cyan"))
 
 
 def check_config_exists() -> bool:
