@@ -303,8 +303,6 @@ def setup_config(
 
 
 def display_config(_config: config.NexusServerConfig) -> None:
-    import socket
-
     print("\nCurrent Configuration")
     print("======================")
 
@@ -322,9 +320,8 @@ def display_config(_config: config.NexusServerConfig) -> None:
     except Exception:
         pass
 
-    print(f"\nhostname: {socket.gethostname()}")
     if external_ip:
-        print(f"external_ip: {external_ip}")
+        print(f"\nexternal_ip: {external_ip}")
 
     if api_token:
         print("\n🔑 API Token:")
@@ -538,9 +535,6 @@ def confirm_installation(_config: config.NexusServerConfig) -> bool:
 
 
 def print_installation_complete_message(_config: config.NexusServerConfig) -> None:
-    import socket
-
-    hostname = socket.gethostname()
     external_ip = _config.external_ip
 
     print("\n" + "=" * 80)
@@ -551,7 +545,6 @@ def print_installation_complete_message(_config: config.NexusServerConfig) -> No
 
     print("\n📋 Server Details:")
     print(f"   Node name:    {_config.node_name}")
-    print(f"   Hostname:     {hostname}")
 
     print("\n💻 Remote Connection Info:")
     if external_ip:
@@ -565,7 +558,6 @@ def print_installation_complete_message(_config: config.NexusServerConfig) -> No
 
     if external_ip:
         print(f"\n   ℹ️  Use {external_ip} to connect from outside the network")
-        print(f"   ℹ️  Use {hostname} to connect from the local network")
 
     print("\n⚠️  Port Forwarding Note:")
     print(f"   If connecting from outside the network, ensure port {_config.port}")
