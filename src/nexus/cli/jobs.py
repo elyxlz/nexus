@@ -1159,9 +1159,15 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                 print(colored("Run 'nx targets add' to configure remote access", "yellow"))
                 return
 
-            result = subprocess.run(
+            import os as os_module
+
+            env = os_module.environ.copy()
+            env["TERM"] = "xterm-256color"
+
+            exit_code = subprocess.call(
                 [
                     "ssh",
+                    "-t",
                     "-i",
                     str(ssh_key),
                     "-o",
@@ -1171,14 +1177,11 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                     "-r",
                     screen_session_name,
                 ],
-                capture_output=True,
-                text=True,
+                env=env,
             )
 
-            if result.returncode != 0:
-                print(colored(f"\nSSH attach failed (exit {result.returncode})", "red"))
-                if result.stderr:
-                    print(colored(result.stderr.strip()[:150], "red"))
+            if exit_code != 0:
+                print(colored(f"\nSSH attach failed (exit {exit_code})", "red"))
                 print(colored(f"View logs: nx logs {job_id}", "yellow"))
                 return
         else:

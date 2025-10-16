@@ -24,6 +24,12 @@ def get_default_node_name() -> str:
         return "nexus-node"
 
 
+def generate_api_token() -> str:
+    import secrets
+
+    return secrets.token_urlsafe(32)
+
+
 class NexusServerConfig(pyds.BaseSettings):
     model_config = pyds.SettingsConfigDict(env_prefix="ns_", frozen=True, extra="ignore")
 
@@ -33,7 +39,7 @@ class NexusServerConfig(pyds.BaseSettings):
     node_name: str = pyd.Field(default_factory=get_default_node_name)
     mock_gpus: bool = pyd.Field(default=False)
     supplementary_groups: list[str] = pyd.Field(default_factory=list)
-    api_token: str | None = pyd.Field(default=None)
+    api_token: str = pyd.Field(default_factory=generate_api_token)
     ssl_keyfile: str | None = pyd.Field(default=None)
     ssl_certfile: str | None = pyd.Field(default=None)
 

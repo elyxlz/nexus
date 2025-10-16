@@ -1,11 +1,15 @@
 import functools
 import json
 import typing as tp
+import warnings
 
 import requests
+import urllib3
 from termcolor import colored
 
 from nexus.cli import config
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def _get_verify(target_name: str | None) -> bool:

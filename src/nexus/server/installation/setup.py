@@ -466,29 +466,84 @@ def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
         print("Added rule to /etc/sudoers.d/nexus_attach")
 
 
-def confirm_installation(_config: config.NexusServerConfig, sup_groups: list[str]) -> bool:
-    print("\n" + "=" * 60)
-    print("Installation Configuration")
-    print("=" * 60)
+def confirm_installation(_config: config.NexusServerConfig) -> bool:
+    import socket
+
+    hostname = socket.gethostname()
+
+    print("\n" + "=" * 80)
+    print(" " * 25 + "INSTALLATION PREVIEW")
+    print("=" * 80)
+
+    print("\n📁 Files and Directories:")
+    print(f"   Server directory:  {SYSTEM_SERVER_DIR}")
+    print(f"   Config file:       {SYSTEM_SERVER_DIR / 'config.toml'}")
+    print(f"   Database:          {SYSTEM_SERVER_DIR / 'nexus_server.db'}")
+    print(f"   SSL certificates:  {SYSTEM_SERVER_DIR / 'ssl/'}")
+    print(f"   Systemd service:   {SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME}")
+
+    print("\n⚙️  Configuration:")
     for key, value in _config.model_dump().items():
-        print(f"{key}: {value}")
-    print("=" * 60)
-    print("\nNote: Configuration values can be overridden with environment variables")
-    print("      using the NS_ prefix (e.g., NS_PORT=8080, NS_NODE_NAME=gpu-node-1)")
-    print("      Use 'sudo -E' to preserve environment variables when installing")
+        if key == "api_token":
+            continue
+        print(f"   {key:20} {value}")
+
+    print(f"\n   hostname:            {hostname}")
+
+    print("\n🔑 API Token:")
+    print(f"   {_config.api_token}")
+    print("   ⚠️  SAVE THIS - Required for remote CLI connections")
+
+    print("\n" + "=" * 80)
+    print("Note: Environment variables (NS_*) can override config after installation")
+    print("=" * 80)
 
     response = input("\nProceed with installation? [y/N]: ").strip().lower()
     return response == "y"
 
 
-def print_installation_complete_message() -> None:
-    print("\nSystem installation complete.")
-    print("To uninstall: nexus-server uninstall")
-    print("To start: nexus-server start")
-    print("To stop: nexus-server stop")
-    print("To restart: nexus-server restart")
-    print("To check status: nexus-server status")
-    print("To attach to a job: sudo -u nexus screen -r <session_name>")
+def print_installation_complete_message(_config: config.NexusServerConfig) -> None:
+    import socket
+
+    hostname = socket.gethostname()
+
+    print("\n" + "=" * 80)
+    print(" " * 25 + "INSTALLATION COMPLETE")
+    print("=" * 80)
+
+    print("\n🎉 Nexus Server is now installed and running!")
+
+    print("\n📋 Server Details:")
+    print(f"   Hostname:  {hostname}")
+    print(f"   Port:      {_config.port}")
+    print(f"   Node name: {_config.node_name}")
+
+    print("\n🔑 API Token:")
+    print(f"   {_config.api_token}")
+    print("   ⚠️  Required for remote CLI connections")
+
+    print("\n💻 Connect from CLI:")
+    print(f"   nx target add")
+    print(f"   # When prompted, enter:")
+    print(f"   #   Hostname: {hostname}")
+    print(f"   #   Port:     {_config.port}")
+    print(f"   #   Token:    {_config.api_token}")
+
+    print("\n⚠️  Port Forwarding Note:")
+    print(f"   If connecting from outside the network, ensure port {_config.port}")
+    print("   is forwarded to this machine. Your router may require configuration.")
+
+    print("\n🔧 Server Management:")
+    print("   Start:   sudo nexus-server start")
+    print("   Stop:    sudo nexus-server stop")
+    print("   Restart: sudo nexus-server restart")
+    print("   Status:  sudo nexus-server status")
+    print("   Logs:    sudo nexus-server logs")
+
+    print("\n📦 Uninstall:")
+    print("   sudo nexus-server uninstall")
+
+    print("\n" + "=" * 80)
 
 
 def install_system(
@@ -502,7 +557,7 @@ def install_system(
     _config = setup_config(SYSTEM_SERVER_DIR, interactive, config_file)
 
     if interactive:
-        if not confirm_installation(_config, _config.supplementary_groups):
+        if not confirm_installation(_config):
             print("Installation cancelled.")
             return
 
@@ -510,19 +565,6 @@ def install_system(
 
     create_persistent_directory(_config)
     print(f"Created configuration at: {config.get_config_path(SYSTEM_SERVER_DIR)}")
-
-    if not _config.api_token:
-        import secrets
-
-        token = secrets.token_urlsafe(32)
-        _config = _config.model_copy(update={"api_token": token})
-        config.save_config(_config)
-
-        print("\n" + "=" * 60)
-        print("🔑 API Token (SAVE THIS):")
-        print(f"   {token}")
-        print("\n⚠️  Required for remote client connections")
-        print("=" * 60 + "\n")
 
     set_system_permissions()
     print("Set proper directory permissions.")
@@ -539,7 +581,7 @@ def install_system(
     current_version = write_installation_marker(server_started)
     print(f"Installed version {current_version}")
 
-    print_installation_complete_message()
+    print_installation_complete_message(_config)
 
 
 def uninstall(keep_config: bool = False, force: bool = False, yes: bool = False) -> None:
