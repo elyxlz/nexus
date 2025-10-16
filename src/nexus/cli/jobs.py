@@ -1177,9 +1177,13 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
 
             if result.returncode != 0:
                 print(colored(f"\nSSH attach failed (exit {result.returncode})", "red"))
-                if result.stderr:
-                    print(colored(result.stderr.strip()[:150], "red"))
-                print(colored(f"View logs: nx logs {job_id}", "yellow"))
+                if result.stdout and result.stdout.strip():
+                    print(colored("stdout:", "yellow"))
+                    print(colored(result.stdout.strip()[:500], "white"))
+                if result.stderr and result.stderr.strip():
+                    print(colored("stderr:", "yellow"))
+                    print(colored(result.stderr.strip()[:500], "red"))
+                print(colored(f"\nView logs: nx logs {job_id}", "yellow"))
                 return
         else:
             current_user_exit_code = os.system(f"screen -r {screen_session_name}")
