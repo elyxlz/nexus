@@ -58,7 +58,7 @@ def get_api_base_url(target_name: str | None = None, target_cfg: config.TargetCo
         _, target_cfg = config.get_active_target(target_name)
 
     if target_cfg is None:
-        return "http://localhost:54323/v1"
+        return "https://localhost:54323/v1"
 
     return f"{target_cfg.protocol}://{target_cfg.host}:{target_cfg.port}/v1"
 

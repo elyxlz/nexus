@@ -20,6 +20,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if request.url.path in ["/health", "/v1/health"]:
             return await call_next(request)
 
+        client_host = request.client.host if request.client else None
+        if client_host in ["127.0.0.1", "::1", "localhost"]:
+            return await call_next(request)
+
         ctx = request.app.state.ctx
         if not ctx.config.api_token:
             return await call_next(request)
