@@ -86,7 +86,7 @@ def measure_network_speed() -> NetworkStats:
             socket.create_connection((host, 53), timeout=2)
             ping_time = (time.time() - start_time) * 1000
         except (TimeoutError, OSError):
-            ping_time = float("inf")
+            ping_time = 9999.0
 
         download_speed = 100.0 if ping_time < 100 else 50.0
         upload_speed = 50.0 if ping_time < 100 else 25.0
@@ -154,7 +154,7 @@ def calculate_health_score(
         return min(30, disk_score)
 
     network_score = 0
-    if network_stats.ping < float("inf"):
+    if network_stats.ping < 9999:
         ping_score = 15 * max(0, min(1, (200 - network_stats.ping) / 150))
         speed_score = 15 * min(1, (network_stats.download_speed / 100))
         network_score = ping_score + speed_score
