@@ -61,6 +61,12 @@ def _get_phone_secrets(job: schemas.Job) -> tuple[str, str, str, str]:
     return phone_number, twilio_account_sid, twilio_auth_token, twilio_from_number
 
 
+def _truncate_field_value(value: str, max_length: int = 1024) -> str:
+    if len(value) <= max_length:
+        return value
+    return value[: max_length - 3] + "..."
+
+
 def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction) -> dict:
     color_mapping = {
         "started": 0x3498DB,
@@ -72,18 +78,18 @@ def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction
     user_mention = f"<@{discord_id}>"
     gpu_idxs = ", ".join(str(idx) for idx in job.gpu_idxs) if job.gpu_idxs else "None"
     message_title = f"{EMOJI_MAPPING[job_action]} **Job {job.id} {job_action} on GPU(s) {gpu_idxs} - ({job.node_name})** - {user_mention}"
-    command = str(job.command)
+    command = _truncate_field_value(str(job.command))
     if job.git_tag:
-        git_info = f"{job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}"
+        git_info = _truncate_field_value(f"{job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}")
     else:
-        git_info = f"({job.git_repo_url}) - Branch: {job.git_branch}"
+        git_info = _truncate_field_value(f"({job.git_repo_url}) - Branch: {job.git_branch}")
     fields = [
         {"name": "Command", "value": command},
         {"name": "Git", "value": git_info},
         {"name": "User", "value": str(job.user), "inline": True},
     ]
     if job.error_message and job_action in ["completed", "failed"]:
-        fields.insert(1, {"name": "Error Message", "value": str(job.error_message)})
+        fields.insert(1, {"name": "Error Message", "value": _truncate_field_value(str(job.error_message))})
     return {
         "content": message_title,
         "embeds": [
@@ -202,7 +208,7 @@ async def _send_phone_notification(job: schemas.Job, job_action: JobAction) -> N
 ####################
 
 
-@exc.handle_exception(Exception, reraise=False)
+@exc.handle_exception(Exception, reraise=False, default_return=exc.RETURN_FIRST_ARG)
 async def notify_job_action(_job: schemas.Job, action: JobAction) -> schemas.Job:
     updated_job = _job
 

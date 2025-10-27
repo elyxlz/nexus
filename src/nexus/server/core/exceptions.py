@@ -19,6 +19,7 @@ __all__ = [
     "InvalidRequestError",
     "InvalidJobStateError",
     "handle_exception",
+    "RETURN_FIRST_ARG",
 ]
 
 
@@ -88,8 +89,15 @@ class NotificationError(NexusServerError):
     ERROR_CODE = "WEBHOOK_ERROR"
 
 
+class _ReturnFirstArg:
+    pass
+
+
+RETURN_FIRST_ARG = _ReturnFirstArg()
+
+
 T = tp.TypeVar("T")
-P = tp.ParamSpec("P")  # This captures the parameter specification of the wrapped function
+P = tp.ParamSpec("P")
 
 
 def handle_exception(source_exception, target_exception=None, *, message="error", reraise=True, default_return=None):
@@ -103,6 +111,8 @@ def handle_exception(source_exception, target_exception=None, *, message="error"
                     full = f"{message}: {e}"
                     logger.exception(full)
                     if not reraise:
+                        if default_return is RETURN_FIRST_ARG:
+                            return a[0] if a else None
                         return default_return
                     raise (target_exception or type(e))(message=full) from e
 
@@ -116,6 +126,8 @@ def handle_exception(source_exception, target_exception=None, *, message="error"
                     full = f"{message}: {e}"
                     logger.exception(full)
                     if not reraise:
+                        if default_return is RETURN_FIRST_ARG:
+                            return a[0] if a else None
                         return default_return
                     raise (target_exception or type(e))(message=full) from e
 
