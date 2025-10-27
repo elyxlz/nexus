@@ -208,47 +208,44 @@ async def _send_phone_notification(job: schemas.Job, job_action: JobAction) -> N
 ####################
 
 
+@exc.handle_exception(Exception, reraise=False, default_return=exc.RETURN_FIRST_ARG)
 async def notify_job_action(_job: schemas.Job, action: JobAction) -> schemas.Job:
     updated_job = _job
 
-    try:
-        if "discord" in _job.notifications:
-            message_data = _format_job_message_for_notification(_job, action)
-            webhook_url = _get_discord_secrets(_job)[0]
+    if "discord" in _job.notifications:
+        message_data = _format_job_message_for_notification(_job, action)
+        webhook_url = _get_discord_secrets(_job)[0]
 
-            if action in ["completed", "failed", "killed"] and _job.dir:
-                if action in ["failed", "killed"]:
-                    job_logs = await job.async_get_job_logs(_job.dir, last_n_lines=20)
-                    if job_logs:
-                        MAX_FIELD_LENGTH = 1024
-                        log_field = f"```\n{job_logs}\n```"
-                        if len(log_field) > MAX_FIELD_LENGTH:
-                            allowed_length = MAX_FIELD_LENGTH - len("```\n...\n```")
-                            truncated_logs = job_logs[:allowed_length] + "..."
-                            log_field = f"```\n{truncated_logs}\n```"
-                        message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": log_field})
+        if action in ["completed", "failed", "killed"] and _job.dir:
+            if action in ["failed", "killed"]:
+                job_logs = await job.async_get_job_logs(_job.dir, last_n_lines=20)
+                if job_logs:
+                    MAX_FIELD_LENGTH = 1024
+                    log_field = f"```\n{job_logs}\n```"
+                    if len(log_field) > MAX_FIELD_LENGTH:
+                        allowed_length = MAX_FIELD_LENGTH - len("```\n...\n```")
+                        truncated_logs = job_logs[:allowed_length] + "..."
+                        log_field = f"```\n{truncated_logs}\n```"
+                    message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": log_field})
 
-                logs_url = await _upload_logs_to_nullpointer(_job)
-                if logs_url:
-                    logger.info(f"Adding logs URL to Discord message: {logs_url}")
-                    message_data["embeds"][0]["fields"].append(
-                        {"name": "Full logs", "value": f"[View full logs]({logs_url})"}
-                    )
+            logs_url = await _upload_logs_to_nullpointer(_job)
+            if logs_url:
+                logger.info(f"Adding logs URL to Discord message: {logs_url}")
+                message_data["embeds"][0]["fields"].append(
+                    {"name": "Full logs", "value": f"[View full logs]({logs_url})"}
+                )
 
-            if action == "started":
-                message_id = await _send_notification(webhook_url, message_data=message_data, wait=True)
-                if message_id:
-                    updated_messages = dict(_job.notification_messages)
-                    updated_messages["discord_start_job"] = message_id
-                    updated_job = dc.replace(updated_job, notification_messages=updated_messages)
-            else:
-                await _send_notification(webhook_url, message_data=message_data)
+        if action == "started":
+            message_id = await _send_notification(webhook_url, message_data=message_data, wait=True)
+            if message_id:
+                updated_messages = dict(_job.notification_messages)
+                updated_messages["discord_start_job"] = message_id
+                updated_job = dc.replace(updated_job, notification_messages=updated_messages)
+        else:
+            await _send_notification(webhook_url, message_data=message_data)
 
-        if "phone" in _job.notifications:
-            await _send_phone_notification(_job, action)
-
-    except Exception as e:
-        logger.error(f"Failed to send notification for job {_job.id}: {e}")
+    if "phone" in _job.notifications:
+        await _send_phone_notification(_job, action)
 
     return updated_job
 
