@@ -61,6 +61,12 @@ def _get_phone_secrets(job: schemas.Job) -> tuple[str, str, str, str]:
     return phone_number, twilio_account_sid, twilio_auth_token, twilio_from_number
 
 
+def _truncate_field_value(value: str, max_length: int = 1024) -> str:
+    if len(value) <= max_length:
+        return value
+    return value[: max_length - 3] + "..."
+
+
 def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction) -> dict:
     color_mapping = {
         "started": 0x3498DB,
@@ -72,18 +78,18 @@ def _format_job_message_for_notification(job: schemas.Job, job_action: JobAction
     user_mention = f"<@{discord_id}>"
     gpu_idxs = ", ".join(str(idx) for idx in job.gpu_idxs) if job.gpu_idxs else "None"
     message_title = f"{EMOJI_MAPPING[job_action]} **Job {job.id} {job_action} on GPU(s) {gpu_idxs} - ({job.node_name})** - {user_mention}"
-    command = str(job.command)
+    command = _truncate_field_value(str(job.command))
     if job.git_tag:
-        git_info = f"{job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}"
+        git_info = _truncate_field_value(f"{job.git_tag} ({job.git_repo_url}) - Branch: {job.git_branch}")
     else:
-        git_info = f"({job.git_repo_url}) - Branch: {job.git_branch}"
+        git_info = _truncate_field_value(f"({job.git_repo_url}) - Branch: {job.git_branch}")
     fields = [
         {"name": "Command", "value": command},
         {"name": "Git", "value": git_info},
         {"name": "User", "value": str(job.user), "inline": True},
     ]
     if job.error_message and job_action in ["completed", "failed"]:
-        fields.insert(1, {"name": "Error Message", "value": str(job.error_message)})
+        fields.insert(1, {"name": "Error Message", "value": _truncate_field_value(str(job.error_message))})
     return {
         "content": message_title,
         "embeds": [
@@ -202,44 +208,47 @@ async def _send_phone_notification(job: schemas.Job, job_action: JobAction) -> N
 ####################
 
 
-@exc.handle_exception(Exception, reraise=False)
 async def notify_job_action(_job: schemas.Job, action: JobAction) -> schemas.Job:
     updated_job = _job
 
-    if "discord" in _job.notifications:
-        message_data = _format_job_message_for_notification(_job, action)
-        webhook_url = _get_discord_secrets(_job)[0]
+    try:
+        if "discord" in _job.notifications:
+            message_data = _format_job_message_for_notification(_job, action)
+            webhook_url = _get_discord_secrets(_job)[0]
 
-        if action in ["completed", "failed", "killed"] and _job.dir:
-            if action in ["failed", "killed"]:
-                job_logs = await job.async_get_job_logs(_job.dir, last_n_lines=20)
-                if job_logs:
-                    MAX_FIELD_LENGTH = 1024
-                    log_field = f"```\n{job_logs}\n```"
-                    if len(log_field) > MAX_FIELD_LENGTH:
-                        allowed_length = MAX_FIELD_LENGTH - len("```\n...\n```")
-                        truncated_logs = job_logs[:allowed_length] + "..."
-                        log_field = f"```\n{truncated_logs}\n```"
-                    message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": log_field})
+            if action in ["completed", "failed", "killed"] and _job.dir:
+                if action in ["failed", "killed"]:
+                    job_logs = await job.async_get_job_logs(_job.dir, last_n_lines=20)
+                    if job_logs:
+                        MAX_FIELD_LENGTH = 1024
+                        log_field = f"```\n{job_logs}\n```"
+                        if len(log_field) > MAX_FIELD_LENGTH:
+                            allowed_length = MAX_FIELD_LENGTH - len("```\n...\n```")
+                            truncated_logs = job_logs[:allowed_length] + "..."
+                            log_field = f"```\n{truncated_logs}\n```"
+                        message_data["embeds"][0]["fields"].append({"name": "Last few log lines", "value": log_field})
 
-            logs_url = await _upload_logs_to_nullpointer(_job)
-            if logs_url:
-                logger.info(f"Adding logs URL to Discord message: {logs_url}")
-                message_data["embeds"][0]["fields"].append(
-                    {"name": "Full logs", "value": f"[View full logs]({logs_url})"}
-                )
+                logs_url = await _upload_logs_to_nullpointer(_job)
+                if logs_url:
+                    logger.info(f"Adding logs URL to Discord message: {logs_url}")
+                    message_data["embeds"][0]["fields"].append(
+                        {"name": "Full logs", "value": f"[View full logs]({logs_url})"}
+                    )
 
-        if action == "started":
-            message_id = await _send_notification(webhook_url, message_data=message_data, wait=True)
-            if message_id:
-                updated_messages = dict(_job.notification_messages)
-                updated_messages["discord_start_job"] = message_id
-                updated_job = dc.replace(updated_job, notification_messages=updated_messages)
-        else:
-            await _send_notification(webhook_url, message_data=message_data)
+            if action == "started":
+                message_id = await _send_notification(webhook_url, message_data=message_data, wait=True)
+                if message_id:
+                    updated_messages = dict(_job.notification_messages)
+                    updated_messages["discord_start_job"] = message_id
+                    updated_job = dc.replace(updated_job, notification_messages=updated_messages)
+            else:
+                await _send_notification(webhook_url, message_data=message_data)
 
-    if "phone" in _job.notifications:
-        await _send_phone_notification(_job, action)
+        if "phone" in _job.notifications:
+            await _send_phone_notification(_job, action)
+
+    except Exception as e:
+        logger.error(f"Failed to send notification for job {_job.id}: {e}")
 
     return updated_job
 
