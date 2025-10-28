@@ -84,9 +84,9 @@ def test_mixed_changes_restored(git_repo: Path):
     restore_working_state(orig, temp, created)
 
     after_status = status(git_repo)
-    assert "initial.txt" in after_status and "new.txt" in after_status, (
-        f"Before: {before_status}\nAfter: {after_status}"
-    )
+    assert (
+        "initial.txt" in after_status and "new.txt" in after_status
+    ), f"Before: {before_status}\nAfter: {after_status}"
     assert stash_count(git_repo) == before_count
 
 
