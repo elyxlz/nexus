@@ -161,7 +161,15 @@ def prepare_git_artifact(enable_git_tag_push: bool, target_name: str | None = No
                 print(colored(f"Pushed git tag: {tag_name}", "green"))
                 git_tag = tag_name
             except RuntimeError as e:
-                print(colored(f"Warning: Failed to push git tag {tag_name}: {e}", "yellow"))
+                print()
+                print(colored(f"ERROR: Failed to push git tag {tag_name}", "red", attrs=["bold"]))
+                print(colored(f"       {e}", "red"))
+                print(colored("       Common fixes:", "red"))
+                print(colored("       • Check git authentication (SSH keys or credentials)", "red"))
+                print(colored("       • Verify network connectivity to remote", "red"))
+                print(colored("       • Ensure you have push permissions to the repository", "red"))
+                print(colored("       Job will continue without git tag.", "red"))
+                print()
 
         if temp_branch and original_branch:
             restore_working_state(original_branch, temp_branch, we_created_stash)
@@ -267,9 +275,15 @@ def ensure_git_tag(tag_name: str, message: str | None = None, commit_ref: str = 
 
 def push_git_tag(tag_name: str, remote: str = "origin") -> None:
     try:
-        subprocess.run(["git", "push", remote, tag_name], check=True)
+        subprocess.run(
+            ["git", "push", remote, tag_name],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to push git tag {tag_name} to {remote}: {e}")
+        error_details = e.stderr.strip() if e.stderr else str(e)
+        raise RuntimeError(f"Failed to push git tag {tag_name} to {remote}: {error_details}")
 
 
 # Time Utilities
