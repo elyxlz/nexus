@@ -66,9 +66,17 @@ async def list_jobs_endpoint(
     return paginated_jobs
 
 
+@router.get("/v1/artifacts/by-sha/{git_sha}", response_model=models.ArtifactCheckResponse)
+async def check_artifact_by_sha(git_sha: str, ctx: context.NexusServerContext = fa.Depends(_get_context)):
+    artifact_id = db.get_artifact_id_by_git_sha(ctx.db, git_sha)
+    return models.ArtifactCheckResponse(exists=artifact_id is not None, artifact_id=artifact_id)
+
+
 @db.safe_transaction
 @router.post("/v1/artifacts", response_model=models.ArtifactUploadResponse, status_code=201)
-async def upload_artifact(request: fa.Request, ctx: context.NexusServerContext = fa.Depends(_get_context)):
+async def upload_artifact(
+    request: fa.Request, git_sha: str | None = None, ctx: context.NexusServerContext = fa.Depends(_get_context)
+):
     raw = await request.body()
     if not raw:
         raise exc.InvalidRequestError("Empty artifact upload")
@@ -79,7 +87,7 @@ async def upload_artifact(request: fa.Request, ctx: context.NexusServerContext =
         raise exc.InvalidRequestError(f"Artifact exceeds maximum size of {max_size_mb} MB")
 
     artifact_id = base58.b58encode(os.urandom(6)).decode()
-    db.add_artifact(ctx.db, artifact_id, raw)
+    db.add_artifact(ctx.db, artifact_id, raw, git_sha)
     return models.ArtifactUploadResponse(data=artifact_id)
 
 
