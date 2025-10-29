@@ -17,6 +17,7 @@ __all__ = [
     "ServerStatusResponse",
     "HealthResponse",
     "ArtifactUploadResponse",
+    "ArtifactCheckResponse",
 ]
 
 REQUIRED_ENV_VARS = {
@@ -42,6 +43,11 @@ JobLogsResponse = SingleFieldResponse[str]
 ServerLogsResponse = SingleFieldResponse[str]
 ServerActionResponse = SingleFieldResponse[str]
 ArtifactUploadResponse = SingleFieldResponse[str]
+
+
+class ArtifactCheckResponse(FrozenBaseModel):
+    exists: bool
+    artifact_id: str | None = None
 
 
 def _check_required_vars(kinds: tp.Sequence[str], env: dict[str, str], for_type: str = "") -> None:

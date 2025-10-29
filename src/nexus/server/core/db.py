@@ -23,6 +23,7 @@ __all__ = [
     "list_blacklisted_gpus",
     "add_artifact",
     "get_artifact",
+    "get_artifact_id_by_git_sha",
     "is_artifact_in_use",
     "delete_artifact",
     "safe_transaction",
@@ -74,7 +75,8 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             id TEXT PRIMARY KEY,
             size INTEGER NOT NULL,
             created_at REAL NOT NULL,
-            data BLOB NOT NULL
+            data BLOB NOT NULL,
+            git_sha TEXT
         )
     """)
 
@@ -82,6 +84,13 @@ def _create_tables(conn: sqlite3.Connection) -> None:
     columns = [col[1] for col in cur.fetchall()]
     if "git_tag" not in columns:
         cur.execute("ALTER TABLE jobs ADD COLUMN git_tag TEXT")
+
+    cur.execute("PRAGMA table_info(artifacts)")
+    artifact_columns = [col[1] for col in cur.fetchall()]
+    if "git_sha" not in artifact_columns:
+        cur.execute("ALTER TABLE artifacts ADD COLUMN git_sha TEXT")
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_git_sha ON artifacts(git_sha)")
 
     conn.commit()
 
@@ -418,11 +427,11 @@ def safe_transaction(func: tp.Callable[..., tp.Any]) -> tp.Callable[..., tp.Any]
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add artifact")
-def add_artifact(conn: sqlite3.Connection, artifact_id: str, data: bytes) -> None:
+def add_artifact(conn: sqlite3.Connection, artifact_id: str, data: bytes, git_sha: str | None = None) -> None:
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO artifacts (id, size, created_at, data) VALUES (?, ?, ?, ?)",
-        (artifact_id, len(data), time.time(), data),
+        "INSERT INTO artifacts (id, size, created_at, data, git_sha) VALUES (?, ?, ?, ?, ?)",
+        (artifact_id, len(data), time.time(), data, git_sha),
     )
     conn.commit()
 
@@ -435,6 +444,14 @@ def get_artifact(conn: sqlite3.Connection, artifact_id: str) -> bytes:
     if not row:
         raise exc.JobError(message=f"Artifact not found: {artifact_id}")
     return row["data"]
+
+
+@exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to query artifact by git SHA")
+def get_artifact_id_by_git_sha(conn: sqlite3.Connection, git_sha: str) -> str | None:
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM artifacts WHERE git_sha = ?", (git_sha,))
+    row = cur.fetchone()
+    return row["id"] if row else None
 
 
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to check for artifact usage")

@@ -169,10 +169,27 @@ def check_heartbeat(target_name: str | None = None) -> bool:
 
 
 @handle_api_errors
-def upload_artifact(data: bytes, target_name: str | None = None) -> str:
+def check_artifact_by_sha(git_sha: str, target_name: str | None = None) -> tuple[bool, str | None]:
+    response = requests.get(
+        f"{get_api_base_url(target_name)}/artifacts/by-sha/{git_sha}",
+        headers=_get_headers(target_name),
+        verify=False,
+    )
+    response.raise_for_status()
+    result = response.json()
+    return result["exists"], result.get("artifact_id")
+
+
+@handle_api_errors
+def upload_artifact(data: bytes, git_sha: str | None = None, target_name: str | None = None) -> str:
     headers = _get_headers(target_name)
     headers["Content-Type"] = "application/octet-stream"
-    response = requests.post(f"{get_api_base_url(target_name)}/artifacts", data=data, headers=headers, verify=False)
+    params = {}
+    if git_sha:
+        params["git_sha"] = git_sha
+    response = requests.post(
+        f"{get_api_base_url(target_name)}/artifacts", data=data, params=params, headers=headers, verify=False
+    )
     response.raise_for_status()
     result = response.json()
     if "data" not in result:

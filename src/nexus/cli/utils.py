@@ -140,36 +140,52 @@ def prepare_git_artifact(enable_git_tag_push: bool, target_name: str | None = No
 
     if is_working_tree_dirty():
         original_branch, temp_branch, commit_sha, we_created_stash = save_working_state()
+    else:
+        result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
+        commit_sha = result.stdout.strip()
 
     result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
     git_repo_url = result.stdout.strip() or "unknown-url"
 
     try:
-        print(colored("Creating git archive...", "blue"))
-        artifact_data = create_git_archive(temp_branch or "HEAD")
-
+        artifact_id = None
         git_tag = None
-        if enable_git_tag_push and can_push_to_remote("origin"):
-            tag_name = f"nexus-{job_id}"
-            if commit_sha:
-                ensure_git_tag(tag_name, message=f"Nexus job {job_id}", commit_ref=commit_sha)
-            else:
-                ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
+        if commit_sha:
+            print(colored(f"Checking for existing artifact (commit: {commit_sha[:8]})...", "blue"))
+            exists, existing_artifact_id = api_client.check_artifact_by_sha(commit_sha, target_name=target_name)
+            if exists and existing_artifact_id:
+                print(colored(f"Reusing existing artifact {existing_artifact_id}", "green"))
+                artifact_id = existing_artifact_id
 
-            try:
-                push_git_tag(tag_name, remote="origin")
-                print(colored(f"Pushed git tag: {tag_name}", "green"))
-                git_tag = tag_name
-            except RuntimeError as e:
-                print()
-                print(colored(f"ERROR: Failed to push git tag {tag_name}", "red", attrs=["bold"]))
-                print(colored(f"       {e}", "red"))
-                print(colored("       Common fixes:", "red"))
-                print(colored("       • Check git authentication (SSH keys or credentials)", "red"))
-                print(colored("       • Verify network connectivity to remote", "red"))
-                print(colored("       • Ensure you have push permissions to the repository", "red"))
-                print(colored("       Job will continue without git tag.", "red"))
-                print()
+        if artifact_id is None:
+            print(colored("Creating git archive...", "blue"))
+            artifact_data = create_git_archive(temp_branch or "HEAD")
+
+            if enable_git_tag_push and can_push_to_remote("origin"):
+                tag_name = f"nexus-{job_id}"
+                if commit_sha:
+                    ensure_git_tag(tag_name, message=f"Nexus job {job_id}", commit_ref=commit_sha)
+                else:
+                    ensure_git_tag(tag_name, message=f"Nexus job {job_id}")
+
+                try:
+                    push_git_tag(tag_name, remote="origin")
+                    print(colored(f"Pushed git tag: {tag_name}", "green"))
+                    git_tag = tag_name
+                except RuntimeError as e:
+                    print()
+                    print(colored(f"ERROR: Failed to push git tag {tag_name}", "red", attrs=["bold"]))
+                    print(colored(f"       {e}", "red"))
+                    print(colored("       Common fixes:", "red"))
+                    print(colored("       • Check git authentication (SSH keys or credentials)", "red"))
+                    print(colored("       • Verify network connectivity to remote", "red"))
+                    print(colored("       • Ensure you have push permissions to the repository", "red"))
+                    print(colored("       Job will continue without git tag.", "red"))
+                    print()
+
+            print(colored("Uploading git archive...", "blue"))
+            artifact_id = api_client.upload_artifact(artifact_data, git_sha=commit_sha, target_name=target_name)
+            print(colored(f"Artifact uploaded with ID: {artifact_id}", "green"))
 
         if temp_branch and original_branch:
             restore_working_state(original_branch, temp_branch, we_created_stash)
@@ -178,10 +194,6 @@ def prepare_git_artifact(enable_git_tag_push: bool, target_name: str | None = No
         else:
             temp_branch_saved = temp_branch
             original_branch_saved = original_branch
-
-        print(colored("Uploading git archive...", "blue"))
-        artifact_id = api_client.upload_artifact(artifact_data, target_name=target_name)
-        print(colored(f"Artifact uploaded with ID: {artifact_id}", "green"))
 
         return GitArtifactContext(
             job_id=job_id,
