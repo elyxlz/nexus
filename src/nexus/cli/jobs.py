@@ -33,10 +33,6 @@ def run_job(
         elif num_gpus:
             gpu_info = f" using {colored(str(num_gpus), 'cyan')} GPU(s)"
 
-        health = api_client.get_detailed_health(refresh=False, target_name=target_name)
-        if health.get("status") == "unhealthy":
-            utils.print_health_warning()
-
         if interactive:
             command = "bash"  # Use bash for interactive mode
             print(f"\n{colored('Starting interactive session:', 'blue', attrs=['bold'])}")
@@ -198,10 +194,6 @@ def add_jobs(
         expanded_commands = utils.expand_job_commands(commands_list, repeat=repeat)
         if not expanded_commands:
             return
-
-        health = api_client.get_detailed_health(refresh=False, target_name=target_name)
-        if health.get("status") == "unhealthy":
-            utils.print_health_warning()
 
         print(f"\n{colored('Adding the following jobs:', 'blue', attrs=['bold'])}")
         for cmd in expanded_commands:
