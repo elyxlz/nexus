@@ -103,7 +103,7 @@ def save_working_state() -> tuple[str, str, str, bool]:
             subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
             subprocess.run(["git", "commit", "-m", "Nexus temporary commit"], check=True, capture_output=True)
 
-        commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
 
         return (original_branch, temp_branch, commit_sha, is_dirty)
     except subprocess.CalledProcessError as e:
@@ -141,7 +141,7 @@ def prepare_git_artifact(enable_git_tag_push: bool, target_name: str | None = No
     if is_working_tree_dirty():
         original_branch, temp_branch, commit_sha, we_created_stash = save_working_state()
     else:
-        result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
+        result = subprocess.run(["git", "rev-parse", "HEAD^{tree}"], capture_output=True, text=True, check=True)
         commit_sha = result.stdout.strip()
 
     result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
@@ -151,7 +151,7 @@ def prepare_git_artifact(enable_git_tag_push: bool, target_name: str | None = No
         artifact_id = None
         git_tag = None
         if commit_sha:
-            print(colored(f"Checking for existing artifact (commit: {commit_sha[:8]})...", "blue"))
+            print(colored(f"Checking for existing artifact (tree: {commit_sha[:8]})...", "blue"))
             exists, existing_artifact_id = api_client.check_artifact_by_sha(commit_sha, target_name=target_name)
             if exists and existing_artifact_id:
                 print(colored(f"Reusing existing artifact {existing_artifact_id}", "green"))
