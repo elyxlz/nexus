@@ -1063,16 +1063,20 @@ def print_status(target_name: str | None = None) -> None:
         external_gpus = [str(g["index"]) for g in gpus if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) > 0]
         blacklisted_gpus_list = [str(g["index"]) for g in gpus if g.get("is_blacklisted")]
 
-        print(colored("GPUs:", "white", attrs=["bold"]))
+        gpu_status_parts = []
         if available_gpus_list:
-            print(f"  Available: {colored('[' + ', '.join(available_gpus_list) + ']', 'green')}")
+            gpu_status_parts.append(f"Available: {colored('[' + ', '.join(available_gpus_list) + ']', 'green')}")
         if in_use_gpus:
-            print(f"  In Use: {colored('[' + ', '.join(in_use_gpus) + ']', 'cyan')}")
+            gpu_status_parts.append(f"In Use: {colored('[' + ', '.join(in_use_gpus) + ']', 'cyan')}")
         if external_gpus:
-            print(f"  External Process: {colored('[' + ', '.join(external_gpus) + ']', 'yellow')}")
+            gpu_status_parts.append(f"External: {colored('[' + ', '.join(external_gpus) + ']', 'yellow')}")
         if blacklisted_gpus_list:
-            print(f"  Blacklisted: {colored('[' + ', '.join(blacklisted_gpus_list) + ']', 'red')}")
-        print()
+            gpu_status_parts.append(f"Blacklisted: {colored('[' + ', '.join(blacklisted_gpus_list) + ']', 'red')}")
+
+        if gpu_status_parts:
+            print(f"{colored('GPUs:', 'white', attrs=['bold'])} {' | '.join(gpu_status_parts)}\n")
+        else:
+            print(f"{colored('GPUs:', 'white', attrs=['bold'])} {colored('None', 'yellow')}\n")
 
         if running_jobs:
             print(colored(f"Running Jobs ({len(running_jobs)}):", "white", attrs=["bold"]))
@@ -1108,7 +1112,7 @@ def print_status(target_name: str | None = None) -> None:
             print()
 
         if queued_jobs:
-            preview_count = min(5, len(queued_jobs))
+            preview_count = min(3, len(queued_jobs))
             print(
                 colored(
                     f"Queue ({len(queued_jobs)} job{'s' if len(queued_jobs) != 1 else ''} waiting):",
