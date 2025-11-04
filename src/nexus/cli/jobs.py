@@ -22,12 +22,17 @@ def run_job(
     silent: bool = False,
     local: bool = False,
     target_name: str | None = None,
+    cpu: bool = False,
 ) -> None:
     try:
         gpu_idxs = None
         gpu_info = ""
 
-        if gpu_idxs_str:
+        if cpu:
+            num_gpus = 0
+            gpu_idxs = None
+            gpu_info = f" on {colored('CPU', 'cyan')}"
+        elif gpu_idxs_str:
             gpu_idxs = utils.parse_gpu_list(gpu_idxs_str)
             gpu_info = f" on GPU(s): {colored(','.join(map(str, gpu_idxs)), 'cyan')}"
         elif num_gpus:
@@ -176,6 +181,7 @@ def add_jobs(
     silent: bool = False,
     local: bool = False,
     target_name: str | None = None,
+    cpu: bool = False,
 ) -> None:
     try:
         if not commands:
@@ -188,7 +194,10 @@ def add_jobs(
         commands_list = [command_str]
 
         gpu_idxs = None
-        if gpu_idxs_str:
+        if cpu:
+            num_gpus = 0
+            gpu_idxs = None
+        elif gpu_idxs_str:
             gpu_idxs = utils.parse_gpu_list(gpu_idxs_str)
 
         expanded_commands = utils.expand_job_commands(commands_list, repeat=repeat)
@@ -198,7 +207,9 @@ def add_jobs(
         print(f"\n{colored('Adding the following jobs:', 'blue', attrs=['bold'])}")
         for cmd in expanded_commands:
             priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
-            if gpu_idxs:
+            if cpu:
+                gpus_str = f" (CPU)"
+            elif gpu_idxs:
                 gpus_str = f" (GPUs: {colored(','.join(map(str, gpu_idxs)), 'cyan')})"
             elif num_gpus > 1:
                 gpus_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})"

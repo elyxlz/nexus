@@ -70,24 +70,28 @@ async def _for_queued_jobs(ctx: context.NexusServerContext):
         return
 
     _job = ordered_jobs[0]
-    running_jobs = db.list_jobs(conn=ctx.db, status="running")
-    blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
-    all_gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
 
-    available = [
-        g for g in all_gpus if gpu.is_gpu_available(g, ignore_blacklist=_job.ignore_blacklist, required=_job.gpu_idxs)
-    ]
-
-    if not available:
-        return
-
-    avail_idxs = [g.index for g in available]
-    if _job.gpu_idxs and all(idx in avail_idxs for idx in _job.gpu_idxs):
-        gpu_idxs = _job.gpu_idxs
-    elif not _job.gpu_idxs and _job.num_gpus <= len(avail_idxs):
-        gpu_idxs = avail_idxs[: _job.num_gpus]
+    if _job.num_gpus == 0:
+        gpu_idxs = []
     else:
-        return
+        running_jobs = db.list_jobs(conn=ctx.db, status="running")
+        blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
+        all_gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
+
+        available = [
+            g for g in all_gpus if gpu.is_gpu_available(g, ignore_blacklist=_job.ignore_blacklist, required=_job.gpu_idxs)
+        ]
+
+        if not available:
+            return
+
+        avail_idxs = [g.index for g in available]
+        if _job.gpu_idxs and all(idx in avail_idxs for idx in _job.gpu_idxs):
+            gpu_idxs = _job.gpu_idxs
+        elif not _job.gpu_idxs and _job.num_gpus <= len(avail_idxs):
+            gpu_idxs = avail_idxs[: _job.num_gpus]
+        else:
+            return
 
     try:
         started = await job.async_start_job(job=_job, gpu_idxs=gpu_idxs, ctx=ctx)

@@ -139,7 +139,10 @@ def _create_job_script(
 @exc.handle_exception(Exception, exc.JobError, message="Failed to build job.env")
 def _build_environment(gpu_idxs: list[int], job_env: dict[str, str]) -> dict[str, str]:
     env = os.environ.copy()
-    env["CUDA_VISIBLE_DEVICES"] = ",".join([str(i) for i in gpu_idxs])
+    if gpu_idxs:
+        env["CUDA_VISIBLE_DEVICES"] = ",".join([str(i) for i in gpu_idxs])
+    else:
+        env["CUDA_VISIBLE_DEVICES"] = ""
     env.update(job_env)
     return env
 
