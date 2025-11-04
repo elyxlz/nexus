@@ -1112,7 +1112,7 @@ def print_status(target_name: str | None = None) -> None:
         external_gpus = [str(g["index"]) for g in gpus if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) > 0]
         blacklisted_gpus_list = [str(g["index"]) for g in gpus if g.get("is_blacklisted")]
 
-        print(colored("GPU Resources:", "white", attrs=["bold"]))
+        print(colored("GPUs:", "white", attrs=["bold"]))
         if available_gpus_list:
             print(f"  Available: {colored('[' + ', '.join(available_gpus_list) + ']', 'green')}")
         if in_use_gpus:
