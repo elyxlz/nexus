@@ -2,6 +2,7 @@ import os
 import pathlib as pl
 import typing as tp
 
+from dotenv import dotenv_values
 from termcolor import colored
 
 from nexus.cli import config, utils
@@ -39,6 +40,31 @@ def load_current_env() -> dict[str, str]:
     global_env_path = get_env_path()
     env_vars = read_env_file(global_env_path)
     return env_vars
+
+
+def load_local_env(local_path: pl.Path | None = None) -> dict[str, str]:
+    if local_path is None:
+        local_path = pl.Path.cwd() / ".env"
+
+    if not local_path.exists():
+        return {}
+
+    env_dict = dotenv_values(local_path)
+    return {k: v for k, v in env_dict.items() if v is not None}
+
+
+def merge_env_with_conflicts(
+    global_env: dict[str, str], local_env: dict[str, str]
+) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
+    conflicts: dict[str, tuple[str, str]] = {}
+    merged = global_env.copy()
+
+    for key, local_value in local_env.items():
+        if key in global_env and global_env[key] != local_value:
+            conflicts[key] = (global_env[key], local_value)
+        merged[key] = local_value
+
+    return merged, conflicts
 
 
 def save_env_vars(env_vars: dict[str, str]) -> None:
