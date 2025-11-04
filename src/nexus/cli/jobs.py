@@ -1054,45 +1054,83 @@ def print_status(target_name: str | None = None) -> None:
         running = status.get("running_jobs", 0)
         completed = status.get("completed_jobs", 0)
 
-        print(f"Node: {colored(node_name, 'cyan')}")
-        print(f"Queue: {queued} jobs pending")
-        print(f"Running: {running} jobs in progress")
-        print(f"History: {colored(str(completed), 'blue')} jobs completed\n")
-
         gpus = api_client.get_gpus(target_name=target_name)
+        running_jobs = api_client.get_jobs(status="running", target_name=target_name)
+        queued_jobs = api_client.get_jobs(status="queued", target_name=target_name)
 
-        print(colored("GPUs:", "white"))
-        for gpu in gpus:
-            memory_used = gpu.get("memory_used", 0)
-            gpu_info = f"GPU {gpu['index']} ({gpu['name']}): [{memory_used}/{gpu['memory_total']}MB] "
+        available_gpus = sum(1 for g in gpus if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) == 0)
+        blacklisted_gpus = sum(1 for g in gpus if g.get("is_blacklisted"))
 
-            if gpu.get("is_blacklisted"):
-                gpu_info += colored("[BLACKLISTED] ", "red", attrs=["bold"])
+        resource_info = []
+        if available_gpus > 0:
+            resource_info.append(colored(f"{available_gpus} GPU{'s' if available_gpus != 1 else ''} Available", "green"))
+        if blacklisted_gpus > 0:
+            resource_info.append(colored(f"{blacklisted_gpus} Blacklisted", "red"))
+        resource_str = " | ".join(resource_info) if resource_info else colored("All GPUs in use", "yellow")
 
-            if gpu.get("running_job_id"):
-                job_id = gpu["running_job_id"]
+        print(f"Node: {colored(node_name, 'cyan')} | {resource_str}\n")
 
-                job = api_client.get_job(job_id, target_name=target_name)
-
+        if running_jobs:
+            print(colored(f"Running Jobs ({len(running_jobs)}):", "white", attrs=["bold"]))
+            for job in sorted(running_jobs, key=lambda j: j.get("started_at", 0)):
                 runtime = utils.calculate_runtime(job)
                 runtime_str = utils.format_runtime(runtime)
                 start_time = utils.format_timestamp(job.get("started_at"))
 
-                job_gpu_count = job.get("num_gpus", 1)
-                gpu_count_str = f" ({job_gpu_count} GPUs)" if job_gpu_count > 1 else ""
+                if job.get("num_gpus", 0) == 0:
+                    resource_str = colored("CPU", "cyan")
+                else:
+                    gpu_idxs = job.get("gpu_idxs", [])
+                    if gpu_idxs:
+                        gpu_list = ",".join(map(str, gpu_idxs))
+                        resource_str = colored(f"GPU{'s' if len(gpu_idxs) > 1 else ''}: {gpu_list}", "cyan")
+                    else:
+                        resource_str = colored(f"{job.get('num_gpus')} GPU{'s' if job.get('num_gpus', 0) > 1 else ''}", "cyan")
 
-                print(f"{gpu_info}{colored(job_id, 'magenta')}{gpu_count_str}")
-                print(f"  Command: {colored(job.get('command', ''), 'white', attrs=['bold'])}")
-                print(f"  Time: {colored(runtime_str, 'cyan')} (Started: {colored(start_time, 'cyan')})")
+                print(f"  {colored('•', 'white')} {colored(job['id'], 'magenta')} ({resource_str}) - {colored(runtime_str, 'cyan')}")
+                print(f"    {colored(job.get('command', ''), 'white', attrs=['bold'])}")
+                print(f"    Started: {colored(start_time, 'cyan')}", end="")
                 if job.get("wandb_url"):
-                    print(f"  W&B: {colored(job['wandb_url'], 'yellow')}")
+                    print(f" | W&B: {colored(job['wandb_url'], 'yellow')}", end="")
+                print()
+            print()
 
-            elif gpu.get("is_blacklisted", False):
-                print(f"{gpu_info}{colored('Blacklisted', 'red', attrs=['bold'])}")
+        print(colored("GPU Resources:", "white", attrs=["bold"]))
+        for gpu in gpus:
+            memory_used = gpu.get("memory_used", 0)
+            memory_total = gpu.get("memory_total", 0)
+            gpu_base = f"  GPU {gpu['index']} ({gpu['name']}) [{memory_used}/{memory_total}MB]"
+
+            if gpu.get("is_blacklisted"):
+                print(f"{gpu_base}: {colored('[BLACKLISTED]', 'red', attrs=['bold'])}")
+            elif gpu.get("running_job_id"):
+                job_id = gpu["running_job_id"]
+                print(f"{gpu_base}: Job {colored(job_id, 'magenta')}")
             elif gpu.get("process_count", 0) > 0:
-                print(f"{gpu_info}{colored('In Use (External Process)', 'yellow', attrs=['bold'])}")
+                print(f"{gpu_base}: {colored('External Process', 'yellow', attrs=['bold'])}")
             else:
-                print(f"{gpu_info}{colored('Available', 'green', attrs=['bold'])}")
+                print(f"{gpu_base}: {colored('Available', 'green', attrs=['bold'])}")
+        print()
+
+        if queued_jobs:
+            preview_count = min(5, len(queued_jobs))
+            print(colored(f"Queue ({len(queued_jobs)} job{'s' if len(queued_jobs) != 1 else ''} waiting):", "white", attrs=["bold"]))
+            for idx, job in enumerate(sorted(queued_jobs, key=lambda j: (-j.get("priority", 0), j.get("created_at", 0)))[:preview_count], 1):
+                if job.get("num_gpus", 0) == 0:
+                    resource_str = "CPU"
+                else:
+                    gpu_count = job.get("num_gpus", 1)
+                    resource_str = f"{gpu_count} GPU{'s' if gpu_count > 1 else ''}"
+
+                priority = job.get("priority", 0)
+                command = job.get("command", "")
+                if len(command) > 60:
+                    command = command[:57] + "..."
+
+                print(f"  {idx}. {colored(job['id'], 'magenta')} ({resource_str}, Priority: {priority}) - {command}")
+            print()
+
+        print(f"History: {colored(str(completed), 'blue')} job{'s' if completed != 1 else ''} completed")
 
     except Exception as e:
         print(colored(f"Error: {e}", "red"))
