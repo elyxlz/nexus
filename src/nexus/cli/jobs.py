@@ -1061,6 +1061,23 @@ def print_status(target_name: str | None = None) -> None:
 
         gpus = api_client.get_gpus(target_name=target_name)
 
+        running_jobs = api_client.get_jobs(status="running", target_name=target_name)
+        cpu_jobs = [job for job in running_jobs if job.get("num_gpus") == 0]
+
+        if cpu_jobs:
+            print(colored("CPU Jobs:", "white"))
+            for job in cpu_jobs:
+                runtime = utils.calculate_runtime(job)
+                runtime_str = utils.format_runtime(runtime)
+                start_time = utils.format_timestamp(job.get("started_at"))
+
+                print(f"CPU: {colored(job['id'], 'magenta')}")
+                print(f"  Command: {colored(job.get('command', ''), 'white', attrs=['bold'])}")
+                print(f"  Time: {colored(runtime_str, 'cyan')} (Started: {colored(start_time, 'cyan')})")
+                if job.get("wandb_url"):
+                    print(f"  W&B: {colored(job['wandb_url'], 'yellow')}")
+            print()
+
         print(colored("GPUs:", "white"))
         for gpu in gpus:
             memory_used = gpu.get("memory_used", 0)
