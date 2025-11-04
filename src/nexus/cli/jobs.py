@@ -1056,23 +1056,23 @@ def print_status(target_name: str | None = None) -> None:
         running_jobs = api_client.get_jobs(status="running", target_name=target_name)
         queued_jobs = api_client.get_jobs(status="queued", target_name=target_name)
 
-        available_gpus = sum(
-            1
-            for g in gpus
-            if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) == 0
-        )
-        blacklisted_gpus = sum(1 for g in gpus if g.get("is_blacklisted"))
+        print(f"Node: {colored(node_name, 'cyan')}\n")
 
-        resource_info = []
-        if available_gpus > 0:
-            resource_info.append(
-                colored(f"{available_gpus} GPU{'s' if available_gpus != 1 else ''} Available", "green")
-            )
-        if blacklisted_gpus > 0:
-            resource_info.append(colored(f"{blacklisted_gpus} Blacklisted", "red"))
-        resource_str = " | ".join(resource_info) if resource_info else colored("All GPUs in use", "yellow")
+        available_gpus_list = [str(g["index"]) for g in gpus if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) == 0]
+        in_use_gpus = [str(g["index"]) for g in gpus if g.get("running_job_id")]
+        external_gpus = [str(g["index"]) for g in gpus if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) > 0]
+        blacklisted_gpus_list = [str(g["index"]) for g in gpus if g.get("is_blacklisted")]
 
-        print(f"Node: {colored(node_name, 'cyan')} | {resource_str}\n")
+        print(colored("GPUs:", "white", attrs=["bold"]))
+        if available_gpus_list:
+            print(f"  Available: {colored('[' + ', '.join(available_gpus_list) + ']', 'green')}")
+        if in_use_gpus:
+            print(f"  In Use: {colored('[' + ', '.join(in_use_gpus) + ']', 'cyan')}")
+        if external_gpus:
+            print(f"  External Process: {colored('[' + ', '.join(external_gpus) + ']', 'yellow')}")
+        if blacklisted_gpus_list:
+            print(f"  Blacklisted: {colored('[' + ', '.join(blacklisted_gpus_list) + ']', 'red')}")
+        print()
 
         if running_jobs:
             print(colored(f"Running Jobs ({len(running_jobs)}):", "white", attrs=["bold"]))
@@ -1101,27 +1101,11 @@ def print_status(target_name: str | None = None) -> None:
                     f"  {colored('•', 'white')} {colored(job['id'], 'magenta')} ({resource_str}) - {colored(runtime_str, 'cyan')}"
                 )
                 print(f"    {colored(command, 'white', attrs=['bold'])}")
-                print(f"    Started: {colored(start_time, 'cyan')}", end="")
                 if job.get("wandb_url"):
-                    print(f" | W&B: {colored(job['wandb_url'], 'yellow')}", end="")
-                print()
+                    print(f"    W&B: {colored(job['wandb_url'], 'yellow')}")
+                else:
+                    print()
             print()
-
-        available_gpus_list = [str(g["index"]) for g in gpus if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) == 0]
-        in_use_gpus = [str(g["index"]) for g in gpus if g.get("running_job_id")]
-        external_gpus = [str(g["index"]) for g in gpus if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) > 0]
-        blacklisted_gpus_list = [str(g["index"]) for g in gpus if g.get("is_blacklisted")]
-
-        print(colored("GPUs:", "white", attrs=["bold"]))
-        if available_gpus_list:
-            print(f"  Available: {colored('[' + ', '.join(available_gpus_list) + ']', 'green')}")
-        if in_use_gpus:
-            print(f"  In Use: {colored('[' + ', '.join(in_use_gpus) + ']', 'cyan')}")
-        if external_gpus:
-            print(f"  External Process: {colored('[' + ', '.join(external_gpus) + ']', 'yellow')}")
-        if blacklisted_gpus_list:
-            print(f"  Blacklisted: {colored('[' + ', '.join(blacklisted_gpus_list) + ']', 'red')}")
-        print()
 
         if queued_jobs:
             preview_count = min(5, len(queued_jobs))
