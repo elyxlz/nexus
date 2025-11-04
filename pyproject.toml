@@ -1,6 +1,6 @@
 [project]
 name = "nexusai"
-version = "0.5.13b4"
+version = "0.5.13b7"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.9"
