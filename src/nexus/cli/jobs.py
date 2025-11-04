@@ -1107,21 +1107,20 @@ def print_status(target_name: str | None = None) -> None:
                 print()
             print()
 
-        print(colored("GPU Resources:", "white", attrs=["bold"]))
-        for gpu in gpus:
-            memory_used = gpu.get("memory_used", 0)
-            memory_total = gpu.get("memory_total", 0)
-            gpu_base = f"  GPU {gpu['index']} ({gpu['name']}) [{memory_used}/{memory_total}MB]"
+        available_gpus_list = [str(g["index"]) for g in gpus if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) == 0]
+        in_use_gpus = [str(g["index"]) for g in gpus if g.get("running_job_id")]
+        external_gpus = [str(g["index"]) for g in gpus if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) > 0]
+        blacklisted_gpus_list = [str(g["index"]) for g in gpus if g.get("is_blacklisted")]
 
-            if gpu.get("is_blacklisted"):
-                print(f"{gpu_base}: {colored('[BLACKLISTED]', 'red', attrs=['bold'])}")
-            elif gpu.get("running_job_id"):
-                job_id = gpu["running_job_id"]
-                print(f"{gpu_base}: Job {colored(job_id, 'magenta')}")
-            elif gpu.get("process_count", 0) > 0:
-                print(f"{gpu_base}: {colored('External Process', 'yellow', attrs=['bold'])}")
-            else:
-                print(f"{gpu_base}: {colored('Available', 'green', attrs=['bold'])}")
+        print(colored("GPU Resources:", "white", attrs=["bold"]))
+        if available_gpus_list:
+            print(f"  Available: {colored('[' + ', '.join(available_gpus_list) + ']', 'green')}")
+        if in_use_gpus:
+            print(f"  In Use: {colored('[' + ', '.join(in_use_gpus) + ']', 'cyan')}")
+        if external_gpus:
+            print(f"  External Process: {colored('[' + ', '.join(external_gpus) + ']', 'yellow')}")
+        if blacklisted_gpus_list:
+            print(f"  Blacklisted: {colored('[' + ', '.join(blacklisted_gpus_list) + ']', 'red')}")
         print()
 
         if queued_jobs:
