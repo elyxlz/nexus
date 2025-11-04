@@ -70,14 +70,24 @@ def run_job(
         git_ctx = None
         try:
             git_ctx = utils.prepare_git_artifact(cfg.enable_git_tag_push and not local, target_name=target_name)
-            env_vars = setup.load_current_env()
-            job_env_vars = dict(env_vars)
+            global_env = setup.load_current_env()
+            local_env = setup.load_local_env()
+            job_env_vars, conflicts = setup.merge_env_with_conflicts(global_env, local_env)
+
+            if local_env:
+                print(colored(f"\nLoaded {len(local_env)} variable(s) from local .env file", "cyan"))
+            if conflicts:
+                print(colored(f"\nLocal .env overriding {len(conflicts)} global variable(s):", "yellow"))
+                for key, (global_val, local_val) in conflicts.items():
+                    global_display = global_val[:30] + "..." if len(global_val) > 30 else global_val
+                    local_display = local_val[:30] + "..." if len(local_val) > 30 else local_val
+                    print(f"  {colored('•', 'yellow')} {key}: '{global_display}' -> '{local_display}'")
 
             invalid_notifications = []
 
             for notification_type in notifications:
                 required_vars = config.REQUIRED_ENV_VARS.get(notification_type, [])
-                if any(env_vars.get(var) is None for var in required_vars):
+                if any(job_env_vars.get(var) is None for var in required_vars):
                     invalid_notifications.append(notification_type)
 
             if invalid_notifications:
@@ -228,7 +238,19 @@ def add_jobs(
                 if integration_type not in integrations:
                     integrations.append(integration_type)
 
-        env_vars = setup.load_current_env()
+        global_env = setup.load_current_env()
+        local_env = setup.load_local_env()
+        env_vars, conflicts = setup.merge_env_with_conflicts(global_env, local_env)
+
+        if local_env:
+            print(colored(f"\nLoaded {len(local_env)} variable(s) from local .env file", "cyan"))
+        if conflicts:
+            print(colored(f"\nLocal .env overriding {len(conflicts)} global variable(s):", "yellow"))
+            for key, (global_val, local_val) in conflicts.items():
+                global_display = global_val[:30] + "..." if len(global_val) > 30 else global_val
+                local_display = local_val[:30] + "..." if len(local_val) > 30 else local_val
+                print(f"  {colored('•', 'yellow')} {key}: '{global_display}' -> '{local_display}'")
+
         invalid_notifications = []
 
         for notification_type in notifications:
