@@ -1,11 +1,11 @@
-name: Auto Release
+name: Auto Release and Publish
 
 on:
   push:
     branches: [master]
 
 jobs:
-  create-release:
+  release-and-publish:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -63,3 +63,22 @@ jobs:
             $PRERELEASE_FLAG
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Install uv
+        if: steps.check_release.outputs.exists == 'false'
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python
+        if: steps.check_release.outputs.exists == 'false'
+        run: uv python install 3.12
+
+      - name: Build package
+        if: steps.check_release.outputs.exists == 'false'
+        run: uv build
+
+      - name: Publish to PyPI
+        if: steps.check_release.outputs.exists == 'false'
+        run: uv publish -t ${{ secrets.PYPI_TOKEN }}
