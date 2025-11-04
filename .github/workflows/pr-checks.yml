@@ -31,7 +31,15 @@ jobs:
             exit 1
           fi
 
-          echo "✓ Version bumped from $BASE_VERSION to $PR_VERSION"
+          python3 -c "
+          from packaging.version import Version
+          base = Version('$BASE_VERSION')
+          pr = Version('$PR_VERSION')
+          if pr <= base:
+              print(f'❌ PR version ({pr}) must be greater than base version ({base})')
+              exit(1)
+          print(f'✓ Version bumped from {base} to {pr}')
+          "
 
       - name: Set up uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
