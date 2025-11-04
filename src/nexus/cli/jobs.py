@@ -1058,9 +1058,17 @@ def print_status(target_name: str | None = None) -> None:
 
         print(f"Node: {colored(node_name, 'cyan')}\n")
 
-        available_gpus_list = [str(g["index"]) for g in gpus if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) == 0]
+        available_gpus_list = [
+            str(g["index"])
+            for g in gpus
+            if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) == 0
+        ]
         in_use_gpus = [str(g["index"]) for g in gpus if g.get("running_job_id")]
-        external_gpus = [str(g["index"]) for g in gpus if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) > 0]
+        external_gpus = [
+            str(g["index"])
+            for g in gpus
+            if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) > 0
+        ]
         blacklisted_gpus_list = [str(g["index"]) for g in gpus if g.get("is_blacklisted")]
 
         gpu_status_parts = []
@@ -1083,7 +1091,7 @@ def print_status(target_name: str | None = None) -> None:
             for job in sorted(running_jobs, key=lambda j: j.get("started_at", 0)):
                 runtime = utils.calculate_runtime(job)
                 runtime_str = utils.format_runtime(runtime)
-                start_time = utils.format_timestamp(job.get("started_at"))
+                utils.format_timestamp(job.get("started_at"))
 
                 if job.get("num_gpus", 0) == 0:
                     resource_str = colored("CPU", "cyan")
@@ -1097,7 +1105,7 @@ def print_status(target_name: str | None = None) -> None:
                             f"{job.get('num_gpus')} GPU{'s' if job.get('num_gpus', 0) > 1 else ''}", "cyan"
                         )
 
-                command = job.get('command', '')
+                command = job.get("command", "")
                 if len(command) > 80:
                     command = command[:77] + "..."
 
