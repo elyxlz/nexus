@@ -1073,13 +1073,17 @@ def print_status(target_name: str | None = None) -> None:
 
         gpu_status_parts = []
         if available_gpus_list:
-            gpu_status_parts.append(f"Available: {colored('[' + ', '.join(available_gpus_list) + ']', 'green')}")
+            count = len(available_gpus_list)
+            gpu_status_parts.append(f"{count} available {colored('[' + ', '.join(available_gpus_list) + ']', 'green')}")
         if in_use_gpus:
-            gpu_status_parts.append(f"In Use: {colored('[' + ', '.join(in_use_gpus) + ']', 'cyan')}")
+            count = len(in_use_gpus)
+            gpu_status_parts.append(f"{count} in use {colored('[' + ', '.join(in_use_gpus) + ']', 'cyan')}")
         if external_gpus:
-            gpu_status_parts.append(f"External: {colored('[' + ', '.join(external_gpus) + ']', 'yellow')}")
+            count = len(external_gpus)
+            gpu_status_parts.append(f"{count} external {colored('[' + ', '.join(external_gpus) + ']', 'yellow')}")
         if blacklisted_gpus_list:
-            gpu_status_parts.append(f"Blacklisted: {colored('[' + ', '.join(blacklisted_gpus_list) + ']', 'red')}")
+            count = len(blacklisted_gpus_list)
+            gpu_status_parts.append(f"{count} blacklisted {colored('[' + ', '.join(blacklisted_gpus_list) + ']', 'red')}")
 
         if gpu_status_parts:
             print(f"{colored('GPUs:', 'white', attrs=['bold'])} {' | '.join(gpu_status_parts)}\n")
