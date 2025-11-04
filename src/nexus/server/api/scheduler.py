@@ -75,10 +75,14 @@ async def _for_queued_jobs(ctx: context.NexusServerContext):
         else:
             running_jobs = db.list_jobs(conn=ctx.db, status="running")
             blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
-            all_gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
+            all_gpus = gpu.get_gpus(
+                running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
+            )
 
             available = [
-                g for g in all_gpus if gpu.is_gpu_available(g, ignore_blacklist=_job.ignore_blacklist, required=_job.gpu_idxs)
+                g
+                for g in all_gpus
+                if gpu.is_gpu_available(g, ignore_blacklist=_job.ignore_blacklist, required=_job.gpu_idxs)
             ]
 
             if not available:

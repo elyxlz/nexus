@@ -1056,12 +1056,18 @@ def print_status(target_name: str | None = None) -> None:
         running_jobs = api_client.get_jobs(status="running", target_name=target_name)
         queued_jobs = api_client.get_jobs(status="queued", target_name=target_name)
 
-        available_gpus = sum(1 for g in gpus if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) == 0)
+        available_gpus = sum(
+            1
+            for g in gpus
+            if not g.get("running_job_id") and not g.get("is_blacklisted") and g.get("process_count", 0) == 0
+        )
         blacklisted_gpus = sum(1 for g in gpus if g.get("is_blacklisted"))
 
         resource_info = []
         if available_gpus > 0:
-            resource_info.append(colored(f"{available_gpus} GPU{'s' if available_gpus != 1 else ''} Available", "green"))
+            resource_info.append(
+                colored(f"{available_gpus} GPU{'s' if available_gpus != 1 else ''} Available", "green")
+            )
         if blacklisted_gpus > 0:
             resource_info.append(colored(f"{blacklisted_gpus} Blacklisted", "red"))
         resource_str = " | ".join(resource_info) if resource_info else colored("All GPUs in use", "yellow")
@@ -1083,9 +1089,13 @@ def print_status(target_name: str | None = None) -> None:
                         gpu_list = ",".join(map(str, gpu_idxs))
                         resource_str = colored(f"GPU{'s' if len(gpu_idxs) > 1 else ''}: {gpu_list}", "cyan")
                     else:
-                        resource_str = colored(f"{job.get('num_gpus')} GPU{'s' if job.get('num_gpus', 0) > 1 else ''}", "cyan")
+                        resource_str = colored(
+                            f"{job.get('num_gpus')} GPU{'s' if job.get('num_gpus', 0) > 1 else ''}", "cyan"
+                        )
 
-                print(f"  {colored('•', 'white')} {colored(job['id'], 'magenta')} ({resource_str}) - {colored(runtime_str, 'cyan')}")
+                print(
+                    f"  {colored('•', 'white')} {colored(job['id'], 'magenta')} ({resource_str}) - {colored(runtime_str, 'cyan')}"
+                )
                 print(f"    {colored(job.get('command', ''), 'white', attrs=['bold'])}")
                 print(f"    Started: {colored(start_time, 'cyan')}", end="")
                 if job.get("wandb_url"):
@@ -1112,8 +1122,16 @@ def print_status(target_name: str | None = None) -> None:
 
         if queued_jobs:
             preview_count = min(5, len(queued_jobs))
-            print(colored(f"Queue ({len(queued_jobs)} job{'s' if len(queued_jobs) != 1 else ''} waiting):", "white", attrs=["bold"]))
-            for idx, job in enumerate(sorted(queued_jobs, key=lambda j: (-j.get("priority", 0), j.get("created_at", 0)))[:preview_count], 1):
+            print(
+                colored(
+                    f"Queue ({len(queued_jobs)} job{'s' if len(queued_jobs) != 1 else ''} waiting):",
+                    "white",
+                    attrs=["bold"],
+                )
+            )
+            for idx, job in enumerate(
+                sorted(queued_jobs, key=lambda j: (-j.get("priority", 0), j.get("created_at", 0)))[:preview_count], 1
+            ):
                 if job.get("num_gpus", 0) == 0:
                     resource_str = "CPU"
                 else:
