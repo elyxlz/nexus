@@ -208,7 +208,7 @@ def add_jobs(
         for cmd in expanded_commands:
             priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
             if cpu:
-                gpus_str = f" (CPU)"
+                gpus_str = " (CPU)"
             elif gpu_idxs:
                 gpus_str = f" (GPUs: {colored(','.join(map(str, gpu_idxs)), 'cyan')})"
             elif num_gpus > 1:
