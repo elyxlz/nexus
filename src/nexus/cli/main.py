@@ -65,6 +65,7 @@ def add_job_run_parser(subparsers) -> None:
     run_parser.add_argument(
         "-g", "--gpus", type=int, default=1, help="Number of GPUs to use (ignored if --gpu-idxs is specified)"
     )
+    run_parser.add_argument("-c", "--cpu", action="store_true", help="Run job on CPU only (no GPUs)")
     run_parser.add_argument("-n", "--notify", nargs="+", help="Additional notification types for this job")
     run_parser.add_argument("-s", "--silent", action="store_true", help="Disable all notifications for this job")
     run_parser.add_argument("-f", "--force", action="store_true", help="Ignore GPU blacklist")
@@ -90,6 +91,7 @@ def add_job_management_parsers(subparsers) -> None:
         "-i", "--gpu-idxs", dest="gpu_idxs", help="Specific GPU indices to run on (e.g., '0' or '0,1' for multi-GPU)"
     )
     add_parser.add_argument("-g", "--gpus", type=int, default=1, help="Number of GPUs to use for the job")
+    add_parser.add_argument("-c", "--cpu", action="store_true", help="Run job on CPU only (no GPUs)")
     add_parser.add_argument("-f", "--force", action="store_true", help="Ignore GPU blacklist")
     add_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
     add_parser.add_argument("-l", "--local", action="store_true", help="Skip git tag creation entirely")
@@ -268,6 +270,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             silent=args.silent,
             local=args.local,
             target_name=target_name,
+            cpu=args.cpu,
         ),
         "run": lambda: jobs.run_job(
             cfg,
@@ -281,6 +284,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
             silent=args.silent,
             local=args.local,
             target_name=target_name,
+            cpu=args.cpu,
         ),
         "queue": lambda: jobs.show_queue(target_name=target_name),
         "history": lambda: jobs.show_history(getattr(args, "pattern", None), target_name=target_name),
