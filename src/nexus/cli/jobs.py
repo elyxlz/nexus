@@ -78,10 +78,8 @@ def run_job(
                 print(colored(f"\nLoaded {len(local_env)} variable(s) from local .env file", "cyan"))
             if conflicts:
                 print(colored(f"\nLocal .env overriding {len(conflicts)} global variable(s):", "yellow"))
-                for key, (global_val, local_val) in conflicts.items():
-                    global_display = global_val[:30] + "..." if len(global_val) > 30 else global_val
-                    local_display = local_val[:30] + "..." if len(local_val) > 30 else local_val
-                    print(f"  {colored('•', 'yellow')} {key}: '{global_display}' -> '{local_display}'")
+                for key in conflicts.keys():
+                    print(f"  {colored('•', 'yellow')} {key}")
 
             invalid_notifications = []
 
@@ -246,10 +244,8 @@ def add_jobs(
             print(colored(f"\nLoaded {len(local_env)} variable(s) from local .env file", "cyan"))
         if conflicts:
             print(colored(f"\nLocal .env overriding {len(conflicts)} global variable(s):", "yellow"))
-            for key, (global_val, local_val) in conflicts.items():
-                global_display = global_val[:30] + "..." if len(global_val) > 30 else global_val
-                local_display = local_val[:30] + "..." if len(local_val) > 30 else local_val
-                print(f"  {colored('•', 'yellow')} {key}: '{global_display}' -> '{local_display}'")
+            for key in conflicts.keys():
+                print(f"  {colored('•', 'yellow')} {key}")
 
         invalid_notifications = []
 
