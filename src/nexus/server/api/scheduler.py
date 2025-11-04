@@ -69,56 +69,58 @@ async def _for_queued_jobs(ctx: context.NexusServerContext):
     if not ordered_jobs:
         return
 
-    _job = ordered_jobs[0]
-
-    if _job.num_gpus == 0:
-        gpu_idxs = []
-    else:
-        running_jobs = db.list_jobs(conn=ctx.db, status="running")
-        blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
-        all_gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
-
-        available = [
-            g for g in all_gpus if gpu.is_gpu_available(g, ignore_blacklist=_job.ignore_blacklist, required=_job.gpu_idxs)
-        ]
-
-        if not available:
-            return
-
-        avail_idxs = [g.index for g in available]
-        if _job.gpu_idxs and all(idx in avail_idxs for idx in _job.gpu_idxs):
-            gpu_idxs = _job.gpu_idxs
-        elif not _job.gpu_idxs and _job.num_gpus <= len(avail_idxs):
-            gpu_idxs = avail_idxs[: _job.num_gpus]
+    for _job in ordered_jobs:
+        if _job.num_gpus == 0:
+            gpu_idxs = []
         else:
-            return
+            running_jobs = db.list_jobs(conn=ctx.db, status="running")
+            blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
+            all_gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
 
-    try:
-        started = await job.async_start_job(job=_job, gpu_idxs=gpu_idxs, ctx=ctx)
-        db.update_job(conn=ctx.db, job=started)
-        logger.info(format.format_job_action(started, action="started"))
+            available = [
+                g for g in all_gpus if gpu.is_gpu_available(g, ignore_blacklist=_job.ignore_blacklist, required=_job.gpu_idxs)
+            ]
 
-        if _job.artifact_id and not db.is_artifact_in_use(conn=ctx.db, artifact_id=_job.artifact_id):
-            try:
-                db.delete_artifact(conn=ctx.db, artifact_id=_job.artifact_id)
-                logger.info(f"Deleted artifact {_job.artifact_id} as it's no longer needed")
-            except Exception as e:
-                logger.error(f"Failed to delete artifact {_job.artifact_id}: {str(e)}")
+            if not available:
+                continue
 
-        if started.notifications:
-            job_with_notif = await notifications.notify_job_action(_job=started, action="started")
-            db.update_job(conn=ctx.db, job=job_with_notif)
-    except Exception as e:
-        db.update_job(
-            conn=ctx.db,
-            job=dc.replace(
-                _job,
-                status="failed",
-                completed_at=dt.datetime.now().timestamp(),
-                error_message=f"Failed to start job: {str(e)}",
-            ),
-        )
-        logger.error(f"Failed to start job {_job.id}: {str(e)}")
+            avail_idxs = [g.index for g in available]
+            if _job.gpu_idxs and all(idx in avail_idxs for idx in _job.gpu_idxs):
+                gpu_idxs = _job.gpu_idxs
+            elif not _job.gpu_idxs and _job.num_gpus <= len(avail_idxs):
+                gpu_idxs = avail_idxs[: _job.num_gpus]
+            else:
+                continue
+
+        try:
+            started = await job.async_start_job(job=_job, gpu_idxs=gpu_idxs, ctx=ctx)
+            db.update_job(conn=ctx.db, job=started)
+            logger.info(format.format_job_action(started, action="started"))
+
+            if _job.artifact_id and not db.is_artifact_in_use(conn=ctx.db, artifact_id=_job.artifact_id):
+                try:
+                    db.delete_artifact(conn=ctx.db, artifact_id=_job.artifact_id)
+                    logger.info(f"Deleted artifact {_job.artifact_id} as it's no longer needed")
+                except Exception as e:
+                    logger.error(f"Failed to delete artifact {_job.artifact_id}: {str(e)}")
+
+            if started.notifications:
+                job_with_notif = await notifications.notify_job_action(_job=started, action="started")
+                db.update_job(conn=ctx.db, job=job_with_notif)
+
+            if _job.num_gpus > 0:
+                break
+        except Exception as e:
+            db.update_job(
+                conn=ctx.db,
+                job=dc.replace(
+                    _job,
+                    status="failed",
+                    completed_at=dt.datetime.now().timestamp(),
+                    error_message=f"Failed to start job: {str(e)}",
+                ),
+            )
+            logger.error(f"Failed to start job {_job.id}: {str(e)}")
 
 
 @db.safe_transaction
