@@ -1050,8 +1050,6 @@ def print_status(target_name: str | None = None) -> None:
             utils.print_health_warning()
 
         node_name = status.get("node_name", "unknown")
-        queued = status.get("queued_jobs", 0)
-        running = status.get("running_jobs", 0)
         completed = status.get("completed_jobs", 0)
 
         gpus = api_client.get_gpus(target_name=target_name)
