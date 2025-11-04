@@ -1093,10 +1093,14 @@ def print_status(target_name: str | None = None) -> None:
                             f"{job.get('num_gpus')} GPU{'s' if job.get('num_gpus', 0) > 1 else ''}", "cyan"
                         )
 
+                command = job.get('command', '')
+                if len(command) > 80:
+                    command = command[:77] + "..."
+
                 print(
                     f"  {colored('•', 'white')} {colored(job['id'], 'magenta')} ({resource_str}) - {colored(runtime_str, 'cyan')}"
                 )
-                print(f"    {colored(job.get('command', ''), 'white', attrs=['bold'])}")
+                print(f"    {colored(command, 'white', attrs=['bold'])}")
                 print(f"    Started: {colored(start_time, 'cyan')}", end="")
                 if job.get("wandb_url"):
                     print(f" | W&B: {colored(job['wandb_url'], 'yellow')}", end="")
