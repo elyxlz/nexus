@@ -1101,7 +1101,9 @@ def print_status(target_name: str | None = None) -> None:
             gpu_status_parts.append(f"{count} external {colored('[' + ', '.join(external_gpus) + ']', 'yellow')}")
         if blacklisted_gpus_list:
             count = len(blacklisted_gpus_list)
-            gpu_status_parts.append(f"{count} blacklisted {colored('[' + ', '.join(blacklisted_gpus_list) + ']', 'red')}")
+            gpu_status_parts.append(
+                f"{count} blacklisted {colored('[' + ', '.join(blacklisted_gpus_list) + ']', 'red')}"
+            )
 
         if gpu_status_parts:
             print(f"{colored('GPUs:', 'white', attrs=['bold'])} {' | '.join(gpu_status_parts)}\n")
