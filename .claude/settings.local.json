@@ -25,7 +25,8 @@
       "Bash(git check-ignore:*)",
       "Bash(git rev-parse:*)",
       "Bash(git cherry-pick:*)",
-      "Bash(gh run view:*)"
+      "Bash(gh run view:*)",
+      "Bash(nx queue:*)"
     ],
     "deny": []
   }

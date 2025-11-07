@@ -293,7 +293,7 @@ def get_api_command_handlers(args, cfg: NexusCliConfig):
         ),
         "remove": lambda: jobs.remove_jobs(args.job_ids, bypass_confirm=args.yes, target_name=target_name),
         "blacklist": lambda: jobs.handle_blacklist(args, target_name=target_name),
-        "logs": lambda: jobs.view_logs(args.id, tail=args.tail, target_name=target_name),
+        "logs": lambda: jobs.view_logs(cfg, args.id, tail=args.tail, target_name=target_name),
         "attach": lambda: jobs.attach_to_job(cfg, args.id, target_name=target_name),
         "health": lambda: jobs.show_health(refresh=args.refresh, target_name=target_name),
         "get": lambda: jobs.get_job_info(args.job_id, target_name=target_name),
