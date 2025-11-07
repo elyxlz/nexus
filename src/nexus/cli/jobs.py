@@ -711,8 +711,9 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False, target_name: s
         print(colored(f"Error removing jobs: {e}", "red"))
 
 
-def view_logs(target: str | None = None, tail: int | None = None, target_name: str | None = None) -> None:
+def view_logs(cfg: config.NexusCliConfig, target: str | None = None, tail: int | None = None, target_name: str | None = None) -> None:
     try:
+        user = cfg.user or "anonymous"
         job_id: str = ""
         if target is None:
             jobs = []
@@ -723,11 +724,14 @@ def view_logs(target: str | None = None, tail: int | None = None, target_name: s
                 print(colored("No jobs found", "yellow"))
                 return
 
-            # Filter out jobs without a started_at timestamp and provide a default
-            # This prevents NoneType comparison errors during sorting
-            valid_jobs = [job for job in jobs if job.get("started_at") is not None]
+            user_jobs = [j for j in jobs if j.get("user") == user]
+            if not user_jobs:
+                print(colored(f"No jobs found for user '{user}'", "yellow"))
+                return
+
+            valid_jobs = [job for job in user_jobs if job.get("started_at") is not None]
             if not valid_jobs:
-                print(colored("No jobs with valid start times found", "yellow"))
+                print(colored(f"No jobs with valid start times found for user '{user}'", "yellow"))
                 return
 
             valid_jobs.sort(key=lambda x: x.get("started_at", 0), reverse=True)
