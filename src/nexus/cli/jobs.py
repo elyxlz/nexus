@@ -405,10 +405,10 @@ def show_history(regex: str | None = None, target_name: str | None = None) -> No
                 return job["created_at"]
             return 0
 
-        jobs.sort(key=get_sort_timestamp, reverse=False)
+        jobs.sort(key=get_sort_timestamp, reverse=True)
 
         print(colored("Job History:", "blue", attrs=["bold"]))
-        for job in jobs[:25]:
+        for job in reversed(jobs[:25]):
             runtime = utils.calculate_runtime(job)
             started_time = utils.format_timestamp(job.get("started_at"))
             status_color = (
