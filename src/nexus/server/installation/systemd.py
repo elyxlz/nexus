@@ -5,12 +5,18 @@ Description=Nexus GPU Job Management Server
 After=network.target
 """
 
-SERVICE_SECTION = """[Service]
+INSTALL_SECTION = """[Install]
+WantedBy=multi-user.target
+"""
+
+
+def build_service_section(exec_path: str) -> str:
+    return f"""[Service]
 Type=simple
 User=nexus
 Group=nexus
 WorkingDirectory=/home/nexus
-ExecStart=/usr/local/bin/nexus-server
+ExecStart={exec_path}
 KillMode=process
 Restart=on-failure
 RestartSec=5
@@ -22,18 +28,15 @@ LimitMEMLOCK=infinity
 LimitNOFILE=65536
 """
 
-INSTALL_SECTION = """[Install]
-WantedBy=multi-user.target
-"""
 
-SERVICE_FILE_CONTENT = UNIT_SECTION + SERVICE_SECTION + INSTALL_SECTION
+def get_service_file_content(exec_path: str, sup_groups: list[str] | None = None) -> str:
+    service_section = build_service_section(exec_path)
+    content = UNIT_SECTION + service_section + INSTALL_SECTION
 
-
-def get_service_file_content(sup_groups: list[str] | None = None) -> str:
     if not sup_groups:
-        return SERVICE_FILE_CONTENT
+        return content
 
-    content_lines = SERVICE_FILE_CONTENT.splitlines()
+    content_lines = content.splitlines()
     new_lines = []
 
     for line in content_lines:
