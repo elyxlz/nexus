@@ -204,10 +204,21 @@ def set_system_permissions() -> None:
     subprocess.run(["chmod", "-R", "770", str(SYSTEM_SERVER_DIR)], check=True)
 
 
+def detect_nexus_server_executable() -> str:
+    exec_path = shutil.which("nexus-server")
+    if not exec_path:
+        sys.exit(
+            "ERROR: nexus-server executable not found in PATH.\n"
+            "Ensure nexusai is installed correctly with: sudo pip3 install nexusai"
+        )
+    return exec_path
+
+
 def setup_systemd_server(sup_groups: list[str] | None = None) -> tuple[bool, str | None]:
     from nexus.server.installation import systemd
 
-    server_content = systemd.get_service_file_content(sup_groups)
+    exec_path = detect_nexus_server_executable()
+    server_content = systemd.get_service_file_content(exec_path, sup_groups)
     dest_server = SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME
     dest_server.write_text(server_content)
     return True, None
@@ -521,10 +532,6 @@ def confirm_installation(_config: config.NexusServerConfig) -> bool:
         if key == "api_token":
             continue
         print(f"   {key:20} {value}")
-
-    print("\n🔑 API Token:")
-    print(f"   {_config.api_token}")
-    print("   ⚠️  SAVE THIS - Required for remote CLI connections")
 
     print("\n" + "=" * 80)
     print("Note: Environment variables (NS_*) override config during installation")
