@@ -533,10 +533,6 @@ def confirm_installation(_config: config.NexusServerConfig) -> bool:
             continue
         print(f"   {key:20} {value}")
 
-    print("\n🔑 API Token:")
-    print(f"   {_config.api_token}")
-    print("   ⚠️  SAVE THIS - Required for remote CLI connections")
-
     print("\n" + "=" * 80)
     print("Note: Environment variables (NS_*) override config during installation")
     print("=" * 80)
