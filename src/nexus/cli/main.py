@@ -362,6 +362,8 @@ def main() -> None:
         utils.print_error(error_msg)
         sys.exit(1)
 
+    api_client.check_version_compatibility(target_name)
+
     # Try to dispatch to API commands
     api_handlers = get_api_command_handlers(args, cfg)
     if not dispatch_command(command_name, api_handlers):

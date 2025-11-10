@@ -1057,16 +1057,6 @@ def print_status(target_name: str | None = None) -> None:
 
         status = api_client.get_server_status(target_name=target_name)
 
-        server_version = status.get("server_version", "unknown")
-        if server_version != VERSION:
-            print(
-                colored(
-                    f"WARNING: Nexus client version ({VERSION}) does not match "
-                    f"Nexus server version ({server_version}).",
-                    "yellow",
-                )
-            )
-
         health = api_client.get_detailed_health(refresh=False, target_name=target_name)
         if health.get("status") == "unhealthy":
             utils.print_health_warning()

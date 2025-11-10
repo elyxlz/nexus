@@ -1,4 +1,5 @@
 import functools
+import importlib.metadata
 import json
 import typing as tp
 
@@ -138,6 +139,18 @@ def get_server_status(target_name: str | None = None) -> dict:
     )
     response.raise_for_status()
     return response.json()
+
+
+def check_version_compatibility(target_name: str | None = None) -> None:
+    client_version = importlib.metadata.version("nexusai")
+    status = get_server_status(target_name)
+    server_version = status.get("server_version", "unknown")
+
+    if client_version != server_version:
+        raise RuntimeError(
+            f"Version mismatch: client version ({client_version}) does not match "
+            f"server version ({server_version}). Please upgrade your client or server."
+        )
 
 
 @handle_api_errors
