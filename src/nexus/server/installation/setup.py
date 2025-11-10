@@ -891,10 +891,17 @@ def _check_screen_permissions() -> None:
         if stat.S_IMODE(screen_dir.stat().st_mode) != 0o777:
             screen_dir.chmod(0o777)
     except (OSError, PermissionError) as e:
-        raise RuntimeError(
-            f"Screen requires {screen_dir} with permissions 777. Error: {e}\n"
-            f"Fix: sudo mkdir -p {screen_dir} && sudo chmod 777 {screen_dir}"
-        )
+        try:
+            print(f"Attempting to fix {screen_dir} permissions using sudo...")
+            subprocess.run(["sudo", "mkdir", "-p", str(screen_dir)], check=True, capture_output=True)
+            subprocess.run(["sudo", "chmod", "777", str(screen_dir)], check=True, capture_output=True)
+            print(f"Successfully fixed {screen_dir} permissions.")
+        except (subprocess.CalledProcessError, FileNotFoundError) as sudo_error:
+            raise RuntimeError(
+                f"Screen requires {screen_dir} with permissions 777. Error: {e}\n"
+                f"Attempted automatic fix with sudo but failed: {sudo_error}\n"
+                f"Manual fix: sudo mkdir -p {screen_dir} && sudo chmod 777 {screen_dir}"
+            )
 
 
 def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext:
