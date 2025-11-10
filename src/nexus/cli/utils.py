@@ -138,16 +138,16 @@ def prepare_git_artifact(enable_git_tag_push: bool, target_name: str | None = No
     commit_sha = None
     we_created_stash = False
 
-    if is_working_tree_dirty():
-        original_branch, temp_branch, commit_sha, we_created_stash = save_working_state()
-    else:
-        result = subprocess.run(["git", "rev-parse", "HEAD^{tree}"], capture_output=True, text=True, check=True)
-        commit_sha = result.stdout.strip()
-
-    result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
-    git_repo_url = result.stdout.strip() or "unknown-url"
-
     try:
+        if is_working_tree_dirty():
+            original_branch, temp_branch, commit_sha, we_created_stash = save_working_state()
+        else:
+            result = subprocess.run(["git", "rev-parse", "HEAD^{tree}"], capture_output=True, text=True, check=True)
+            commit_sha = result.stdout.strip()
+
+        result = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True)
+        git_repo_url = result.stdout.strip() or "unknown-url"
+
         artifact_id = None
         git_tag = None
         if commit_sha:
@@ -206,10 +206,11 @@ def prepare_git_artifact(enable_git_tag_push: bool, target_name: str | None = No
             we_created_stash=we_created_stash,
             git_tag=git_tag,
         )
-    except Exception:
+    finally:
         if temp_branch and original_branch:
-            restore_working_state(original_branch, temp_branch, we_created_stash)
-        raise
+            current = get_current_git_branch()
+            if current == temp_branch:
+                restore_working_state(original_branch, temp_branch, we_created_stash)
 
 
 def cleanup_git_state(ctx: GitArtifactContext) -> None:
