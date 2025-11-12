@@ -444,25 +444,42 @@ async def async_get_job_logs(job_dir: pl.Path | None, last_n_lines: int | None =
 
 @exc.handle_exception(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
 async def kill_job(job: schemas.Job) -> None:
-    if job.dir is not None:
-        job_dir = str(job.dir)
-        logger.debug(f"Killing any processes running in directory {job_dir}")
-        await asyncio.create_subprocess_shell(f"pkill -9 -f {job_dir}")
-
     session_name = _get_job_session_name(job.id)
-    logger.debug(f"Killing any processes containing session name {session_name}")
-    await asyncio.create_subprocess_shell(f"pkill -9 -f {session_name}")
+
+    logger.debug(f"Terminating screen session {session_name}")
+    screen_proc = await asyncio.create_subprocess_shell(
+        f"screen -S {session_name} -X quit",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    await screen_proc.wait()
 
     if job.pid is not None:
-        logger.debug(f"Killing any child processes of {job.pid}")
+        logger.debug(f"Killing process group for PID {job.pid}")
         pgid_proc = await asyncio.create_subprocess_shell(
-            f"ps -o pgid= -p {job.pid} 2>/dev/null", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            f"ps -o pgid= -p {job.pid} 2>/dev/null",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
         stdout, _ = await pgid_proc.communicate()
         pgid = stdout.decode().strip()
         if pgid:
-            logger.debug(f"Killing process group {pgid}")
-            await asyncio.create_subprocess_shell(f"kill -9 -{pgid}")
+            kill_proc = await asyncio.create_subprocess_shell(
+                f"kill -9 -{pgid}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await kill_proc.wait()
+
+    if job.dir is not None:
+        job_dir = str(job.dir)
+        logger.debug(f"Cleaning up remaining processes in {job_dir}")
+        pkill_proc = await asyncio.create_subprocess_shell(
+            f"pkill -9 -f {job_dir}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await pkill_proc.wait()
 
 
 def get_queue(queued_jobs: list[schemas.Job]) -> list[schemas.Job]:
