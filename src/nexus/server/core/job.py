@@ -442,44 +442,82 @@ async def async_get_job_logs(job_dir: pl.Path | None, last_n_lines: int | None =
     return await asyncio.to_thread(_read_log_file, logs, last_n_lines)
 
 
-@exc.handle_exception(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
-async def kill_job(job: schemas.Job) -> None:
-    session_name = _get_job_session_name(job.id)
+async def _get_process_group(pid: int) -> str | None:
+    pgid_proc = await asyncio.create_subprocess_shell(
+        f"ps -o pgid= -p {pid} 2>/dev/null",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, _ = await pgid_proc.communicate()
+    pgid = stdout.decode().strip()
+    return pgid if pgid else None
 
-    logger.debug(f"Terminating screen session {session_name}")
+
+async def _send_signal_to_pgid(pgid: str, signal: int) -> None:
+    kill_proc = await asyncio.create_subprocess_shell(
+        f"kill -{signal} -{pgid} 2>/dev/null",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    await kill_proc.wait()
+
+
+async def _pkill_processes(job_dir: str, signal: int) -> None:
+    pkill_proc = await asyncio.create_subprocess_shell(
+        f"pkill -{signal} -f {job_dir} 2>/dev/null",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    await pkill_proc.wait()
+
+
+async def _terminate_screen_session(session_name: str) -> None:
     screen_proc = await asyncio.create_subprocess_shell(
-        f"screen -S {session_name} -X quit",
+        f"screen -S {session_name} -X quit 2>/dev/null",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
     await screen_proc.wait()
 
+
+@exc.handle_exception(subprocess.SubprocessError, exc.JobError, message="Failed to kill job processes")
+async def kill_job(job: schemas.Job) -> None:
+    session_name = _get_job_session_name(job.id)
+
+    logger.debug(f"Phase 1: Sending SIGTERM for graceful shutdown of job {job.id}")
+
     if job.pid is not None:
-        logger.debug(f"Killing process group for PID {job.pid}")
-        pgid_proc = await asyncio.create_subprocess_shell(
-            f"ps -o pgid= -p {job.pid} 2>/dev/null",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, _ = await pgid_proc.communicate()
-        pgid = stdout.decode().strip()
+        pgid = await _get_process_group(job.pid)
         if pgid:
-            kill_proc = await asyncio.create_subprocess_shell(
-                f"kill -9 -{pgid}",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            await kill_proc.wait()
+            logger.debug(f"Sending SIGTERM to process group {pgid}")
+            await _send_signal_to_pgid(pgid, signal=15)
 
     if job.dir is not None:
         job_dir = str(job.dir)
-        logger.debug(f"Cleaning up remaining processes in {job_dir}")
-        pkill_proc = await asyncio.create_subprocess_shell(
-            f"pkill -9 -f {job_dir}",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await pkill_proc.wait()
+        logger.debug(f"Sending SIGTERM to processes in {job_dir}")
+        await _pkill_processes(job_dir, signal=15)
+
+    logger.debug("Waiting 10 seconds for graceful shutdown")
+    await asyncio.sleep(10)
+
+    if not is_job_running(job):
+        logger.debug(f"Job {job.id} terminated gracefully")
+        return
+
+    logger.debug(f"Phase 2: Job {job.id} still running, escalating to SIGKILL")
+
+    await _terminate_screen_session(session_name)
+
+    if job.pid is not None:
+        pgid = await _get_process_group(job.pid)
+        if pgid:
+            logger.debug(f"Sending SIGKILL to process group {pgid}")
+            await _send_signal_to_pgid(pgid, signal=9)
+
+    if job.dir is not None:
+        job_dir = str(job.dir)
+        logger.debug(f"Sending SIGKILL to remaining processes in {job_dir}")
+        await _pkill_processes(job_dir, signal=9)
 
 
 def get_queue(queued_jobs: list[schemas.Job]) -> list[schemas.Job]:
