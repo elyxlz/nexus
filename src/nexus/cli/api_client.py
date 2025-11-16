@@ -3,12 +3,10 @@ import json
 import typing as tp
 
 import requests
-import urllib3
 from termcolor import colored
 
-from nexus.cli import config
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from nexus.cli import config, tunnel_manager
+from nexus.cli.tunnel_manager import SSHTunnelError
 
 
 def _print_error_response(response):
@@ -46,6 +44,10 @@ def handle_api_errors(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
+        except SSHTunnelError as e:
+            print(colored("\nSSH Tunnel Error:", "red", attrs=["bold"]))
+            print(str(e))
+            raise
         except requests.exceptions.HTTPError as e:
             _print_error_response(e.response)
             raise
@@ -53,36 +55,30 @@ def handle_api_errors(func):
     return wrapper
 
 
-def get_api_base_url(target_name: str | None = None, target_cfg: config.TargetConfig | None = None) -> str:
-    if target_cfg is None:
-        _, target_cfg = config.get_active_target(target_name)
+def get_api_base_url(target_name: str | None = None) -> str:
+    active_name, target_cfg = config.get_active_target(target_name)
 
-    if target_cfg is None:
-        return "https://localhost:54323/v1"
+    if target_cfg is None or target_cfg.host in ("localhost", "127.0.0.1"):
+        port = target_cfg.port if target_cfg else 54323
+        return f"http://127.0.0.1:{port}/v1"
 
-    return f"{target_cfg.protocol}://{target_cfg.host}:{target_cfg.port}/v1"
-
-
-def _get_headers(target_name: str | None = None, target_cfg: config.TargetConfig | None = None) -> dict[str, str]:
-    if target_cfg is None:
-        _, target_cfg = config.get_active_target(target_name)
-    if target_cfg and target_cfg.api_token:
-        return {"Authorization": f"Bearer {target_cfg.api_token}"}
-    return {}
+    local_port = tunnel_manager.get_or_create_tunnel(active_name)
+    return f"http://127.0.0.1:{local_port}/v1"
 
 
 def check_api_connection(target_name: str | None = None) -> bool:
     try:
-        url = f"{get_api_base_url(target_name)}/health"
-        response = requests.get(url, headers=_get_headers(target_name), timeout=2, verify=False)
+        api_url = get_api_base_url(target_name)
+        response = requests.get(f"{api_url}/health", timeout=2)
         return response.status_code == 200
-    except requests.RequestException:
+    except Exception:
         return False
 
 
 @handle_api_errors
 def get_gpus(target_name: str | None = None) -> list[dict]:
-    response = requests.get(f"{get_api_base_url(target_name)}/gpus", headers=_get_headers(target_name), verify=False)
+    api_url = get_api_base_url(target_name)
+    response = requests.get(f"{api_url}/gpus")
     response.raise_for_status()
     return response.json()
 
@@ -90,23 +86,16 @@ def get_gpus(target_name: str | None = None) -> list[dict]:
 @handle_api_errors
 def get_jobs(status: str | None = None, target_name: str | None = None) -> list[dict]:
     params = {"status": status} if status else {}
-    response = requests.get(
-        f"{get_api_base_url(target_name)}/jobs",
-        params=params,
-        headers=_get_headers(target_name),
-        verify=False,
-    )
+    api_url = get_api_base_url(target_name)
+    response = requests.get(f"{api_url}/jobs", params=params)
     response.raise_for_status()
     return response.json()
 
 
 @handle_api_errors
 def get_job(job_id: str, target_name: str | None = None) -> dict:
-    response = requests.get(
-        f"{get_api_base_url(target_name)}/jobs/{job_id}",
-        headers=_get_headers(target_name),
-        verify=False,
-    )
+    api_url = get_api_base_url(target_name)
+    response = requests.get(f"{api_url}/jobs/{job_id}")
     response.raise_for_status()
     return response.json()
 
@@ -116,12 +105,8 @@ def get_job_logs(job_id: str, last_n_lines: int | None = None, target_name: str 
     params = {}
     if last_n_lines is not None:
         params["last_n_lines"] = last_n_lines
-    response = requests.get(
-        f"{get_api_base_url(target_name)}/jobs/{job_id}/logs",
-        params=params,
-        headers=_get_headers(target_name),
-        verify=False,
-    )
+    api_url = get_api_base_url(target_name)
+    response = requests.get(f"{api_url}/jobs/{job_id}/logs", params=params)
     response.raise_for_status()
     data = response.json()
     if "data" not in data:
@@ -131,11 +116,8 @@ def get_job_logs(job_id: str, last_n_lines: int | None = None, target_name: str 
 
 @handle_api_errors
 def get_server_status(target_name: str | None = None) -> dict:
-    response = requests.get(
-        f"{get_api_base_url(target_name)}/server/status",
-        headers=_get_headers(target_name),
-        verify=False,
-    )
+    api_url = get_api_base_url(target_name)
+    response = requests.get(f"{api_url}/server/status")
     response.raise_for_status()
     return response.json()
 
@@ -145,36 +127,16 @@ def get_detailed_health(refresh: bool = False, target_name: str | None = None) -
     params = {"detailed": True}
     if refresh:
         params["refresh"] = True
-    response = requests.get(
-        f"{get_api_base_url(target_name)}/health",
-        params=params,
-        headers=_get_headers(target_name),
-        verify=False,
-    )
+    api_url = get_api_base_url(target_name)
+    response = requests.get(f"{api_url}/health", params=params)
     response.raise_for_status()
     return response.json()
 
 
-def check_heartbeat(target_name: str | None = None) -> bool:
-    try:
-        response = requests.get(
-            f"{get_api_base_url(target_name)}/health",
-            headers=_get_headers(target_name),
-            timeout=1,
-            verify=False,
-        )
-        return response.status_code == 200
-    except requests.RequestException:
-        return False
-
-
 @handle_api_errors
 def check_artifact_by_sha(git_sha: str, target_name: str | None = None) -> tuple[bool, str | None]:
-    response = requests.get(
-        f"{get_api_base_url(target_name)}/artifacts/by-sha/{git_sha}",
-        headers=_get_headers(target_name),
-        verify=False,
-    )
+    api_url = get_api_base_url(target_name)
+    response = requests.get(f"{api_url}/artifacts/by-sha/{git_sha}")
     response.raise_for_status()
     result = response.json()
     return result["exists"], result.get("artifact_id")
@@ -182,14 +144,12 @@ def check_artifact_by_sha(git_sha: str, target_name: str | None = None) -> tuple
 
 @handle_api_errors
 def upload_artifact(data: bytes, git_sha: str | None = None, target_name: str | None = None) -> str:
-    headers = _get_headers(target_name)
-    headers["Content-Type"] = "application/octet-stream"
+    headers = {"Content-Type": "application/octet-stream"}
     params = {}
     if git_sha:
         params["git_sha"] = git_sha
-    response = requests.post(
-        f"{get_api_base_url(target_name)}/artifacts", data=data, params=params, headers=headers, verify=False
-    )
+    api_url = get_api_base_url(target_name)
+    response = requests.post(f"{api_url}/artifacts", data=data, params=params, headers=headers)
     response.raise_for_status()
     result = response.json()
     if "data" not in result:
@@ -199,12 +159,8 @@ def upload_artifact(data: bytes, git_sha: str | None = None, target_name: str | 
 
 @handle_api_errors
 def add_job(job_request: dict, target_name: str | None = None) -> dict:
-    response = requests.post(
-        f"{get_api_base_url(target_name)}/jobs",
-        json=job_request,
-        headers=_get_headers(target_name),
-        verify=False,
-    )
+    api_url = get_api_base_url(target_name)
+    response = requests.post(f"{api_url}/jobs", json=job_request)
     response.raise_for_status()
     return response.json()
 
@@ -212,14 +168,11 @@ def add_job(job_request: dict, target_name: str | None = None) -> dict:
 @handle_api_errors
 def kill_running_jobs(job_ids: list[str], target_name: str | None = None) -> dict:
     results = {"killed": [], "failed": []}
+    api_url = get_api_base_url(target_name)
 
     for job_id in job_ids:
         try:
-            response = requests.post(
-                f"{get_api_base_url(target_name)}/jobs/{job_id}/kill",
-                headers=_get_headers(target_name),
-                verify=False,
-            )
+            response = requests.post(f"{api_url}/jobs/{job_id}/kill")
             if response.status_code == 204:
                 results["killed"].append(job_id)
             else:
@@ -233,14 +186,11 @@ def kill_running_jobs(job_ids: list[str], target_name: str | None = None) -> dic
 @handle_api_errors
 def remove_queued_jobs(job_ids: list[str], target_name: str | None = None) -> dict:
     results = {"removed": [], "failed": []}
+    api_url = get_api_base_url(target_name)
 
     for job_id in job_ids:
         try:
-            response = requests.delete(
-                f"{get_api_base_url(target_name)}/jobs/{job_id}",
-                headers=_get_headers(target_name),
-                verify=False,
-            )
+            response = requests.delete(f"{api_url}/jobs/{job_id}")
             if response.status_code == 204:
                 results["removed"].append(job_id)
             else:
@@ -270,12 +220,8 @@ def edit_job(
     if git_tag is not None:
         update_data["git_tag"] = git_tag
 
-    response = requests.patch(
-        f"{get_api_base_url(target_name)}/jobs/{job_id}",
-        json=update_data,
-        headers=_get_headers(target_name),
-        verify=False,
-    )
+    api_url = get_api_base_url(target_name)
+    response = requests.patch(f"{api_url}/jobs/{job_id}", json=update_data)
     response.raise_for_status()
     return response.json()
 
@@ -285,23 +231,16 @@ def manage_blacklist(
     gpu_indices: list[int], action: tp.Literal["add", "remove"], target_name: str | None = None
 ) -> dict:
     results = {"blacklisted": [], "removed": [], "failed": []}
+    api_url = get_api_base_url(target_name)
 
     for gpu_idx in gpu_indices:
         try:
             if action == "add":
-                response = requests.put(
-                    f"{get_api_base_url(target_name)}/gpus/{gpu_idx}/blacklist",
-                    headers=_get_headers(target_name),
-                    verify=False,
-                )
+                response = requests.put(f"{api_url}/gpus/{gpu_idx}/blacklist")
                 if response.ok:
                     results["blacklisted"].append(gpu_idx)
             else:
-                response = requests.delete(
-                    f"{get_api_base_url(target_name)}/gpus/{gpu_idx}/blacklist",
-                    headers=_get_headers(target_name),
-                    verify=False,
-                )
+                response = requests.delete(f"{api_url}/gpus/{gpu_idx}/blacklist")
                 if response.ok:
                     results["removed"].append(gpu_idx)
 
@@ -310,17 +249,3 @@ def manage_blacklist(
             results["failed"].append({"index": gpu_idx, "error": str(e)})
 
     return results
-
-
-@handle_api_errors
-def register_ssh_key(
-    public_key: str, target_name: str | None = None, target_cfg: config.TargetConfig | None = None
-) -> dict:
-    response = requests.post(
-        f"{get_api_base_url(target_name, target_cfg)}/auth/ssh-key",
-        data=public_key,
-        headers=_get_headers(target_name, target_cfg),
-        verify=False,
-    )
-    response.raise_for_status()
-    return response.json()

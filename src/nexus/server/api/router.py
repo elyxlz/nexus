@@ -2,7 +2,6 @@ import dataclasses as dc
 import getpass
 import importlib.metadata
 import os
-import pathlib as pl
 
 import base58
 import fastapi as fa
@@ -305,27 +304,3 @@ async def health_check_endpoint(
             load_avg=health_result.system.load_avg,
         ),
     )
-
-
-@router.post("/v1/auth/ssh-key")
-async def register_ssh_key_endpoint(request: fa.Request):
-    import fcntl
-
-    key = (await request.body()).decode().strip()
-    parts = key.split()
-    if len(parts) < 2 or parts[0] not in ["ssh-rsa", "ssh-ed25519", "ssh-ecdsa", "ecdsa-sha2-nistp256"]:
-        raise exc.InvalidRequestError("Invalid SSH public key format")
-
-    authorized_keys = pl.Path.home() / ".ssh" / "authorized_keys"
-    authorized_keys.parent.mkdir(mode=0o700, exist_ok=True)
-    if not authorized_keys.exists():
-        authorized_keys.touch(mode=0o600)
-
-    with authorized_keys.open("r+") as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        content = f.read()
-        if f"\n{key}\n" in f"\n{content}\n":
-            return {"status": "exists"}
-        f.write(f"{key}\n")
-
-    return {"status": "registered"}

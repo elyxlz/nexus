@@ -163,42 +163,6 @@ def setup_passwordless_nexus_attach() -> bool:
         return False
 
 
-def generate_self_signed_cert(server_dir: pl.Path) -> tuple[pl.Path, pl.Path]:
-    import socket
-
-    ssl_dir = server_dir / "ssl"
-    ssl_dir.mkdir(parents=True, exist_ok=True)
-
-    key_path = ssl_dir / "key.pem"
-    cert_path = ssl_dir / "cert.pem"
-
-    if key_path.exists() and cert_path.exists():
-        return key_path, cert_path
-
-    subprocess.run(
-        [
-            "openssl",
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:4096",
-            "-nodes",
-            "-keyout",
-            str(key_path),
-            "-out",
-            str(cert_path),
-            "-days",
-            "3650",
-            "-subj",
-            f"/CN={socket.gethostname()}",
-        ],
-        check=True,
-        capture_output=True,
-    )
-
-    return key_path, cert_path
-
-
 def set_system_permissions() -> None:
     subprocess.run(["chown", "-R", f"{SERVER_USER}:{SERVER_USER}", str(SYSTEM_SERVER_DIR)], check=True)
     subprocess.run(["chmod", "-R", "770", str(SYSTEM_SERVER_DIR)], check=True)
@@ -295,21 +259,6 @@ def setup_config(
 
     base_config = create_interactive_config(default_config) if interactive else default_config
 
-    if base_config.api_token:
-        ssl_dir = server_dir / "ssl"
-        key_path = ssl_dir / "key.pem"
-        cert_path = ssl_dir / "cert.pem"
-        return config.NexusServerConfig(
-            server_dir=base_config.server_dir,
-            port=base_config.port,
-            node_name=base_config.node_name,
-            supplementary_groups=base_config.supplementary_groups,
-            api_token=base_config.api_token,
-            external_ip=base_config.external_ip,
-            ssl_keyfile=str(key_path),
-            ssl_certfile=str(cert_path),
-        )
-
     return base_config
 
 
@@ -318,7 +267,6 @@ def display_config(_config: config.NexusServerConfig) -> None:
     print("======================")
 
     config_dict = _config.model_dump()
-    api_token = config_dict.pop("api_token", None)
 
     for key, value in config_dict.items():
         print(f"{key}: {value}")
@@ -334,10 +282,8 @@ def display_config(_config: config.NexusServerConfig) -> None:
     if external_ip:
         print(f"\nexternal_ip: {external_ip}")
 
-    if api_token:
-        print("\n🔑 API Token:")
-        print(f"   {api_token}")
-        print("   ⚠️  Required for remote CLI connections")
+    print("\n🔒 Authentication: SSH tunnel-based (no API token)")
+    print("   Remote access requires SSH port forwarding")
 
     print()
 
@@ -524,13 +470,10 @@ def confirm_installation(_config: config.NexusServerConfig) -> bool:
     print(f"   Server directory:  {SYSTEM_SERVER_DIR}")
     print(f"   Config file:       {SYSTEM_SERVER_DIR / 'config.toml'}")
     print(f"   Database:          {SYSTEM_SERVER_DIR / 'nexus_server.db'}")
-    print(f"   SSL certificates:  {SYSTEM_SERVER_DIR / 'ssl/'}")
     print(f"   Systemd service:   {SYSTEMD_DIR / SYSTEMD_SERVICE_FILENAME}")
 
     print("\n⚙️  Configuration:")
     for key, value in _config.model_dump().items():
-        if key == "api_token":
-            continue
         print(f"   {key:20} {value}")
 
     print("\n" + "=" * 80)
@@ -555,11 +498,11 @@ def print_installation_complete_message(_config: config.NexusServerConfig) -> No
     if _config.external_ip:
         print(f"   Address:      {_config.external_ip}")
     print(f"   Port:         {_config.port}")
-    print(f"   API Token:    {_config.api_token}")
+    print("   Auth:         SSH tunnel (no API token needed)")
 
     print("\n   To connect from CLI, run:")
     print("   nx target add")
-    print("   # Then enter the values above when prompted")
+    print("   # Ensure your SSH key is in ~/.ssh/authorized_keys on this server")
 
     print("\n📝 View Config Anytime:")
     print("   sudo nexus-server config")
@@ -593,10 +536,6 @@ def install_system(
             return
 
     prepare_system_environment(_config.supplementary_groups)
-
-    if _config.api_token:
-        generate_self_signed_cert(SYSTEM_SERVER_DIR)
-        print(f"Generated SSL certificates in: {SYSTEM_SERVER_DIR / 'ssl'}")
 
     create_persistent_directory(_config)
     print(f"Created configuration at: {config.get_config_path(SYSTEM_SERVER_DIR)}")

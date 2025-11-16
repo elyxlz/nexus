@@ -711,7 +711,9 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False, target_name: s
         print(colored(f"Error removing jobs: {e}", "red"))
 
 
-def view_logs(cfg: config.NexusCliConfig, target: str | None = None, tail: int | None = None, target_name: str | None = None) -> None:
+def view_logs(
+    cfg: config.NexusCliConfig, target: str | None = None, tail: int | None = None, target_name: str | None = None
+) -> None:
     try:
         user = cfg.user or "anonymous"
         job_id: str = ""
@@ -1245,12 +1247,6 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
         if target_cfg is not None:
             import subprocess
 
-            ssh_key = config.get_ssh_key_path(target_cfg.host, target_cfg.port)
-            if not ssh_key.exists():
-                print(colored(f"SSH key not found at {ssh_key}", "red"))
-                print(colored("Run 'nx targets add' to configure remote access", "yellow"))
-                return
-
             import os as os_module
 
             env = os_module.environ.copy()
@@ -1260,11 +1256,9 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                 [
                     "ssh",
                     "-t",
-                    "-i",
-                    str(ssh_key),
                     "-o",
                     "StrictHostKeyChecking=accept-new",
-                    f"nexus@{target_cfg.host}",
+                    f"{target_cfg.ssh_user}@{target_cfg.host}",
                     "screen",
                     "-r",
                     screen_session_name,
