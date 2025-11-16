@@ -1,10 +1,35 @@
 import os
 import pathlib as pl
+import socket
 import subprocess
 import tempfile
+import time
 
 from nexus.cli import config
-from nexus.cli.ssh_tunnel import SSHTunnelError, _find_free_port, _wait_for_tunnel
+
+
+class SSHTunnelError(Exception):
+    pass
+
+
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        s.listen(1)
+        return s.getsockname()[1]
+
+
+def _wait_for_tunnel(local_port: int, timeout: float = 10.0) -> bool:
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                s.connect(("127.0.0.1", local_port))
+                return True
+        except (ConnectionRefusedError, TimeoutError, OSError):
+            time.sleep(0.1)
+    return False
 
 
 def _get_tunnels_dir() -> pl.Path:

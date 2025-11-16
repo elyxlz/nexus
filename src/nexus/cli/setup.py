@@ -341,24 +341,24 @@ def _test_ssh_connection(host: str, ssh_user: str) -> bool:
         return False
 
 
-def _test_tunnel_and_server(host: str, port: int, ssh_user: str) -> tuple[bool, str | None]:
+def _test_tunnel_and_server(target_name: str) -> tuple[bool, str | None]:
     import requests
 
-    from nexus.cli.ssh_tunnel import SSHTunnelError, ssh_tunnel
+    from nexus.cli.tunnel_manager import SSHTunnelError, get_or_create_tunnel
 
     print(colored("Testing SSH tunnel and server connection...", "cyan"))
     try:
-        with ssh_tunnel(host, port, ssh_user) as local_port:
-            url = f"http://127.0.0.1:{local_port}/v1/server/status"
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            status = response.json()
-            server_name = status.get("node_name")
-            if not server_name:
-                print(colored("✗ Server did not return node_name", "red"))
-                return False, None
-            print(colored(f"✓ Connected to server: {server_name}", "green"))
-            return True, server_name
+        local_port = get_or_create_tunnel(target_name)
+        url = f"http://127.0.0.1:{local_port}/v1/server/status"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        status = response.json()
+        server_name = status.get("node_name")
+        if not server_name:
+            print(colored("✗ Server did not return node_name", "red"))
+            return False, None
+        print(colored(f"✓ Connected to server: {server_name}", "green"))
+        return True, server_name
     except SSHTunnelError as e:
         print(colored(f"✗ {e}", "red"))
         return False, None
@@ -409,18 +409,20 @@ def add_target() -> None:
         print(colored(f"  2. Test manually: ssh {ssh_user}@{host} echo ok", "yellow"))
         return
 
-    success, server_name = _test_tunnel_and_server(host, port, ssh_user)
+    target_cfg = config.TargetConfig(host=host, port=port, ssh_user=ssh_user)
+    cfg.targets[target_name] = target_cfg
+    config.save_config(cfg)
+
+    success, server_name = _test_tunnel_and_server(target_name)
     if not success:
+        del cfg.targets[target_name]
+        config.save_config(cfg)
         print(colored("\n✗ Failed to connect to Nexus server via SSH tunnel", "red"))
         return
 
-    target_cfg = config.TargetConfig(host=host, port=port, ssh_user=ssh_user)
-    cfg.targets[target_name] = target_cfg
-
     if not cfg.default_target:
         cfg.default_target = target_name
-
-    config.save_config(cfg)
+        config.save_config(cfg)
 
     print(colored(f"\n✓ Target '{target_name}' configured", "green", attrs=["bold"]))
     print(f"Server node: {server_name}")

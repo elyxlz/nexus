@@ -6,7 +6,7 @@ import requests
 from termcolor import colored
 
 from nexus.cli import config, tunnel_manager
-from nexus.cli.ssh_tunnel import SSHTunnelError
+from nexus.cli.tunnel_manager import SSHTunnelError
 
 
 def _print_error_response(response):
