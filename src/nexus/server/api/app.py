@@ -1,62 +1,16 @@
 import asyncio
 import contextlib
 import importlib.metadata
-import secrets
 
 import fastapi as fa
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from nexus.server.api import router, scheduler
 from nexus.server.core import context
 from nexus.server.core import exceptions as exc
 from nexus.server.utils import logger
-
-
-class AuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        if request.url.path in ["/health", "/v1/health"]:
-            return await call_next(request)
-
-        client_host = request.client.host if request.client else None
-        if client_host in ["127.0.0.1", "::1", "localhost"]:
-            return await call_next(request)
-
-        ctx = request.app.state.ctx
-        if not ctx.config.api_token:
-            return await call_next(request)
-
-        auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer "):
-            logger.warning(
-                f"Authentication failed: Missing or malformed Authorization header "
-                f"from {client_host} for {request.method} {request.url.path}"
-            )
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "error": "AUTHENTICATION_REQUIRED",
-                    "message": "Missing or invalid Authorization header",
-                    "hint": "Expected format: 'Authorization: Bearer <your-api-token>'",
-                },
-            )
-
-        if not secrets.compare_digest(auth[7:], ctx.config.api_token):
-            logger.warning(
-                f"Authentication failed: Invalid token from {client_host} for {request.method} {request.url.path}"
-            )
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "error": "INVALID_CREDENTIALS",
-                    "message": "Authentication failed. The provided API token is invalid.",
-                    "hint": "Verify your API token matches the server configuration",
-                },
-            )
-
-        return await call_next(request)
 
 
 def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
@@ -74,8 +28,6 @@ def create_app(ctx: context.NexusServerContext) -> fa.FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    app.add_middleware(AuthMiddleware)
 
     def _register_handler(app: fa.FastAPI, exc_cls: type, status: int, *, level: str = "warning"):
         @app.exception_handler(exc_cls)

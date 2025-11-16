@@ -305,84 +305,80 @@ def open_jobrc_editor() -> None:
     utils.open_file_in_editor(jobrc_path)
 
 
-def _download_server_certificate(host: str, port: int) -> pl.Path:
-    import ssl
-
-    print(colored("\nDownloading server certificate...", "cyan"))
-
-    try:
-        cert_pem = ssl.get_server_certificate((host, port), timeout=10)
-        cert_path = config.get_server_cert_path(host, port)
-        cert_path.parent.mkdir(exist_ok=True)
-        cert_path.write_text(cert_pem)
-        print(colored("Certificate saved", "green"))
-        return cert_path
-    except TimeoutError:
-        print(colored(f"\n✗ Connection to {host}:{port} timed out", "red"))
-        print(colored("\nPossible causes:", "yellow"))
-        print(colored("  • Server is not running", "yellow"))
-        print(colored("  • Firewall is blocking port access", "yellow"))
-        print(colored("  • Network connectivity issues", "yellow"))
-        print(colored("\nTo fix firewall issues on the server, run:", "cyan"))
-        print(colored(f"  sudo ufw allow {port}/tcp", "white"))
-        print(colored("  or", "white"))
-        print(colored(f"  sudo firewall-cmd --permanent --add-port={port}/tcp", "white"))
-        print(colored("  sudo firewall-cmd --reload", "white"))
-        raise
-    except ConnectionRefusedError:
-        print(colored(f"\n✗ Connection to {host}:{port} refused", "red"))
-        print(colored("\nPossible causes:", "yellow"))
-        print(colored("  • Server is not running on this port", "yellow"))
-        print(colored("  • Server is not listening on external interfaces", "yellow"))
-        print(colored("\nVerify the server is running:", "cyan"))
-        print(colored("  sudo systemctl status nexus-server", "white"))
-        raise
-    except ssl.SSLError as e:
-        print(colored(f"\n✗ SSL error: {e}", "red"))
-        print(colored("\nThe server may not have SSL enabled yet.", "yellow"))
-        raise
-    except Exception as e:
-        print(colored(f"\n✗ Failed to download certificate: {e}", "red"))
-        raise
-
-
-def _generate_ssh_key(host: str, port: int) -> pl.Path:
+def _test_ssh_connection(host: str, ssh_user: str) -> bool:
     import subprocess
 
-    ssh_key_path = config.get_ssh_key_path(host, port)
-    if not ssh_key_path.exists():
-        print(colored(f"\nGenerating SSH key at {ssh_key_path}...", "cyan"))
-        subprocess.run(
-            ["ssh-keygen", "-t", "ed25519", "-f", str(ssh_key_path), "-N", "", "-C", "nexus-client"],
-            check=True,
-            capture_output=True,
-        )
-    return ssh_key_path
-
-
-def _register_ssh_key_with_server(public_key: str, target_cfg: config.TargetConfig) -> bool:
-    from nexus.cli import api_client
-
-    print(colored("\nRegistering SSH key with remote server...", "cyan"))
+    print(colored("\nTesting SSH connection...", "cyan"))
     try:
-        result = api_client.register_ssh_key(public_key, target_cfg=target_cfg)
-        if result.get("status") == "exists":
-            print(colored("SSH key already registered", "yellow"))
+        result = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "ConnectTimeout=10",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                "-o",
+                "BatchMode=yes",
+                f"{ssh_user}@{host}",
+                "echo",
+                "ok",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0 and "ok" in result.stdout:
+            print(colored("✓ SSH connection successful", "green"))
+            return True
         else:
-            print(colored("SSH key registered successfully", "green"))
-        return True
+            print(colored(f"✗ SSH connection failed: {result.stderr.strip()}", "red"))
+            return False
+    except subprocess.TimeoutExpired:
+        print(colored("✗ SSH connection timed out", "red"))
+        return False
     except Exception as e:
-        print(colored(f"Failed to register SSH key: {e}", "red"))
-        print(colored("\nYou may need to manually add this key to the server:", "yellow"))
-        print(public_key)
+        print(colored(f"✗ SSH connection error: {e}", "red"))
         return False
 
 
-def add_target() -> None:
+def _test_tunnel_and_server(host: str, port: int, ssh_user: str) -> tuple[bool, str | None]:
     import requests
 
+    from nexus.cli.ssh_tunnel import SSHTunnelError, ssh_tunnel
+
+    print(colored("Testing SSH tunnel and server connection...", "cyan"))
+    try:
+        with ssh_tunnel(host, port, ssh_user) as local_port:
+            url = f"http://127.0.0.1:{local_port}/v1/server/status"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            status = response.json()
+            server_name = status.get("node_name")
+            if not server_name:
+                print(colored("✗ Server did not return node_name", "red"))
+                return False, None
+            print(colored(f"✓ Connected to server: {server_name}", "green"))
+            return True, server_name
+    except SSHTunnelError as e:
+        print(colored(f"✗ {e}", "red"))
+        return False, None
+    except requests.RequestException as e:
+        print(colored(f"✗ Server connection failed: {e}", "red"))
+        print(colored("\nPossible causes:", "yellow"))
+        print(colored("  • Server is not running", "yellow"))
+        print(colored("  • Server is not listening on the specified port", "yellow"))
+        return False, None
+    except Exception as e:
+        print(colored(f"✗ Connection test failed: {e}", "red"))
+        return False, None
+
+
+def add_target() -> None:
     print(colored("\nAdd Target Server", "blue", attrs=["bold"]))
-    print("Configure CLI to connect to a remote Nexus server.")
+    print("Configure CLI to connect to a remote Nexus server via SSH tunnel.")
+    print(colored("\nPrerequisites:", "yellow"))
+    print("  • Your SSH public key must be in ~/.ssh/authorized_keys on the remote host")
+    print("  • The Nexus server must be running on the remote host")
 
     try:
         cfg = config.load_config()
@@ -390,64 +386,44 @@ def add_target() -> None:
         config.create_default_config()
         cfg = config.load_config()
 
-    host = utils.get_user_input("Remote server address", required=True)
-    port = int(utils.get_user_input("Remote server port", default="54323"))
-    api_token = utils.get_user_input("API token", required=True, mask_input=True)
-    protocol = "https"
-
-    print(colored("\n🔍 Connecting to server...", "cyan"))
-
-    cert_path = None
-    try:
-        cert_path = _download_server_certificate(host, port)
-    except Exception:
+    target_name = utils.get_user_input("Target name (for reference)", required=True)
+    if target_name == "local":
+        print(colored("'local' is reserved for localhost connections", "red"))
         return
 
-    try:
-        url = f"{protocol}://{host}:{port}/v1/server/status"
-        headers = {"Authorization": f"Bearer {api_token}"}
-
-        response = requests.get(url, headers=headers, verify=False, timeout=10)
-        response.raise_for_status()
-        status = response.json()
-
-        server_name = status.get("node_name")
-        if not server_name:
-            raise ValueError("Server did not return a node_name")
-
-        print(colored(f"✓ Connected to: {server_name}", "green"))
-
-    except Exception as e:
-        print(colored(f"Failed to connect to server: {e}", "red"))
-        if cert_path and cert_path.exists():
-            cert_path.unlink()
-        return
-
-    if server_name in cfg.targets:
-        print(colored(f"Target '{server_name}' already exists", "yellow"))
+    if target_name in cfg.targets:
+        print(colored(f"Target '{target_name}' already exists", "yellow"))
         if not utils.ask_yes_no("Overwrite existing target?"):
             return
 
-    ssh_key_path = _generate_ssh_key(host, port)
-    pub_key_path = pl.Path(str(ssh_key_path) + ".pub")
-    public_key = pub_key_path.read_text().strip()
+    host = utils.get_user_input("Remote server address (hostname or IP)", required=True)
+    port = int(utils.get_user_input("Remote server port", default="54323"))
+    ssh_user = utils.get_user_input("SSH username", default=os.environ.get("USER", ""))
 
-    target_cfg = config.TargetConfig(host=host, port=port, protocol=protocol, api_token=api_token)
+    print(colored("\nValidating connection...", "cyan", attrs=["bold"]))
 
-    success = _register_ssh_key_with_server(public_key, target_cfg)
-    if not success:
-        print(colored("\n✗ Failed to register SSH key with server", "red"))
-        print(colored("Target not saved. Please resolve the issue and try again.", "yellow"))
+    if not _test_ssh_connection(host, ssh_user):
+        print(colored("\n✗ SSH connection failed", "red"))
+        print(colored("\nTo fix:", "yellow"))
+        print(colored(f"  1. Ensure your SSH key is in ~/.ssh/authorized_keys on {host}", "yellow"))
+        print(colored(f"  2. Test manually: ssh {ssh_user}@{host} echo ok", "yellow"))
         return
 
-    cfg.targets[server_name] = target_cfg
+    success, server_name = _test_tunnel_and_server(host, port, ssh_user)
+    if not success:
+        print(colored("\n✗ Failed to connect to Nexus server via SSH tunnel", "red"))
+        return
+
+    target_cfg = config.TargetConfig(host=host, port=port, ssh_user=ssh_user)
+    cfg.targets[target_name] = target_cfg
 
     if not cfg.default_target:
-        cfg.default_target = server_name
+        cfg.default_target = target_name
 
     config.save_config(cfg)
 
-    print(colored(f"\n✓ Target '{server_name}' configured", "green", attrs=["bold"]))
+    print(colored(f"\n✓ Target '{target_name}' configured", "green", attrs=["bold"]))
+    print(f"Server node: {server_name}")
     print(f"Configuration saved to: {config.get_config_path()}")
 
 
@@ -456,11 +432,11 @@ def list_targets() -> None:
     default = cfg.default_target or "local"
 
     print(colored("Targets:", "blue", attrs=["bold"]))
-    print(f"{'* ' if default == 'local' else '  '}local (http://localhost:54323)")
+    print(f"{'* ' if default == 'local' else '  '}local (http://127.0.0.1:54323)")
 
     for name, target in cfg.targets.items():
         marker = "* " if name == default else "  "
-        print(f"{marker}{name} ({target.protocol}://{target.host}:{target.port})")
+        print(f"{marker}{name} ({target.ssh_user}@{target.host}:{target.port})")
 
 
 def set_default_target(target_name: str) -> None:
@@ -487,22 +463,6 @@ def remove_target(target_name: str) -> None:
         print(colored("Operation cancelled.", "yellow"))
         return
 
-    target = cfg.targets[target_name]
-    ssh_key_path = config.get_ssh_key_path(target.host, target.port)
-    pub_key_path = pl.Path(str(ssh_key_path) + ".pub")
-    cert_path = config.get_server_cert_path(target.host, target.port)
-
-    deleted_files = []
-    if ssh_key_path.exists():
-        ssh_key_path.unlink()
-        deleted_files.append(str(ssh_key_path))
-    if pub_key_path.exists():
-        pub_key_path.unlink()
-        deleted_files.append(str(pub_key_path))
-    if cert_path.exists():
-        cert_path.unlink()
-        deleted_files.append(str(cert_path))
-
     del cfg.targets[target_name]
 
     if cfg.default_target == target_name:
@@ -510,8 +470,6 @@ def remove_target(target_name: str) -> None:
 
     config.save_config(cfg)
     print(colored(f"✓ Removed target '{target_name}'", "green"))
-    if deleted_files:
-        print(colored(f"Deleted {len(deleted_files)} associated file(s)", "cyan"))
 
 
 def check_config_exists() -> bool:
