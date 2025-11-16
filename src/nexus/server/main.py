@@ -13,7 +13,7 @@ def _run_server(server_dir: pl.Path | None) -> None:
     api_app = app.create_app(ctx)
 
     print(f"🖥️  Node: {ctx.config.node_name}")
-    print(f"🔒 Auth: SSH tunnel (remote access via SSH port forwarding)")
+    print("🔒 Auth: SSH tunnel (remote access via SSH port forwarding)")
     print(f"🌐 Server: http://127.0.0.1:{ctx.config.port} (localhost only)")
     print()
 

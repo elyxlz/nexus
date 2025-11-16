@@ -444,9 +444,7 @@ async def async_get_job_logs(job_dir: pl.Path | None, last_n_lines: int | None =
 
 async def _get_process_group(pid: int) -> str | None:
     pgid_proc = await asyncio.create_subprocess_shell(
-        f"ps -o pgid= -p {pid} 2>/dev/null",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        f"ps -o pgid= -p {pid} 2>/dev/null", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     stdout, _ = await pgid_proc.communicate()
     pgid = stdout.decode().strip()
@@ -455,27 +453,21 @@ async def _get_process_group(pid: int) -> str | None:
 
 async def _send_signal_to_pgid(pgid: str, signal: int) -> None:
     kill_proc = await asyncio.create_subprocess_shell(
-        f"kill -{signal} -{pgid} 2>/dev/null",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        f"kill -{signal} -{pgid} 2>/dev/null", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     await kill_proc.wait()
 
 
 async def _pkill_processes(job_dir: str, signal: int) -> None:
     pkill_proc = await asyncio.create_subprocess_shell(
-        f"pkill -{signal} -f {job_dir} 2>/dev/null",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        f"pkill -{signal} -f {job_dir} 2>/dev/null", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     await pkill_proc.wait()
 
 
 async def _terminate_screen_session(session_name: str) -> None:
     screen_proc = await asyncio.create_subprocess_shell(
-        f"screen -S {session_name} -X quit 2>/dev/null",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        f"screen -S {session_name} -X quit 2>/dev/null", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     await screen_proc.wait()
 

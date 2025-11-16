@@ -2,7 +2,6 @@ import os
 import pathlib as pl
 import subprocess
 import tempfile
-import time
 
 from nexus.cli import config
 from nexus.cli.ssh_tunnel import SSHTunnelError, _find_free_port, _wait_for_tunnel
@@ -39,7 +38,7 @@ def _read_port_file(target_name: str) -> int | None:
     try:
         content = port_path.read_text().strip()
         return int(content)
-    except (ValueError, IOError, OSError):
+    except (ValueError, OSError):
         return None
 
 
@@ -148,8 +147,8 @@ def _start_control_master(target_name: str, target_cfg: config.TargetConfig) -> 
 
     try:
         result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=30)
-    except subprocess.TimeoutExpired as e:
-        raise SSHTunnelError(f"SSH connection timed out after 30 seconds\nHint: Check network connectivity")
+    except subprocess.TimeoutExpired:
+        raise SSHTunnelError("SSH connection timed out after 30 seconds\nHint: Check network connectivity")
 
     if result.returncode != 0:
         raise SSHTunnelError(

@@ -83,8 +83,7 @@ def _attempt_tunnel(host: str, remote_port: int, ssh_user: str, local_port: int)
             )
         else:
             raise SSHTunnelError(
-                f"SSH tunnel connection timed out\n"
-                f"Hint: Check network connectivity and that sshd is running on {host}"
+                f"SSH tunnel connection timed out\nHint: Check network connectivity and that sshd is running on {host}"
             )
 
     return process

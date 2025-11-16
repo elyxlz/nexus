@@ -2,7 +2,6 @@ import dataclasses as dc
 import getpass
 import importlib.metadata
 import os
-import pathlib as pl
 
 import base58
 import fastapi as fa

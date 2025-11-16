@@ -498,7 +498,7 @@ def print_installation_complete_message(_config: config.NexusServerConfig) -> No
     if _config.external_ip:
         print(f"   Address:      {_config.external_ip}")
     print(f"   Port:         {_config.port}")
-    print(f"   Auth:         SSH tunnel (no API token needed)")
+    print("   Auth:         SSH tunnel (no API token needed)")
 
     print("\n   To connect from CLI, run:")
     print("   nx target add")

@@ -711,7 +711,9 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False, target_name: s
         print(colored(f"Error removing jobs: {e}", "red"))
 
 
-def view_logs(cfg: config.NexusCliConfig, target: str | None = None, tail: int | None = None, target_name: str | None = None) -> None:
+def view_logs(
+    cfg: config.NexusCliConfig, target: str | None = None, tail: int | None = None, target_name: str | None = None
+) -> None:
     try:
         user = cfg.user or "anonymous"
         job_id: str = ""
