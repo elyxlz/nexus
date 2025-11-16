@@ -48,17 +48,22 @@ def _write_port_file(target_name: str, port: int) -> None:
     tunnels_dir = port_path.parent
 
     fd, temp_path = tempfile.mkstemp(dir=tunnels_dir, prefix=".port_", suffix=".tmp")
+    closed = False
     try:
         os.write(fd, f"{port}\n".encode())
         os.fsync(fd)
         os.close(fd)
+        closed = True
         os.chmod(temp_path, 0o600)
         os.rename(temp_path, port_path)
-    except Exception:
-        os.close(fd)
+    finally:
+        if not closed:
+            os.close(fd)
         if os.path.exists(temp_path):
-            os.unlink(temp_path)
-        raise
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
 
 
 def _remove_port_file(target_name: str) -> None:

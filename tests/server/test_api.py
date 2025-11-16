@@ -26,7 +26,6 @@ def app_client() -> Iterator[TestClient]:
         port=54324,
         node_name="test_node",
         mock_gpus=True,
-        api_token=None,
     )
 
     _db = create_connection(":memory:")

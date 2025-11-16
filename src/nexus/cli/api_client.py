@@ -1,5 +1,6 @@
 import functools
 import json
+import typing as tp
 
 import requests
 from termcolor import colored
@@ -236,7 +237,7 @@ def edit_job(
 
 @handle_api_errors
 def manage_blacklist(
-    gpu_indices: list[int], action: str, target_name: str | None = None
+    gpu_indices: list[int], action: tp.Literal["add", "remove"], target_name: str | None = None
 ) -> dict:
     results = {"blacklisted": [], "removed": [], "failed": []}
     api_url = get_api_base_url(target_name)
