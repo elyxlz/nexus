@@ -168,24 +168,7 @@ def _start_control_master(target_name: str, target_cfg: config.TargetConfig) -> 
     return local_port
 
 
-def start_tunnel(target_name: str) -> int:
-    _, target_cfg = config.get_active_target(target_name)
-
-    if target_cfg is None:
-        raise ValueError(f"Target '{target_name}' is local, no tunnel needed")
-
-    if target_cfg.host in ("localhost", "127.0.0.1"):
-        raise ValueError(f"Target '{target_name}' is localhost, no tunnel needed")
-
-    stop_tunnel(target_name)
-    return _start_control_master(target_name, target_cfg)
-
-
-def stop_tunnel(target_name: str) -> bool:
-    return _stop_control_master(target_name)
-
-
-def get_tunnel_port(target_name: str) -> int | None:
+def _get_tunnel_port(target_name: str) -> int | None:
     if not _check_control_socket(target_name):
         _remove_port_file(target_name)
         socket_path = _get_socket_path(target_name)
@@ -198,11 +181,11 @@ def get_tunnel_port(target_name: str) -> int | None:
 
     local_port = _read_port_file(target_name)
     if local_port is None:
-        stop_tunnel(target_name)
+        _stop_control_master(target_name)
         return None
 
     if not _wait_for_tunnel(local_port, timeout=1.0):
-        stop_tunnel(target_name)
+        _stop_control_master(target_name)
         return None
 
     return local_port
@@ -214,42 +197,12 @@ def get_or_create_tunnel(target_name: str) -> int:
     if target_cfg is None or target_cfg.host in ("localhost", "127.0.0.1"):
         return target_cfg.port if target_cfg else 54323
 
-    port = get_tunnel_port(target_name)
+    port = _get_tunnel_port(target_name)
     if port is not None:
         return port
 
-    return start_tunnel(target_name)
+    if target_cfg is None:
+        raise ValueError(f"Target '{target_name}' is local, no tunnel needed")
 
-
-def get_tunnel_status(target_name: str) -> dict:
-    socket_path = _get_socket_path(target_name)
-
-    if not socket_path.exists():
-        return {"status": "not_running", "target": target_name}
-
-    if not _check_control_socket(target_name):
-        return {"status": "dead", "target": target_name, "socket": str(socket_path)}
-
-    local_port = _read_port_file(target_name)
-    if local_port is None:
-        return {"status": "no_port_file", "target": target_name, "socket": str(socket_path)}
-
-    healthy = _wait_for_tunnel(local_port, timeout=1.0)
-    return {
-        "status": "healthy" if healthy else "unhealthy",
-        "target": target_name,
-        "local_port": local_port,
-        "socket": str(socket_path),
-    }
-
-
-def list_all_tunnels() -> list[dict]:
-    tunnels_dir = _get_tunnels_dir()
-    results = []
-
-    for socket_file in tunnels_dir.glob("*.sock"):
-        target_name = socket_file.stem
-        status = get_tunnel_status(target_name)
-        results.append(status)
-
-    return results
+    _stop_control_master(target_name)
+    return _start_control_master(target_name, target_cfg)
