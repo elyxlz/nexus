@@ -4,8 +4,6 @@ import subprocess
 import time
 import typing as tp
 
-from termcolor import colored
-
 
 class SSHTunnelError(Exception):
     pass
@@ -26,77 +24,98 @@ def _wait_for_tunnel(local_port: int, timeout: float = 10.0) -> bool:
                 s.settimeout(0.5)
                 s.connect(("127.0.0.1", local_port))
                 return True
-        except (ConnectionRefusedError, socket.timeout, OSError):
+        except (ConnectionRefusedError, TimeoutError, OSError):
             time.sleep(0.1)
     return False
 
 
+def _cleanup_process(process: subprocess.Popen) -> None:
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+def _attempt_tunnel(host: str, remote_port: int, ssh_user: str, local_port: int) -> subprocess.Popen:
+    ssh_cmd = [
+        "ssh",
+        "-N",
+        "-L",
+        f"{local_port}:127.0.0.1:{remote_port}",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "ServerAliveInterval=60",
+        "-o",
+        "ExitOnForwardFailure=yes",
+        f"{ssh_user}@{host}",
+    ]
+
+    process = subprocess.Popen(
+        ssh_cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+
+    if not _wait_for_tunnel(local_port, timeout=15.0):
+        returncode = process.poll()
+        stderr_output = ""
+        if process.stderr:
+            try:
+                stderr_output = process.stderr.read(4096).decode()
+            except Exception:
+                pass
+
+        _cleanup_process(process)
+
+        if returncode is not None:
+            raise SSHTunnelError(
+                f"SSH tunnel failed to start (exit code {returncode})\n"
+                f"Error: {stderr_output.strip()}\n"
+                f"Hint: Verify SSH access with: ssh {ssh_user}@{host} echo ok"
+            )
+        else:
+            raise SSHTunnelError(
+                f"SSH tunnel connection timed out\n"
+                f"Hint: Check network connectivity and that sshd is running on {host}"
+            )
+
+    return process
+
+
 @contextlib.contextmanager
 def ssh_tunnel(host: str, remote_port: int, ssh_user: str, max_retries: int = 3) -> tp.Iterator[int]:
-    last_error = None
+    last_error: SSHTunnelError | None = None
+    process: subprocess.Popen | None = None
+    local_port: int = 0
 
     for attempt in range(max_retries):
         local_port = _find_free_port()
 
-        ssh_cmd = [
-            "ssh",
-            "-N",
-            "-L",
-            f"{local_port}:127.0.0.1:{remote_port}",
-            "-o",
-            "StrictHostKeyChecking=accept-new",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "ServerAliveInterval=60",
-            "-o",
-            "ExitOnForwardFailure=yes",
-            f"{ssh_user}@{host}",
-        ]
-
-        process = subprocess.Popen(
-            ssh_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-
         try:
-            if not _wait_for_tunnel(local_port, timeout=15.0):
-                returncode = process.poll()
-                if returncode is not None:
-                    stderr_output = process.stderr.read().decode() if process.stderr else ""
-                    if "Address already in use" in stderr_output and attempt < max_retries - 1:
-                        process.terminate()
-                        process.wait(timeout=5)
-                        continue
-                    last_error = SSHTunnelError(
-                        f"SSH tunnel failed to start (exit code {returncode})\n"
-                        f"Command: {' '.join(ssh_cmd)}\n"
-                        f"Error: {stderr_output.strip()}\n\n"
-                        f"{colored('Ensure your SSH key is in ~/.ssh/authorized_keys on the remote host', 'yellow')}"
-                    )
-                    raise last_error
-                else:
-                    process.terminate()
-                    process.wait(timeout=5)
-                    last_error = SSHTunnelError(
-                        f"SSH tunnel connection timed out after 15 seconds\n"
-                        f"Command: {' '.join(ssh_cmd)}\n\n"
-                        f"{colored('Ensure your SSH key is in ~/.ssh/authorized_keys on the remote host', 'yellow')}"
-                    )
-                    raise last_error
+            process = _attempt_tunnel(host, remote_port, ssh_user, local_port)
+            break
+        except SSHTunnelError as e:
+            last_error = e
+            error_str = str(e)
+            if "Address already in use" in error_str and attempt < max_retries - 1:
+                time.sleep(0.1)
+                continue
+            raise
 
-            yield local_port
-            return
+    if process is None:
+        if last_error:
+            raise last_error
+        raise SSHTunnelError("Failed to establish SSH tunnel")
 
-        finally:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-
-    if last_error:
-        raise last_error
-    raise SSHTunnelError("Failed to establish SSH tunnel after multiple attempts")
+    try:
+        yield local_port
+    finally:
+        _cleanup_process(process)
