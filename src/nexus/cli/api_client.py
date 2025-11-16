@@ -7,7 +7,7 @@ import requests
 from termcolor import colored
 
 from nexus.cli import config
-from nexus.cli.ssh_tunnel import ssh_tunnel
+from nexus.cli.ssh_tunnel import SSHTunnelError, ssh_tunnel
 
 
 def _print_error_response(response):
@@ -45,6 +45,10 @@ def handle_api_errors(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
+        except SSHTunnelError as e:
+            print(colored("\nSSH Tunnel Error:", "red", attrs=["bold"]))
+            print(str(e))
+            raise
         except requests.exceptions.HTTPError as e:
             _print_error_response(e.response)
             raise
