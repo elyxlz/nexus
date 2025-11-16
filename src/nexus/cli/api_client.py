@@ -133,15 +133,6 @@ def get_detailed_health(refresh: bool = False, target_name: str | None = None) -
     return response.json()
 
 
-def check_heartbeat(target_name: str | None = None) -> bool:
-    try:
-        api_url = get_api_base_url(target_name)
-        response = requests.get(f"{api_url}/health", timeout=1)
-        return response.status_code == 200
-    except Exception:
-        return False
-
-
 @handle_api_errors
 def check_artifact_by_sha(git_sha: str, target_name: str | None = None) -> tuple[bool, str | None]:
     api_url = get_api_base_url(target_name)
