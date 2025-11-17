@@ -1260,8 +1260,8 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                     "StrictHostKeyChecking=accept-new",
                     f"{target_cfg.ssh_user}@{target_cfg.host}",
                     "screen",
-                    "-r",
-                    screen_session_name,
+                    "-x",
+                    f"nexus/{screen_session_name}",
                 ],
                 env=env,
             )
@@ -1271,7 +1271,7 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                 print(colored(f"View logs: nx logs {job_id}", "yellow"))
                 return
         else:
-            current_user_exit_code = os.system(f"screen -r {screen_session_name}")
+            current_user_exit_code = os.system(f"screen -x nexus/{screen_session_name}")
 
             if current_user_exit_code != 0:
                 exit_code = os.system(f"sudo -u nexus screen -r {screen_session_name}")
