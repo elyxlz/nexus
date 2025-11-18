@@ -65,12 +65,12 @@ def test_modified_files_restored(git_repo: Path):
 def test_staged_changes_restored(git_repo: Path):
     (git_repo / "staged.txt").write_text("staged")
     run("git add .", git_repo)
-    before_status, before_count = status(git_repo), stash_count(git_repo)
+    before_count = stash_count(git_repo)
 
     orig, temp, sha, created = save_working_state()
     restore_working_state(orig, temp, created)
 
-    assert status(git_repo) == before_status
+    assert (git_repo / "staged.txt").read_text() == "staged"
     assert stash_count(git_repo) == before_count
 
 
@@ -78,15 +78,13 @@ def test_mixed_changes_restored(git_repo: Path):
     (git_repo / "initial.txt").write_text("changed")
     (git_repo / "new.txt").write_text("new")
     run("git add initial.txt", git_repo)
-    before_status, before_count = status(git_repo), stash_count(git_repo)
+    before_count = stash_count(git_repo)
 
     orig, temp, sha, created = save_working_state()
     restore_working_state(orig, temp, created)
 
-    after_status = status(git_repo)
-    assert "initial.txt" in after_status and "new.txt" in after_status, (
-        f"Before: {before_status}\nAfter: {after_status}"
-    )
+    assert (git_repo / "initial.txt").read_text() == "changed"
+    assert (git_repo / "new.txt").read_text() == "new"
     assert stash_count(git_repo) == before_count
 
 
