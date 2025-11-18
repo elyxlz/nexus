@@ -852,7 +852,7 @@ wheels = [
 
 [[package]]
 name = "nexusai"
-version = "0.5.25b5"
+version = "0.5.25b6"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
