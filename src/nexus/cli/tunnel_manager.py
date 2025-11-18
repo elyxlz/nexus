@@ -145,52 +145,64 @@ def _stop_control_master(target_name: str) -> bool:
 
 def _start_control_master(target_name: str, target_cfg: config.TargetConfig) -> int:
     socket_path = _get_socket_path(target_name)
-    local_port = _find_free_port()
+    last_error: SSHTunnelError | None = None
 
-    ssh_cmd = [
-        "ssh",
-        "-M",
-        "-S",
-        str(socket_path),
-        "-fN",
-        "-L",
-        f"{local_port}:127.0.0.1:{target_cfg.port}",
-        "-o",
-        "StrictHostKeyChecking=accept-new",
-        "-o",
-        "ConnectTimeout=10",
-        "-o",
-        "ServerAliveInterval=60",
-        "-o",
-        "ServerAliveCountMax=3",
-        "-o",
-        "ExitOnForwardFailure=yes",
-        "-o",
-        "ControlPersist=yes",
-        f"{target_cfg.ssh_user}@{target_cfg.host}",
-    ]
+    for attempt in range(3):
+        local_port = _find_free_port()
 
-    try:
-        result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=30)
-    except subprocess.TimeoutExpired:
-        raise SSHTunnelError("SSH connection timed out after 30 seconds\nHint: Check network connectivity")
+        ssh_cmd = [
+            "ssh",
+            "-M",
+            "-S",
+            str(socket_path),
+            "-fN",
+            "-L",
+            f"{local_port}:127.0.0.1:{target_cfg.port}",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "ServerAliveInterval=60",
+            "-o",
+            "ServerAliveCountMax=3",
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-o",
+            "ControlPersist=yes",
+            f"{target_cfg.ssh_user}@{target_cfg.host}",
+        ]
 
-    if result.returncode != 0:
-        raise SSHTunnelError(
-            f"Failed to start SSH tunnel\n"
-            f"Error: {result.stderr.strip()}\n"
-            f"Hint: Verify SSH access with: ssh {target_cfg.ssh_user}@{target_cfg.host} echo ok"
-        )
+        try:
+            result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=30)
+        except subprocess.TimeoutExpired:
+            raise SSHTunnelError("SSH connection timed out after 30 seconds\nHint: Check network connectivity")
 
-    if not _wait_for_tunnel(local_port, timeout=10.0):
-        _stop_control_master(target_name)
-        raise SSHTunnelError(
-            f"SSH tunnel started but port {local_port} not responding\n"
-            f"Hint: Check that the Nexus server is running on {target_cfg.host}:{target_cfg.port}"
-        )
+        if result.returncode != 0:
+            error_msg = result.stderr.strip()
+            if "Address already in use" in error_msg and attempt < 2:
+                time.sleep(0.1)
+                last_error = SSHTunnelError(f"Port {local_port} already in use, retrying...")
+                continue
+            raise SSHTunnelError(
+                f"Failed to start SSH tunnel\n"
+                f"Error: {error_msg}\n"
+                f"Hint: Verify SSH access with: ssh {target_cfg.ssh_user}@{target_cfg.host} echo ok"
+            )
 
-    _write_port_file(target_name, local_port)
-    return local_port
+        if not _wait_for_tunnel(local_port, timeout=10.0):
+            _stop_control_master(target_name)
+            raise SSHTunnelError(
+                f"SSH tunnel started but port {local_port} not responding\n"
+                f"Hint: Check that the Nexus server is running on {target_cfg.host}:{target_cfg.port}"
+            )
+
+        _write_port_file(target_name, local_port)
+        return local_port
+
+    if last_error:
+        raise last_error
+    raise SSHTunnelError("Failed to establish SSH tunnel after retries")
 
 
 def _get_tunnel_port(target_name: str) -> int | None:
@@ -225,9 +237,6 @@ def get_or_create_tunnel(target_name: str) -> int:
     port = _get_tunnel_port(target_name)
     if port is not None:
         return port
-
-    if target_cfg is None:
-        raise ValueError(f"Target '{target_name}' is local, no tunnel needed")
 
     _stop_control_master(target_name)
     return _start_control_master(target_name, target_cfg)
