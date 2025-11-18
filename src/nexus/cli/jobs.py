@@ -1287,14 +1287,6 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                 print(colored(f"View logs: nx logs {job_id}", "yellow"))
                 return
         else:
-            current_user = os_module.environ.get("USER", "")
-            if current_user and current_user != "nexus":
-                subprocess.call(
-                    ["sudo", "-u", "nexus", "screen", "-S", screen_session_name, "-X", "acladd", current_user],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-
             current_user_exit_code = subprocess.call(["screen", "-x", f"nexus/{screen_session_name}"])
 
             if current_user_exit_code != 0:
