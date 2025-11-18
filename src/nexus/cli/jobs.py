@@ -149,6 +149,10 @@ def run_job(
                 time.sleep(1)
                 try:
                     job = api_client.get_job(job_id, target_name=target_name)
+                    if job["status"] in ["failed", "killed", "completed"]:
+                        print(colored(f"\nJob {job_id} {job['status']}", "red" if job["status"] != "completed" else "green"))
+                        view_logs(cfg, target=job_id, target_name=target_name)
+                        return
                     if job["status"] == "running" and job.get("screen_session_name"):
                         print(colored(f"Job {job_id} running, attaching to screen session...", "green"))
                         attach_to_job(cfg, job_id, target_name=target_name)
