@@ -1064,12 +1064,9 @@ def print_status(target_name: str | None = None) -> None:
 
         server_version = status.get("server_version", "unknown")
         if server_version != VERSION:
-            print(
-                colored(
-                    f"WARNING: Nexus client version ({VERSION}) does not match "
-                    f"Nexus server version ({server_version}).",
-                    "yellow",
-                )
+            raise RuntimeError(
+                f"Version mismatch: Nexus client version ({VERSION}) does not match "
+                f"server version ({server_version}). Please ensure client and server are on the same version."
             )
 
         health = api_client.get_detailed_health(refresh=False, target_name=target_name)
