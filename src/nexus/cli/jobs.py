@@ -1,4 +1,3 @@
-import os
 import re
 import sys
 import time
@@ -1243,12 +1242,12 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
         job_id = job["id"]
         starting_status = job["status"]
 
+        import subprocess
+
+        import os as os_module
+
         active_target_name, target_cfg = config.get_active_target(target_name)
         if target_cfg is not None:
-            import subprocess
-
-            import os as os_module
-
             env = os_module.environ.copy()
             env["TERM"] = "xterm-256color"
 
@@ -1260,8 +1259,8 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                     "StrictHostKeyChecking=accept-new",
                     f"{target_cfg.ssh_user}@{target_cfg.host}",
                     "screen",
-                    "-r",
-                    screen_session_name,
+                    "-x",
+                    f"nexus/{screen_session_name}",
                 ],
                 env=env,
             )
@@ -1271,14 +1270,14 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                 print(colored(f"View logs: nx logs {job_id}", "yellow"))
                 return
         else:
-            current_user_exit_code = os.system(f"screen -r {screen_session_name}")
+            current_user_exit_code = subprocess.call(["screen", "-x", f"nexus/{screen_session_name}"])
 
             if current_user_exit_code != 0:
-                exit_code = os.system(f"sudo -u nexus screen -r {screen_session_name}")
+                exit_code = subprocess.call(["sudo", "-u", "nexus", "screen", "-r", screen_session_name])
 
                 if exit_code != 0:
                     print(colored("Screen session not found. Available sessions:", "yellow"))
-                    os.system("screen -ls")
+                    subprocess.call(["screen", "-ls"])
                     print(colored("\nTroubleshooting tips:", "yellow"))
                     print("  1. Verify that the job is still running and the session name is correct.")
                     print("  2. Check if you have the proper permissions to access the screen session.")

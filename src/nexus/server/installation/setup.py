@@ -163,6 +163,20 @@ def setup_passwordless_nexus_attach() -> bool:
         return False
 
 
+def setup_screen_multiuser() -> bool:
+    screen_path = pl.Path("/usr/bin/screen")
+    if not screen_path.exists():
+        return False
+
+    try:
+        current_mode = screen_path.stat().st_mode
+        if not (current_mode & stat.S_ISUID):
+            subprocess.run(["chmod", "u+s", str(screen_path)], check=True)
+        return True
+    except Exception:
+        return False
+
+
 def set_system_permissions() -> None:
     subprocess.run(["chown", "-R", f"{SERVER_USER}:{SERVER_USER}", str(SYSTEM_SERVER_DIR)], check=True)
     subprocess.run(["chmod", "-R", "770", str(SYSTEM_SERVER_DIR)], check=True)
@@ -453,6 +467,9 @@ def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
         print("Created shared screen directory at /tmp/screen_nexus")
 
     setup_screen_run_dir()
+
+    if setup_screen_multiuser():
+        print("Enabled multiuser screen support (setuid on /usr/bin/screen)")
 
     if setup_passwordless_nexus_attach():
         print(
