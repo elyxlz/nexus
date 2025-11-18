@@ -34,8 +34,6 @@ SCREENRC_CONTENT = """termcapinfo xterm*|rxvt*|kterm*|Eterm*|alacritty*|kitty*|s
 defscrollback 10000
 
 multiuser on
-aclumask *
-aclchg * +rwx "#?"
 """
 
 
