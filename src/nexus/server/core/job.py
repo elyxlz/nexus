@@ -103,9 +103,16 @@ exec 2>"{error_log}"
 
 echo "Starting job execution..." >&2
 
-if ! script -q -e -f -c "bash {job_commands_script}" "{log_file}"; then
-    echo "Job script failed with exit code $?" >&2
-    exit 1
+set +e
+script -q -e -f -c "bash {job_commands_script}" "{log_file}"
+EXIT_CODE=$?
+set -e
+
+echo "COMMAND_EXIT_CODE=$EXIT_CODE" >> "{log_file}"
+
+if [ $EXIT_CODE -ne 0 ]; then
+    echo "Job script failed with exit code $EXIT_CODE" >&2
+    exit $EXIT_CODE
 fi
 
 echo "Job completed successfully" >&2
