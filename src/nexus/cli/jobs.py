@@ -1251,6 +1251,23 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
             env = os_module.environ.copy()
             env["TERM"] = "xterm-256color"
 
+            subprocess.call(
+                [
+                    "ssh",
+                    "-o",
+                    "StrictHostKeyChecking=accept-new",
+                    f"{target_cfg.ssh_user}@{target_cfg.host}",
+                    "screen",
+                    "-S",
+                    screen_session_name,
+                    "-X",
+                    "acladd",
+                    target_cfg.ssh_user,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
             exit_code = subprocess.call(
                 [
                     "ssh",
