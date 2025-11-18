@@ -91,30 +91,38 @@ def save_working_state() -> tuple[str, str, str, bool]:
     try:
         original_branch = get_current_git_branch()
 
+        try:
+            original_head = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], text=True
+            ).strip()
+        except subprocess.CalledProcessError:
+            raise RuntimeError(
+                "Cannot create artifact from repository with no commits. "
+                "Please make an initial commit first."
+            )
+
         is_dirty = is_working_tree_dirty()
-        if is_dirty:
-            subprocess.run(["git", "stash", "-u"], check=True, capture_output=True)
+        if not is_dirty:
+            tree_sha = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+            return (original_branch, "", tree_sha, False)
 
+        subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "commit", "--no-verify", "-m", "Nexus temporary commit"], check=True, capture_output=True)
+
+        tree_sha = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
         temp_branch = f"nexus-tmp-{int(time.time())}-{generate_job_id()}"
-        subprocess.run(["git", "checkout", "-b", temp_branch], check=True, capture_output=True)
+        subprocess.run(["git", "branch", temp_branch], check=True, capture_output=True)
 
-        if is_dirty:
-            subprocess.run(["git", "stash", "apply"], check=True, capture_output=True)
-            subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
-            subprocess.run(["git", "commit", "-m", "Nexus temporary commit"], check=True, capture_output=True)
+        subprocess.run(["git", "reset", original_head], check=True, capture_output=True)
 
-        commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
-
-        return (original_branch, temp_branch, commit_sha, is_dirty)
+        return (original_branch, temp_branch, tree_sha, True)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Failed to save working state: {e}")
 
 
 def restore_working_state(original_branch: str, temp_branch: str, we_created_stash: bool) -> None:
-    subprocess.run(["git", "checkout", original_branch], check=True, capture_output=True)
-    if we_created_stash:
-        subprocess.run(["git", "stash", "pop"], check=True, capture_output=True)
-    subprocess.run(["git", "branch", "-D", temp_branch], check=True, capture_output=True)
+    if temp_branch:
+        subprocess.run(["git", "branch", "-D", temp_branch], check=True, capture_output=True)
 
 
 def prepare_git_artifact(enable_git_tag_push: bool, target_name: str | None = None) -> GitArtifactContext:
