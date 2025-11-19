@@ -156,6 +156,8 @@ def _start_control_master(target_name: str, target_cfg: config.TargetConfig) -> 
             "-S",
             str(socket_path),
             "-fN",
+            "-p",
+            str(target_cfg.ssh_port),
             "-L",
             f"{local_port}:127.0.0.1:{target_cfg.port}",
             "-o",
@@ -184,10 +186,11 @@ def _start_control_master(target_name: str, target_cfg: config.TargetConfig) -> 
                 time.sleep(0.1)
                 last_error = SSHTunnelError(f"Port {local_port} already in use, retrying...")
                 continue
+            port_flag = f"-p {target_cfg.ssh_port}" if target_cfg.ssh_port != 22 else ""
             raise SSHTunnelError(
                 f"Failed to start SSH tunnel\n"
                 f"Error: {error_msg}\n"
-                f"Hint: Verify SSH access with: ssh {target_cfg.ssh_user}@{target_cfg.host} echo ok"
+                f"Hint: Verify SSH access with: ssh {port_flag} {target_cfg.ssh_user}@{target_cfg.host} echo ok".strip()
             )
 
         if not _wait_for_tunnel(local_port, timeout=10.0):
