@@ -92,13 +92,10 @@ def save_working_state() -> tuple[str, str, str, bool]:
         original_branch = get_current_git_branch()
 
         try:
-            original_head = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], text=True
-            ).strip()
+            original_head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
         except subprocess.CalledProcessError:
             raise RuntimeError(
-                "Cannot create artifact from repository with no commits. "
-                "Please make an initial commit first."
+                "Cannot create artifact from repository with no commits. Please make an initial commit first."
             )
 
         is_dirty = is_working_tree_dirty()
@@ -107,7 +104,9 @@ def save_working_state() -> tuple[str, str, str, bool]:
             return (original_branch, "", tree_sha, False)
 
         subprocess.run(["git", "add", "-A"], check=True, capture_output=True)
-        subprocess.run(["git", "commit", "--no-verify", "-m", "Nexus temporary commit"], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "--no-verify", "-m", "Nexus temporary commit"], check=True, capture_output=True
+        )
 
         tree_sha = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
         temp_branch = f"nexus-tmp-{int(time.time())}-{generate_job_id()}"
