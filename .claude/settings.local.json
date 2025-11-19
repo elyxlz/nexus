@@ -30,7 +30,9 @@
       "Bash(git fetch:*)",
       "Bash(python3 -m pyflakes:*)",
       "Bash(python3:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(uv lock:*)",
+      "Bash(gh run list:*)"
     ],
     "deny": []
   }
