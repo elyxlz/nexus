@@ -13,6 +13,7 @@ class TargetConfig(pyd.BaseModel):
     host: str
     port: int = pyd.Field(default=54323)
     ssh_user: str
+    ssh_port: int = pyd.Field(default=22)
 
 
 REQUIRED_ENV_VARS = {

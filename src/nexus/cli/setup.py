@@ -305,7 +305,7 @@ def open_jobrc_editor() -> None:
     utils.open_file_in_editor(jobrc_path)
 
 
-def _test_ssh_connection(host: str, ssh_user: str) -> bool:
+def _test_ssh_connection(host: str, ssh_user: str, ssh_port: int = 22) -> bool:
     import subprocess
 
     print(colored("\nTesting SSH connection...", "cyan"))
@@ -313,6 +313,8 @@ def _test_ssh_connection(host: str, ssh_user: str) -> bool:
         result = subprocess.run(
             [
                 "ssh",
+                "-p",
+                str(ssh_port),
                 "-o",
                 "ConnectTimeout=10",
                 "-o",
@@ -397,19 +399,21 @@ def add_target() -> None:
             return
 
     host = utils.get_user_input("Remote server address (hostname or IP)", required=True)
-    port = int(utils.get_user_input("Remote server port", default="54323"))
+    ssh_port = int(utils.get_user_input("SSH port", default="22"))
     ssh_user = utils.get_user_input("SSH username", default=os.environ.get("USER", ""))
+    port = int(utils.get_user_input("Remote server port", default="54323"))
 
     print(colored("\nValidating connection...", "cyan", attrs=["bold"]))
 
-    if not _test_ssh_connection(host, ssh_user):
+    if not _test_ssh_connection(host, ssh_user, ssh_port):
         print(colored("\n✗ SSH connection failed", "red"))
         print(colored("\nTo fix:", "yellow"))
         print(colored(f"  1. Ensure your SSH key is in ~/.ssh/authorized_keys on {host}", "yellow"))
-        print(colored(f"  2. Test manually: ssh {ssh_user}@{host} echo ok", "yellow"))
+        port_flag = f"-p {ssh_port} " if ssh_port != 22 else ""
+        print(colored(f"  2. Test manually: ssh {port_flag}{ssh_user}@{host} echo ok", "yellow"))
         return
 
-    target_cfg = config.TargetConfig(host=host, port=port, ssh_user=ssh_user)
+    target_cfg = config.TargetConfig(host=host, port=port, ssh_user=ssh_user, ssh_port=ssh_port)
     cfg.targets[target_name] = target_cfg
     config.save_config(cfg)
 
