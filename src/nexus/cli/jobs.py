@@ -1255,6 +1255,8 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
             subprocess.call(
                 [
                     "ssh",
+                    "-p",
+                    str(target_cfg.ssh_port),
                     "-o",
                     "StrictHostKeyChecking=accept-new",
                     f"{target_cfg.ssh_user}@{target_cfg.host}",
@@ -1275,6 +1277,8 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
             exit_code = subprocess.call(
                 [
                     "ssh",
+                    "-p",
+                    str(target_cfg.ssh_port),
                     "-t",
                     "-o",
                     "StrictHostKeyChecking=accept-new",
