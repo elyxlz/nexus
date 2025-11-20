@@ -1,21 +1,25 @@
 import asyncio
 import dataclasses as dc
 import datetime as dt
-import hashlib
 import os
 import pathlib as pl
 import re
 import shutil
 import subprocess
 import tempfile
-import time
-
-import base58
+import typing as tp
 
 from nexus.server.core import db
 from nexus.server.core import exceptions as exc
 from nexus.server.core import schemas
-from nexus.server.utils import logger
+from nexus.server.core.schemas import (
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    STATUS_KILLED,
+    STATUS_QUEUED,
+    STATUS_RUNNING,
+)
+from nexus.server.utils import ids, logger
 
 __all__ = [
     "create_job",
@@ -29,6 +33,10 @@ __all__ = [
     "get_queue",
 ]
 
+SCREEN_PROCESS_TIMEOUT = 30.0
+SCREEN_STARTUP_DELAY = 0.5
+GRACEFUL_SHUTDOWN_TIMEOUT = 10.0
+
 SCREENRC_CONTENT = """termcapinfo xterm*|rxvt*|kterm*|Eterm*|alacritty*|kitty*|screen* ti@:te@
 
 defscrollback 10000
@@ -36,14 +44,6 @@ defscrollback 10000
 multiuser on
 aclchg * +rwx "#?"
 """
-
-
-def _generate_job_id() -> str:
-    timestamp = str(time.time()).encode()
-    random_bytes = os.urandom(4)
-    hash_input = timestamp + random_bytes
-    hash_bytes = hashlib.sha256(hash_input).digest()[:4]
-    return base58.b58encode(hash_bytes).decode()[:6].lower()
 
 
 def _get_job_session_name(job_id: str) -> str:
@@ -58,9 +58,6 @@ def _create_directories(dir_path: pl.Path) -> tuple[pl.Path, pl.Path]:
     job_repo_dir = dir_path / "repo"
     job_repo_dir.mkdir(parents=True, exist_ok=True)
     return log_file, job_repo_dir
-
-
-import pathlib as pl
 
 
 def _build_job_commands_script(
@@ -198,6 +195,15 @@ def _create_screenrc() -> pl.Path:
 @exc.handle_exception(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
 @exc.handle_exception(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
 async def _launch_screen_process(session_name: str, script_path: str, env: dict[str, str]) -> int:
+    check_session = await asyncio.create_subprocess_exec(
+        "screen", "-ls", session_name, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    await check_session.communicate()
+    if check_session.returncode == 0:
+        logger.warning(f"Screen session {session_name} already exists, killing it first")
+        kill_session = await asyncio.create_subprocess_exec("screen", "-S", session_name, "-X", "quit")
+        await kill_session.communicate()
+
     abs_script_path = pl.Path(script_path).absolute()
 
     if not abs_script_path.exists():
@@ -227,6 +233,13 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         raise exc.JobError(message=f"Script syntax error: {stderr.decode()}")
 
     screenrc_path = _create_screenrc()
+    screendir = pl.Path(tempfile.gettempdir()) / "nexus-screen"
+    screendir.mkdir(parents=True, exist_ok=True)
+    screendir.chmod(0o700)
+
+    screen_env = env.copy()
+    screen_env["SCREENDIR"] = str(screendir)
+
     process = await asyncio.create_subprocess_exec(
         "screen",
         "-c",
@@ -234,12 +247,17 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         "-dmS",
         session_name,
         str(abs_script_path),
-        env=env,
+        env=screen_env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
 
-    stdout, stderr = await process.communicate()
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=SCREEN_PROCESS_TIMEOUT)
+    except asyncio.TimeoutError:
+        process.kill()
+        raise exc.JobError(message="Screen process timed out after 30 seconds")
+
     logger.debug(f"Screen command returncode: {process.returncode}")
     if stdout:
         logger.debug(f"Screen stdout: {stdout.decode().strip()}")
@@ -258,7 +276,7 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
 
         raise exc.JobError(message=error_details)
 
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(SCREEN_STARTUP_DELAY)
 
     screen_list = await asyncio.create_subprocess_exec(
         "screen", "-ls", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -329,13 +347,13 @@ def create_job(
     job_id: str | None = None,
 ) -> schemas.Job:
     return schemas.Job(
-        id=job_id or _generate_job_id(),
+        id=job_id or ids.generate_job_id(),
         command=command.strip(),
         artifact_id=artifact_id,
         git_repo_url=git_repo_url,
         git_branch=git_branch,
         git_tag=git_tag,
-        status="queued",
+        status=STATUS_QUEUED,
         created_at=dt.datetime.now().timestamp(),
         priority=priority,
         num_gpus=num_gpus,
@@ -362,9 +380,7 @@ def create_job(
 
 @exc.handle_exception(Exception, exc.JobError, message="Failed to start job")
 async def async_start_job(job: schemas.Job, gpu_idxs: list[int], ctx) -> schemas.Job:
-    job_dir = pl.Path(tempfile.mkdtemp(prefix=f"nexus-job-{job.id}-"))
-    job_dir.mkdir(parents=True, exist_ok=True)
-    job = dc.replace(job, dir=job_dir)
+    job = dc.replace(job, dir=pl.Path(tempfile.mkdtemp(prefix=f"nexus-job-{job.id}-")))
 
     if job.dir is None:
         raise exc.JobError(message=f"Job directory not set for job {job.id}")
@@ -377,7 +393,7 @@ async def async_start_job(job: schemas.Job, gpu_idxs: list[int], ctx) -> schemas
         job,
         started_at=dt.datetime.now().timestamp(),
         gpu_idxs=gpu_idxs,
-        status="running",
+        status=STATUS_RUNNING,
         pid=pid,
         screen_session_name=session_name,
     )
@@ -415,30 +431,20 @@ async def async_end_job(_job: schemas.Job, killed: bool) -> schemas.Job:
     job_log = await async_get_job_logs(job_dir=_job.dir)
     exit_code = await _get_job_exit_code(job_id=_job.id, job_dir=_job.dir)
     completed_at = dt.datetime.now().timestamp()
-
+    updates: dict[str, tp.Any] = {"completed_at": completed_at}
     if killed:
-        new_job = dc.replace(_job, status="killed", completed_at=completed_at)
+        updates["status"] = STATUS_KILLED
     elif job_log is None:
-        new_job = dc.replace(
-            _job, status="failed", error_message="No output log found", completed_at=dt.datetime.now().timestamp()
-        )
+        updates.update({"status": STATUS_FAILED, "error_message": "No output log found"})
     elif exit_code is None:
-        new_job = dc.replace(
-            _job,
-            status="failed",
-            error_message="Could not find exit code in log",
-            completed_at=completed_at,
-        )
+        updates.update({"status": STATUS_FAILED, "error_message": "Could not find exit code in log"})
     else:
-        new_job = dc.replace(
-            _job,
-            exit_code=exit_code,
-            status="completed" if exit_code == 0 else "failed",
-            error_message=None if exit_code == 0 else f"Job failed with exit code {exit_code}",
-            completed_at=completed_at,
-        )
-
-    return new_job
+        updates.update({
+            "exit_code": exit_code,
+            "status": STATUS_COMPLETED if exit_code == 0 else STATUS_FAILED,
+            "error_message": None if exit_code == 0 else f"Job failed with exit code {exit_code}"
+        })
+    return dc.replace(_job, **updates)
 
 
 async def async_get_job_logs(job_dir: pl.Path | None, last_n_lines: int | None = None) -> str | None:
@@ -499,8 +505,8 @@ async def kill_job(job: schemas.Job) -> None:
         logger.debug(f"Sending SIGTERM to processes in {job_dir}")
         await _pkill_processes(job_dir, signal=15)
 
-    logger.debug("Waiting 10 seconds for graceful shutdown")
-    await asyncio.sleep(10)
+    logger.debug(f"Waiting {GRACEFUL_SHUTDOWN_TIMEOUT} seconds for graceful shutdown")
+    await asyncio.sleep(GRACEFUL_SHUTDOWN_TIMEOUT)
 
     if not is_job_running(job):
         logger.debug(f"Job {job.id} terminated gracefully")

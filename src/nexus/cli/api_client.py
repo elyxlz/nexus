@@ -165,40 +165,30 @@ def add_job(job_request: dict, target_name: str | None = None) -> dict:
     return response.json()
 
 
-@handle_api_errors
-def kill_running_jobs(job_ids: list[str], target_name: str | None = None) -> dict:
-    results = {"killed": [], "failed": []}
+def _process_job_batch(job_ids: list[str], method: str, endpoint_suffix: str, success_key: str, target_name: str | None) -> dict:
+    results = {success_key: [], "failed": []}
     api_url = get_api_base_url(target_name)
-
+    request_fn = requests.post if method == "POST" else requests.delete
     for job_id in job_ids:
         try:
-            response = requests.post(f"{api_url}/jobs/{job_id}/kill")
+            response = request_fn(f"{api_url}/jobs/{job_id}{endpoint_suffix}")
             if response.status_code == 204:
-                results["killed"].append(job_id)
+                results[success_key].append(job_id)
             else:
                 response.raise_for_status()
         except Exception as e:
             results["failed"].append({"id": job_id, "error": str(e)})
-
     return results
+
+
+@handle_api_errors
+def kill_running_jobs(job_ids: list[str], target_name: str | None = None) -> dict:
+    return _process_job_batch(job_ids, "POST", "/kill", "killed", target_name)
 
 
 @handle_api_errors
 def remove_queued_jobs(job_ids: list[str], target_name: str | None = None) -> dict:
-    results = {"removed": [], "failed": []}
-    api_url = get_api_base_url(target_name)
-
-    for job_id in job_ids:
-        try:
-            response = requests.delete(f"{api_url}/jobs/{job_id}")
-            if response.status_code == 204:
-                results["removed"].append(job_id)
-            else:
-                response.raise_for_status()
-        except Exception as e:
-            results["failed"].append({"id": job_id, "error": str(e)})
-
-    return results
+    return _process_job_batch(job_ids, "DELETE", "", "removed", target_name)
 
 
 @handle_api_errors

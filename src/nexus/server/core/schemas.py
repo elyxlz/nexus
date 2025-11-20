@@ -2,7 +2,18 @@ import dataclasses as dc
 import pathlib as pl
 import typing as tp
 
-__all__ = ["JobStatus", "NotificationType", "IntegrationType", "Job"]
+__all__ = [
+    "JobStatus",
+    "NotificationType",
+    "IntegrationType",
+    "Job",
+    "STATUS_QUEUED",
+    "STATUS_RUNNING",
+    "STATUS_COMPLETED",
+    "STATUS_FAILED",
+    "STATUS_KILLED",
+    "TERMINAL_STATUSES",
+]
 
 
 def _exclude_env_repr(obj):
@@ -12,6 +23,14 @@ def _exclude_env_repr(obj):
 JobStatus = tp.Literal["queued", "running", "completed", "failed", "killed"]
 NotificationType = tp.Literal["discord", "phone"]
 IntegrationType = tp.Literal["wandb", "nullpointer"]
+
+STATUS_QUEUED = "queued"
+STATUS_RUNNING = "running"
+STATUS_COMPLETED = "completed"
+STATUS_FAILED = "failed"
+STATUS_KILLED = "killed"
+
+TERMINAL_STATUSES: frozenset[str] = frozenset([STATUS_COMPLETED, STATUS_FAILED, STATUS_KILLED])
 
 
 @dc.dataclass(frozen=True, slots=True)

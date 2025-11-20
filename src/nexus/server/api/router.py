@@ -9,10 +9,15 @@ import fastapi as fa
 from nexus.server.api import models
 from nexus.server.core import context, db, job, schemas
 from nexus.server.core import exceptions as exc
+from nexus.server.core.schemas import STATUS_COMPLETED, STATUS_FAILED, STATUS_QUEUED, STATUS_RUNNING
 from nexus.server.external import gpu, system
 from nexus.server.utils import format, logger
 
 __all__ = ["router"]
+
+MAX_PRIORITY = 9998
+IMMEDIATE_PRIORITY = 9999
+MAX_ARTIFACT_SIZE_MB = 50
 
 router = fa.APIRouter()
 
@@ -23,10 +28,10 @@ def _get_context(request: fa.Request) -> context.NexusServerContext:
 
 @router.get("/v1/server/status", response_model=models.ServerStatusResponse)
 async def get_status_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    queued_jobs = db.list_jobs(conn=ctx.db, status="queued")
-    running_jobs = db.list_jobs(conn=ctx.db, status="running")
-    completed_jobs = db.list_jobs(conn=ctx.db, status="completed")
-    failed_jobs = db.list_jobs(conn=ctx.db, status="failed")
+    queued_jobs = db.list_jobs(conn=ctx.db, status=STATUS_QUEUED)
+    running_jobs = db.list_jobs(conn=ctx.db, status=STATUS_RUNNING)
+    completed_jobs = db.list_jobs(conn=ctx.db, status=STATUS_COMPLETED)
+    failed_jobs = db.list_jobs(conn=ctx.db, status=STATUS_FAILED)
 
     queued = len(queued_jobs)
     running = len(running_jobs)
@@ -80,10 +85,9 @@ async def upload_artifact(
     if not raw:
         raise exc.InvalidRequestError("Empty artifact upload")
 
-    max_size_mb = 50
-    max_size_bytes = max_size_mb * 1024 * 1024
+    max_size_bytes = MAX_ARTIFACT_SIZE_MB * 1024 * 1024
     if len(raw) > max_size_bytes:
-        raise exc.InvalidRequestError(f"Artifact exceeds maximum size of {max_size_mb} MB")
+        raise exc.InvalidRequestError(f"Artifact exceeds maximum size of {MAX_ARTIFACT_SIZE_MB} MB")
 
     artifact_id = base58.b58encode(os.urandom(6)).decode()
     db.add_artifact(ctx.db, artifact_id, raw, git_sha)
@@ -95,38 +99,41 @@ async def upload_artifact(
 async def create_job_endpoint(
     job_request: models.JobRequest, ctx: context.NexusServerContext = fa.Depends(_get_context)
 ):
-    priority = job_request.priority if not job_request.run_immediately else 9999
+    if job_request.priority > MAX_PRIORITY:
+        raise exc.InvalidRequestError(f"Priority cannot exceed {MAX_PRIORITY}")
+
+    priority = job_request.priority if not job_request.run_immediately else IMMEDIATE_PRIORITY
     ignore_blacklist = job_request.ignore_blacklist
 
     gpu_idxs_list = job_request.gpu_idxs or []
-    if job_request.run_immediately and job_request.num_gpus > 0:
-        running_jobs = db.list_jobs(conn=ctx.db, status="running")
+
+    if gpu_idxs_list or (job_request.run_immediately and job_request.num_gpus > 0):
+        running_jobs = db.list_jobs(conn=ctx.db, status=STATUS_RUNNING)
         blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
+        all_gpus = gpu.get_gpus(
+            running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
+        )
 
         if gpu_idxs_list:
-            all_gpus = gpu.get_gpus(
-                running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
-            )
-            requested_gpus = [g for g in all_gpus if g.index in gpu_idxs_list]
-            if len(requested_gpus) != len(gpu_idxs_list):
-                missing = set(gpu_idxs_list) - {g.index for g in requested_gpus}
+            if len([g for g in all_gpus if g.index in gpu_idxs_list]) != len(gpu_idxs_list):
+                missing = set(gpu_idxs_list) - {g.index for g in all_gpus}
                 raise exc.GPUError(message=f"Requested GPUs not found: {missing}")
 
-        all_gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
-        available_gpus = [
-            g
-            for g in all_gpus
-            if gpu.is_gpu_available(
-                g, ignore_blacklist=ignore_blacklist, required=gpu_idxs_list if gpu_idxs_list else None
-            )
-        ]
+        if job_request.run_immediately and job_request.num_gpus > 0:
+            available_gpus = [
+                g
+                for g in all_gpus
+                if gpu.is_gpu_available(
+                    g, ignore_blacklist=ignore_blacklist, required=gpu_idxs_list if gpu_idxs_list else None
+                )
+            ]
 
-        if gpu_idxs_list and not available_gpus:
-            raise exc.GPUError(message=f"Requested GPUs are not available: {gpu_idxs_list}")
-        elif job_request.num_gpus > len(available_gpus):
-            raise exc.GPUError(
-                message=f"Requested {job_request.num_gpus} GPUs but only {len(available_gpus)} are available"
-            )
+            if gpu_idxs_list and not available_gpus:
+                raise exc.GPUError(message=f"Requested GPUs are not available: {gpu_idxs_list}")
+            elif job_request.num_gpus > len(available_gpus):
+                raise exc.GPUError(
+                    message=f"Requested {job_request.num_gpus} GPUs but only {len(available_gpus)} are available"
+                )
 
     j = job.create_job(
         command=job_request.command,
@@ -265,7 +272,7 @@ async def remove_gpu_blacklist_endpoint(gpu_idx: int, ctx: context.NexusServerCo
 
 @router.get("/v1/gpus", response_model=list[gpu.GpuInfo])
 async def list_gpus_endpoint(ctx: context.NexusServerContext = fa.Depends(_get_context)):
-    running_jobs = db.list_jobs(conn=ctx.db, status="running")
+    running_jobs = db.list_jobs(conn=ctx.db, status=STATUS_RUNNING)
     blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
     gpus = gpu.get_gpus(running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus)
     logger.info(f"Found {len(gpus)} GPUs")

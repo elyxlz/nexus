@@ -112,7 +112,7 @@ def is_gpu_available(gpu_info: GpuInfo, ignore_blacklist: bool = False, required
         (ignore_blacklist or not gpu_info.is_blacklisted)
         and gpu_info.running_job_id is None
         and gpu_info.process_count == 0
-        and (not required or not len(required) or gpu_info.index in required)
+        and (not required or gpu_info.index in required)
     )
 
 

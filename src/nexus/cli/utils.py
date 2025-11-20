@@ -1,5 +1,4 @@
 import dataclasses as dc
-import hashlib
 import itertools
 import os
 import pathlib as pl
@@ -10,8 +9,9 @@ import tempfile
 import time
 import typing as tp
 
-import base58
 from termcolor import colored
+
+from nexus.cli.ids import generate_job_id
 
 # Types
 Color = tp.Literal["grey", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
@@ -44,8 +44,65 @@ def print_bullet(text: str, color: Color = "blue") -> None:
     print(f"  {colored('•', color)} {text}")
 
 
-def print_error(message: str) -> None:
-    print(colored(f"Error: {message}", "red"))
+def print_error(message: str, prefix_newline: bool = True) -> None:
+    prefix = "\n" if prefix_newline else ""
+    print(colored(f"{prefix}Error: {message}", "red"))
+
+
+def print_job_field(label: str, value: str | int, value_color: Color = "cyan") -> None:
+    print(f"  {colored('•', 'blue')} {label}: {colored(str(value), value_color)}")
+
+
+def format_gpu_info(gpu_idxs: list[int] | None, num_gpus: int, style: tp.Literal["prefix", "parens", "inline"] = "prefix") -> str:
+    if num_gpus == 0:
+        return " (CPU)" if style == "parens" else " on CPU"
+    if gpu_idxs:
+        gpu_str = ','.join(map(str, gpu_idxs))
+        plural = 's' if len(gpu_idxs) > 1 else ''
+    else:
+        gpu_str = str(num_gpus)
+        plural = 's' if num_gpus > 1 else ''
+    if style == "prefix":
+        return f" on GPU{plural}: {colored(gpu_str, 'cyan')}"
+    elif style == "parens":
+        return f" (GPU{plural}: {colored(gpu_str, 'cyan')})"
+    else:
+        return f"GPU{plural}: {colored(gpu_str, 'cyan')}"
+
+
+STATUS_COLOR_MAP: dict[str, Color] = {
+    "queued": "yellow",
+    "running": "green",
+    "completed": "blue",
+    "failed": "red",
+    "killed": "red",
+    "healthy": "green",
+    "under_load": "yellow",
+    "unhealthy": "red",
+}
+
+
+def get_status_color(status: str) -> Color:
+    return STATUS_COLOR_MAP.get(status, "white")
+
+
+def format_priority_str(priority: int) -> str:
+    return f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
+
+
+def truncate_command(command: str, max_length: int = 80) -> str:
+    return command if len(command) <= max_length else command[:max_length - 3] + "..."
+
+
+def print_cancellation() -> None:
+    print(colored("Operation cancelled.", "yellow"))
+
+
+def get_latest_user_job(jobs: list[dict], user: str) -> dict | None:
+    user_jobs = [j for j in jobs if j.get("user") == user and j.get("started_at") is not None]
+    if not user_jobs:
+        return None
+    return max(user_jobs, key=lambda x: x.get("started_at", 0))
 
 
 def print_warning(message: str) -> None:
@@ -74,12 +131,17 @@ def is_sensitive_key(key: str) -> bool:
     return any(keyword in key.lower() for keyword in sensitive_keywords)
 
 
-def generate_job_id() -> str:
-    timestamp = str(time.time()).encode()
-    random_bytes = os.urandom(4)
-    hash_input = timestamp + random_bytes
-    hash_bytes = hashlib.sha256(hash_input).digest()[:4]
-    return base58.b58encode(hash_bytes).decode()[:6].lower()
+def _is_git_repo() -> bool:
+    try:
+        subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
 
 
 def is_working_tree_dirty() -> bool:
@@ -130,15 +192,8 @@ def prepare_git_artifact(enable_git_tag_push: bool, target_name: str | None = No
     job_id = generate_job_id()
     branch_name = get_current_git_branch()
 
-    try:
-        subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except subprocess.CalledProcessError:
-        raise
+    if not _is_git_repo():
+        raise subprocess.CalledProcessError(1, "git rev-parse --is-inside-work-tree")
 
     temp_branch = None
     original_branch = None
@@ -196,11 +251,8 @@ def prepare_git_artifact(enable_git_tag_push: bool, target_name: str | None = No
 
         if temp_branch and original_branch:
             restore_working_state(original_branch, temp_branch, we_created_stash)
-            temp_branch_saved = None
-            original_branch_saved = None
-        else:
-            temp_branch_saved = temp_branch
-            original_branch_saved = original_branch
+        temp_branch_saved = None if (temp_branch and original_branch) else temp_branch
+        original_branch_saved = None if (temp_branch and original_branch) else original_branch
 
         return GitArtifactContext(
             job_id=job_id,
@@ -238,16 +290,10 @@ def can_push_to_remote(remote: str = "origin") -> bool:
 
 
 def get_current_git_branch() -> str:
-    try:
-        # First check if we're in a git repository
-        subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+    if not _is_git_repo():
+        return "unknown-branch"
 
-        # If we are, get the branch name
+    try:
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True,
