@@ -6,6 +6,42 @@ from termcolor import colored
 
 from nexus.cli import api_client, config, setup, utils
 from nexus.cli.config import IntegrationType, NotificationType
+from nexus.server.core.schemas import TERMINAL_STATUSES
+
+
+def _build_job_info(job: dict, **extras) -> dict:
+    base_info = {
+        "id": job["id"],
+        "command": job.get("command", ""),
+        "user": job.get("user", ""),
+    }
+    return {**base_info, **extras}
+
+
+def _validate_notifications(notifications: list[NotificationType], env_vars: dict[str, str]) -> list[NotificationType]:
+    invalid = [n for n in notifications if any(env_vars.get(v) is None for v in config.REQUIRED_ENV_VARS.get(n, []))]
+    if invalid:
+        print(colored("\nWarning: Some notification types are missing required configuration:", "yellow"))
+        for notification_type in invalid:
+            print(f"  {colored('•', 'yellow')} {notification_type}")
+        if not utils.ask_yes_no("Continue with remaining notification types?"):
+            utils.print_cancellation()
+            return []
+        return [n for n in notifications if n not in invalid]
+    return notifications
+
+
+def _load_and_merge_env() -> dict[str, str]:
+    global_env = setup.load_current_env()
+    local_env = setup.load_local_env()
+    env_vars, conflicts = setup.merge_env_with_conflicts(global_env, local_env)
+    if local_env:
+        print(colored(f"\nLoaded {len(local_env)} variable(s) from local .env file", "cyan"))
+    if conflicts:
+        print(colored(f"\nLocal .env overriding {len(conflicts)} global variable(s):", "yellow"))
+        for key in conflicts.keys():
+            print(f"  {colored('•', 'yellow')} {key}")
+    return env_vars
 
 
 def run_job(
@@ -53,7 +89,7 @@ def run_job(
             "Run this job",
             bypass=bypass_confirm,
         ):
-            print(colored("Operation cancelled.", "yellow"))
+            utils.print_cancellation()
             return
 
         user = cfg.user or "anonymous"
@@ -74,34 +110,10 @@ def run_job(
         git_ctx = None
         try:
             git_ctx = utils.prepare_git_artifact(cfg.enable_git_tag_push and not local, target_name=target_name)
-            global_env = setup.load_current_env()
-            local_env = setup.load_local_env()
-            job_env_vars, conflicts = setup.merge_env_with_conflicts(global_env, local_env)
-
-            if local_env:
-                print(colored(f"\nLoaded {len(local_env)} variable(s) from local .env file", "cyan"))
-            if conflicts:
-                print(colored(f"\nLocal .env overriding {len(conflicts)} global variable(s):", "yellow"))
-                for key in conflicts.keys():
-                    print(f"  {colored('•', 'yellow')} {key}")
-
-            invalid_notifications = []
-
-            for notification_type in notifications:
-                required_vars = config.REQUIRED_ENV_VARS.get(notification_type, [])
-                if any(job_env_vars.get(var) is None for var in required_vars):
-                    invalid_notifications.append(notification_type)
-
-            if invalid_notifications:
-                print(colored("\nWarning: Some notification types are missing required configuration:", "yellow"))
-                for notification_type in invalid_notifications:
-                    print(f"  {colored('•', 'yellow')} {notification_type}")
-
-                if not utils.ask_yes_no("Continue with remaining notification types?"):
-                    print(colored("Operation cancelled.", "yellow"))
-                    return
-
-                notifications = [n for n in notifications if n not in invalid_notifications]
+            job_env_vars = _load_and_merge_env()
+            notifications = _validate_notifications(notifications, job_env_vars)
+            if not notifications and (notification_types or cfg.default_notifications):
+                return
 
             gpus_count = len(gpu_idxs) if gpu_idxs else num_gpus
 
@@ -149,7 +161,7 @@ def run_job(
                 time.sleep(1)
                 try:
                     job = api_client.get_job(job_id, target_name=target_name)
-                    if job["status"] in ["failed", "killed", "completed"]:
+                    if job["status"] in TERMINAL_STATUSES:
                         print(
                             colored(
                                 f"\nJob {job_id} {job['status']}", "red" if job["status"] != "completed" else "green"
@@ -221,22 +233,15 @@ def add_jobs(
 
         print(f"\n{colored('Adding the following jobs:', 'blue', attrs=['bold'])}")
         for cmd in expanded_commands:
-            priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
-            if cpu:
-                gpus_str = " (CPU)"
-            elif gpu_idxs:
-                gpus_str = f" (GPUs: {colored(','.join(map(str, gpu_idxs)), 'cyan')})"
-            elif num_gpus > 1:
-                gpus_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})"
-            else:
-                gpus_str = ""
+            priority_str = utils.format_priority_str(priority)
+            gpus_str = utils.format_gpu_info(gpu_idxs, num_gpus, style="parens") if num_gpus > 0 or cpu else ""
             print(f"  {colored('•', 'blue')} {cmd}{priority_str}{gpus_str}")
 
         if not utils.confirm_action(
             f"Add {colored(str(len(expanded_commands)), 'cyan')} jobs to the queue?",
             bypass=bypass_confirm,
         ):
-            print(colored("Operation cancelled.", "yellow"))
+            utils.print_cancellation()
             return
 
         user = cfg.user or "anonymous"
@@ -254,34 +259,10 @@ def add_jobs(
                 if integration_type not in integrations:
                     integrations.append(integration_type)
 
-        global_env = setup.load_current_env()
-        local_env = setup.load_local_env()
-        env_vars, conflicts = setup.merge_env_with_conflicts(global_env, local_env)
-
-        if local_env:
-            print(colored(f"\nLoaded {len(local_env)} variable(s) from local .env file", "cyan"))
-        if conflicts:
-            print(colored(f"\nLocal .env overriding {len(conflicts)} global variable(s):", "yellow"))
-            for key in conflicts.keys():
-                print(f"  {colored('•', 'yellow')} {key}")
-
-        invalid_notifications = []
-
-        for notification_type in notifications:
-            required_vars = config.REQUIRED_ENV_VARS.get(notification_type, [])
-            if any(env_vars.get(var) is None for var in required_vars):
-                invalid_notifications.append(notification_type)
-
-        if invalid_notifications:
-            print(colored("\nWarning: Some notification types are missing required configuration:", "yellow"))
-            for notification_type in invalid_notifications:
-                print(f"  {colored('•', 'yellow')} {notification_type}")
-
-            if not utils.ask_yes_no("Continue with remaining notification types?"):
-                print(colored("Operation cancelled.", "yellow"))
-                return
-
-            notifications = [n for n in notifications if n not in invalid_notifications]
+        env_vars = _load_and_merge_env()
+        notifications = _validate_notifications(notifications, env_vars)
+        if not notifications and (notification_types or cfg.default_notifications):
+            return
 
         git_ctx = None
         try:
@@ -322,13 +303,8 @@ def add_jobs(
 
             print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
             for job in created_jobs:
-                priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
-                if gpu_idxs:
-                    gpus_str = f" (GPUs: {colored(','.join(map(str, gpu_idxs)), 'cyan')})"
-                elif num_gpus > 1:
-                    gpus_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})"
-                else:
-                    gpus_str = ""
+                priority_str = utils.format_priority_str(priority)
+                gpus_str = utils.format_gpu_info(gpu_idxs, num_gpus, style="parens") if num_gpus > 0 else ""
                 print(
                     f"  {colored('•', 'green')} Job {colored(job['id'], 'magenta')}: {job['command']}{priority_str}{gpus_str}"
                 )
@@ -361,15 +337,9 @@ def show_queue(target_name: str | None = None) -> None:
             num_gpus = job["num_gpus"]
             gpu_idxs = job.get("gpu_idxs")
 
-            priority_str = f" (Priority: {colored(str(priority), 'cyan')})" if priority != 0 else ""
+            priority_str = utils.format_priority_str(priority)
 
-            if gpu_idxs:
-                gpu_str = f" (GPUs: {colored(','.join(map(str, gpu_idxs)), 'cyan')})"
-            elif num_gpus > 1:
-                gpu_str = f" (GPUs: {colored(str(num_gpus), 'cyan')})"
-            else:
-                gpu_str = ""
-
+            gpu_str = utils.format_gpu_info(gpu_idxs, num_gpus, style="parens") if num_gpus > 0 else ""
             print(
                 f"{total_jobs - idx + 1}. {colored(job['id'], 'magenta')} - "
                 f"{colored(job['command'], 'white')} "
@@ -383,9 +353,8 @@ def show_queue(target_name: str | None = None) -> None:
 
 def show_history(regex: str | None = None, target_name: str | None = None) -> None:
     try:
-        statuses = ["completed", "failed", "killed"]
         jobs = []
-        for status in statuses:
+        for status in TERMINAL_STATUSES:
             jobs.extend(api_client.get_jobs(status, target_name=target_name))
 
         if not jobs:
@@ -418,13 +387,7 @@ def show_history(regex: str | None = None, target_name: str | None = None) -> No
         for job in reversed(jobs[:25]):
             runtime = utils.calculate_runtime(job)
             started_time = utils.format_timestamp(job.get("started_at"))
-            status_color = (
-                "green"
-                if job["status"] == "completed"
-                else "red"
-                if job["status"] in ["failed", "killed"]
-                else "yellow"
-            )
+            status_color = utils.get_status_color(job["status"])
             status_icon = (
                 "✓"
                 if job["status"] == "completed"
@@ -436,9 +399,7 @@ def show_history(regex: str | None = None, target_name: str | None = None) -> No
             )
             status_str = colored(f"{status_icon} {job['status'].upper()}", status_color)
 
-            command = job["command"]
-            if len(command) > 80:
-                command = command[:77] + "..."
+            command = utils.truncate_command(job["command"])
 
             print(
                 f"{colored(job['id'], 'magenta')} [{status_str}] "
@@ -497,22 +458,14 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False, ta
 
             print(colored(f"Latest job found: {job_id}", "blue"))
             print(
-                f"  {colored('•', 'blue')} Command: {latest_job['command'][:80]}{'...' if len(latest_job['command']) > 80 else ''}"
+                f"  {colored('•', 'blue')} Command: {utils.truncate_command(latest_job['command'])}"
             )
             print(f"  {colored('•', 'blue')} Runtime: {colored(runtime_str, 'cyan')}")
             if latest_job.get("user"):
                 print(f"  {colored('•', 'blue')} User: {colored(latest_job['user'], 'cyan')}")
 
             jobs_to_kill.add(job_id)
-            jobs_info.append(
-                {
-                    "id": job_id,
-                    "command": latest_job["command"],
-                    "runtime": runtime_str,
-                    "user": latest_job.get("user", ""),
-                    "gpu_idx": latest_job.get("gpu_idx"),
-                }
-            )
+            jobs_info.append(_build_job_info(latest_job, runtime=runtime_str, gpu_idx=latest_job.get("gpu_idx")))
 
         # Process provided targets
         else:
@@ -528,19 +481,10 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False, ta
                         job_id = gmatch["running_job_id"]
                         jobs_to_kill.add(job_id)
 
-                        # Get the job details from running_jobs
                         job_match = next((j for j in running_jobs if j["id"] == job_id), None)
                         runtime = utils.calculate_runtime(job_match) if job_match else ""
-
-                        jobs_info.append(
-                            {
-                                "id": job_id,
-                                "gpu_idx": gpu_idx,
-                                "command": job_match.get("command", "") if job_match else "",
-                                "runtime": utils.format_runtime(runtime) if runtime else "",
-                                "user": job_match.get("user", "") if job_match else "",
-                            }
-                        )
+                        job_info = {"id": job_id, "command": "", "user": ""} if not job_match else job_match
+                        jobs_info.append(_build_job_info(job_info, gpu_idx=gpu_idx, runtime=utils.format_runtime(runtime) if runtime else ""))
 
             if job_ids:
                 running_jobs = api_client.get_jobs("running", target_name=target_name)
@@ -550,15 +494,7 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False, ta
                         j = next(j for j in running_jobs if j["id"] == pattern)
                         jobs_to_kill.add(j["id"])
                         runtime = utils.calculate_runtime(j)
-                        jobs_info.append(
-                            {
-                                "id": j["id"],
-                                "command": j["command"],
-                                "runtime": utils.format_runtime(runtime),
-                                "user": j.get("user", ""),
-                                "gpu_idx": j.get("gpu_idx"),
-                            }
-                        )
+                        jobs_info.append(_build_job_info(j, runtime=utils.format_runtime(runtime), gpu_idx=j.get("gpu_idx")))
                     else:
                         try:
                             regex = re.compile(pattern)
@@ -566,15 +502,7 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False, ta
                             for m in matched:
                                 jobs_to_kill.add(m["id"])
                                 runtime = utils.calculate_runtime(m)
-                                jobs_info.append(
-                                    {
-                                        "id": m["id"],
-                                        "command": m["command"],
-                                        "runtime": utils.format_runtime(runtime),
-                                        "user": m.get("user", ""),
-                                        "gpu_idx": m.get("gpu_idx"),
-                                    }
-                                )
+                                jobs_info.append(_build_job_info(m, runtime=utils.format_runtime(runtime), gpu_idx=m.get("gpu_idx")))
                         except re.error as e:
                             print(colored(f"Invalid regex pattern '{pattern}': {e}", "red"))
 
@@ -589,7 +517,7 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False, ta
             ]
 
             if info["command"]:
-                job_details.append(f"Command: {info['command'][:50]}{'...' if len(info['command']) > 50 else ''}")
+                job_details.append(f"Command: {utils.truncate_command(info['command'], 50)}")
 
             if info["runtime"]:
                 job_details.append(f"Runtime: {colored(info['runtime'], 'cyan')}")
@@ -603,7 +531,7 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False, ta
             print(f"  {colored('•', 'blue')} {' | '.join(job_details)}")
 
         if not utils.confirm_action(f"Kill {colored(str(len(jobs_to_kill)), 'cyan')} jobs?", bypass=bypass_confirm):
-            print(colored("Operation cancelled.", "yellow"))
+            utils.print_cancellation()
             return
 
         result = api_client.kill_running_jobs(list(jobs_to_kill), target_name=target_name)
@@ -640,15 +568,7 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False, target_name: s
                 if pattern not in jobs_to_remove:
                     jobs_to_remove.add(pattern)
                     created_time = utils.format_timestamp(j.get("created_at"))
-                    jobs_info.append(
-                        {
-                            "id": j["id"],
-                            "command": j["command"],
-                            "queue_time": created_time,
-                            "user": j.get("user", ""),
-                            "priority": j.get("priority", 0),
-                        }
-                    )
+                    jobs_info.append(_build_job_info(j, queue_time=created_time, priority=j.get("priority", 0)))
             else:
                 try:
                     regex = re.compile(pattern)
@@ -657,15 +577,7 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False, target_name: s
                         if m["id"] not in jobs_to_remove:
                             jobs_to_remove.add(m["id"])
                             created_time = utils.format_timestamp(m.get("created_at"))
-                            jobs_info.append(
-                                {
-                                    "id": m["id"],
-                                    "command": m["command"],
-                                    "queue_time": created_time,
-                                    "user": m.get("user", ""),
-                                    "priority": m.get("priority", 0),
-                                }
-                            )
+                            jobs_info.append(_build_job_info(m, queue_time=created_time, priority=m.get("priority", 0)))
                 except re.error as e:
                     print(colored(f"Invalid regex pattern '{pattern}': {e}", "red"))
 
@@ -677,7 +589,7 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False, target_name: s
         for info in jobs_info:
             job_details = [
                 f"Job {colored(info['id'], 'magenta')}",
-                f"Command: {info['command'][:50]}{'...' if len(info['command']) > 50 else ''}",
+                f"Command: {utils.truncate_command(info['command'], 50)}",
             ]
 
             if info["queue_time"]:
@@ -694,7 +606,7 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False, target_name: s
         if not utils.confirm_action(
             f"Remove {colored(str(len(jobs_to_remove)), 'cyan')} jobs from queue?", bypass=bypass_confirm
         ):
-            print(colored("Operation cancelled.", "yellow"))
+            utils.print_cancellation()
             return
 
         result = api_client.remove_queued_jobs(list(jobs_to_remove), target_name=target_name)
@@ -733,19 +645,12 @@ def view_logs(
                 print(colored("No jobs found", "yellow"))
                 return
 
-            user_jobs = [j for j in jobs if j.get("user") == user]
-            if not user_jobs:
-                print(colored(f"No jobs found for user '{user}'", "yellow"))
-                return
-
-            valid_jobs = [job for job in user_jobs if job.get("started_at") is not None]
-            if not valid_jobs:
+            latest_job = utils.get_latest_user_job(jobs, user)
+            if not latest_job:
                 print(colored(f"No jobs with valid start times found for user '{user}'", "yellow"))
                 return
-
-            valid_jobs.sort(key=lambda x: x.get("started_at", 0), reverse=True)
-            job_id = valid_jobs[0]["id"]
-            job_status = valid_jobs[0]["status"]
+            job_id = latest_job["id"]
+            job_status = latest_job["status"]
             print(colored(f"Viewing logs for most recent job: {job_id} ({job_status})", "blue"))
         elif target.isdigit():
             gpu_idx = int(target)
@@ -770,7 +675,7 @@ def view_logs(
             print(colored(f"Job {job_id} not found", "red"))
             return
 
-        if tail is None and job["status"] in ["completed", "failed", "killed"]:
+        if tail is None and job["status"] in TERMINAL_STATUSES:
             tail = 5000
             print(colored(f"Job {job_id} is {job['status']}. Showing last {tail} lines:", "blue"))
 
@@ -797,7 +702,7 @@ def show_health(refresh: bool = False, target_name: str | None = None) -> None:
 
         print(colored("Node Health Status:", "blue", attrs=["bold"]))
         status = health.get("status", "unknown")
-        status_color = "green" if status == "healthy" else "yellow" if status == "under_load" else "red"
+        status_color = utils.get_status_color(status)
         print(f"  {colored('•', 'blue')} Status: {colored(status, status_color)}")
 
         if status == "unhealthy":
@@ -900,7 +805,7 @@ def edit_job_command(
         )
 
         if not utils.confirm_action("Edit this job?", bypass=bypass_confirm):
-            print(colored("Operation cancelled.", "yellow"))
+            utils.print_cancellation()
             return
 
         result = api_client.edit_job(job_id, command, priority, num_gpus, target_name=target_name)
@@ -924,8 +829,7 @@ def get_job_info(job_id: str, target_name: str | None = None) -> None:
             print(colored(f"Job {job_id} not found", "red"))
             return
 
-        color_map = {"queued": "yellow", "running": "green", "completed": "blue", "failed": "red", "killed": "red"}
-        status_color = color_map.get(job["status"], "white")
+        status_color = utils.get_status_color(job["status"])
 
         def format_time(ts) -> str:
             return utils.format_timestamp(ts) if ts else "N/A"
@@ -935,18 +839,7 @@ def get_job_info(job_id: str, target_name: str | None = None) -> None:
 
         print(f"\n{colored('Job Details:', 'blue', attrs=['bold'])}")
         print(f"  {colored('•', 'blue')} ID: {colored(job_id, 'magenta')}")
-        status_color_typed: utils.Color = (
-            "yellow"
-            if status_color == "yellow"
-            else "green"
-            if status_color == "green"
-            else "blue"
-            if status_color == "blue"
-            else "red"
-            if status_color == "red"
-            else "white"
-        )
-        print(f"  {colored('•', 'blue')} Status: {colored(job['status'].upper(), status_color_typed)}")
+        print(f"  {colored('•', 'blue')} Status: {colored(job['status'].upper(), status_color)}")
 
         print(f"\n{colored('Command:', 'blue', attrs=['bold'])}")
         print(f"  {colored(job['command'], 'white')}")
@@ -979,7 +872,7 @@ def get_job_info(job_id: str, target_name: str | None = None) -> None:
             if job.get("pid"):
                 print(f"  {colored('•', 'blue')} Process ID: {colored(str(job['pid']), 'cyan')}")
 
-            if job["status"] in ["completed", "failed", "killed"]:
+            if job["status"] in TERMINAL_STATUSES:
                 print(f"  {colored('•', 'blue')} Completed: {colored(format_time(job.get('completed_at')), 'cyan')}")
                 print(f"  {colored('•', 'blue')} Runtime: {colored(runtime_str, 'cyan')}")
                 if job.get("exit_code") is not None:
@@ -1139,9 +1032,7 @@ def print_status(target_name: str | None = None) -> None:
                             f"{job.get('num_gpus')} GPU{'s' if job.get('num_gpus', 0) > 1 else ''}", "cyan"
                         )
 
-                command = job.get("command", "")
-                if len(command) > 80:
-                    command = command[:77] + "..."
+                command = utils.truncate_command(job.get("command", ""))
 
                 print(
                     f"  {colored('•', 'white')} {colored(job['id'], 'magenta')} ({resource_str}) - {colored(runtime_str, 'cyan')}"
@@ -1172,10 +1063,7 @@ def print_status(target_name: str | None = None) -> None:
                     resource_str = f"{gpu_count} GPU{'s' if gpu_count > 1 else ''}"
 
                 priority = job.get("priority", 0)
-                command = job.get("command", "")
-                if len(command) > 60:
-                    command = command[:57] + "..."
-
+                command = utils.truncate_command(job.get("command", ""), 60)
                 print(f"  {idx}. {colored(job['id'], 'magenta')} ({resource_str}, Priority: {priority}) - {command}")
             print()
 
@@ -1191,19 +1079,11 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
 
         if target is None:
             running_jobs = api_client.get_jobs("running", target_name=target_name)
-            user_jobs = [j for j in running_jobs if j.get("user") == user]
-
-            if not user_jobs:
-                print(colored(f"No running jobs found for user '{user}'", "yellow"))
-                return
-
-            valid_jobs = [j for j in user_jobs if j.get("started_at") is not None]
-            if not valid_jobs:
+            latest_job = utils.get_latest_user_job(running_jobs, user)
+            if not latest_job:
                 print(colored(f"No running jobs with valid start times found for user '{user}'", "yellow"))
                 return
-
-            valid_jobs.sort(key=lambda x: x.get("started_at", 0), reverse=True)
-            target = valid_jobs[0]["id"]
+            target = latest_job["id"]
             print(colored(f"Attaching to most recent job: {target}", "blue"))
         elif target.isdigit():
             gpu_idx = int(target)

@@ -3,15 +3,16 @@ import dataclasses as dc
 import datetime as dt
 import typing as tp
 
-from nexus.server.core import context, db, job, exceptions as exc
+from nexus.server.core import context, db, job, exceptions as exc, schemas
+from nexus.server.core.schemas import STATUS_FAILED, STATUS_QUEUED, STATUS_RUNNING
 from nexus.server.external import gpu, notifications, wandb_finder, system
 from nexus.server.utils import format, logger
 
 __all__ = ["scheduler_loop"]
 
 
-async def _for_running(ctx: context.NexusServerContext):
-    for _job in db.list_jobs(ctx.db, status="running"):
+async def _for_running(ctx: context.NexusServerContext) -> None:
+    for _job in db.list_jobs(ctx.db, status=STATUS_RUNNING):
         is_running = job.is_job_running(job=_job)
         if is_running and not _job.marked_for_kill:
             continue
@@ -23,9 +24,7 @@ async def _for_running(ctx: context.NexusServerContext):
         updated_job = await job.async_end_job(_job=_job, killed=killed)
         await job.async_cleanup_job_repo(job_dir=_job.dir)
 
-        job_action: tp.Literal["completed", "failed", "killed"] = "failed"
-        if updated_job.status in ["completed", "killed"]:
-            job_action = tp.cast(tp.Literal["completed", "killed"], updated_job.status)
+        job_action = updated_job.status if updated_job.status in ("completed", "killed") else "failed"
         logger.info(format.format_job_action(updated_job, action=job_action))
 
         if _job.notifications:
@@ -39,14 +38,18 @@ async def update_running_jobs(ctx: context.NexusServerContext) -> None:
     await _for_running(ctx)
 
 
-async def _for_wandb_urls(ctx: context.NexusServerContext):
-    for _job in db.list_jobs(ctx.db, status="running"):
-        if (
-            _job.wandb_url
-            or _job.started_at is None
-            or "wandb" not in _job.integrations
-            or dt.datetime.now().timestamp() - _job.started_at > 720
-        ):
+def _should_skip_wandb_check(job: schemas.Job) -> bool:
+    return (
+        job.wandb_url is not None
+        or job.started_at is None
+        or "wandb" not in job.integrations
+        or dt.datetime.now().timestamp() - job.started_at > 720
+    )
+
+
+async def _for_wandb_urls(ctx: context.NexusServerContext) -> None:
+    for _job in db.list_jobs(ctx.db, status=STATUS_RUNNING):
+        if _should_skip_wandb_check(_job):
             continue
 
         if url := await wandb_finder.find_wandb_run_by_nexus_id(job=_job):
@@ -60,8 +63,8 @@ async def update_wandb_urls(ctx: context.NexusServerContext) -> None:
     await _for_wandb_urls(ctx)
 
 
-async def _for_queued_jobs(ctx: context.NexusServerContext):
-    queued_jobs = db.list_jobs(ctx.db, status="queued")
+async def _for_queued_jobs(ctx: context.NexusServerContext) -> None:
+    queued_jobs = db.list_jobs(ctx.db, status=STATUS_QUEUED)
     if not queued_jobs:
         return
 
@@ -73,7 +76,7 @@ async def _for_queued_jobs(ctx: context.NexusServerContext):
         if _job.num_gpus == 0:
             gpu_idxs = []
         else:
-            running_jobs = db.list_jobs(conn=ctx.db, status="running")
+            running_jobs = db.list_jobs(conn=ctx.db, status=STATUS_RUNNING)
             blacklisted = db.list_blacklisted_gpus(conn=ctx.db)
             all_gpus = gpu.get_gpus(
                 running_jobs=running_jobs, blacklisted_gpus=blacklisted, mock_gpus=ctx.config.mock_gpus
@@ -119,7 +122,7 @@ async def _for_queued_jobs(ctx: context.NexusServerContext):
                 conn=ctx.db,
                 job=dc.replace(
                     _job,
-                    status="failed",
+                    status=STATUS_FAILED,
                     completed_at=dt.datetime.now().timestamp(),
                     error_message=f"Failed to start job: {str(e)}",
                 ),

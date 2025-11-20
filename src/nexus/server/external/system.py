@@ -55,7 +55,7 @@ class HealthCheckResult:
 
 def measure_disk_space(path: str = "/") -> DiskStats:
     disk = shutil.disk_usage(path)
-    percent_used = (disk.used / disk.total) * 100
+    percent_used = disk.used / disk.total * 100 if disk.total > 0 else 0.0
 
     return DiskStats(total=disk.total, used=disk.used, free=disk.free, percent_used=percent_used)
 
@@ -137,34 +137,15 @@ def calculate_health_score(
     network_stats: NetworkStats,
     system_stats: SystemStats,
 ) -> float:
-    disk_score_raw = 1 - (disk_stats.percent_used / 100)
-
-    # Apply exponential penalty for high disk usage
-    # When disk is >90% full, score drops dramatically
-    disk_penalty = 1.0
-    if disk_stats.percent_used > 90:
-        disk_penalty = 0.2
-    elif disk_stats.percent_used > 80:
-        disk_penalty = 0.5
-
-    disk_score = 40 * disk_score_raw * disk_penalty
-
-    # If disk is critically full (<5% free), cap the total score
+    disk_penalty = 0.2 if disk_stats.percent_used > 90 else (0.5 if disk_stats.percent_used > 80 else 1.0)
+    disk_score = 40 * (1 - disk_stats.percent_used / 100) * disk_penalty
     if disk_stats.percent_used > 95:
         return min(30, disk_score)
-
     network_score = 0
     if network_stats.ping < 9999:
-        ping_score = 15 * max(0, min(1, (200 - network_stats.ping) / 150))
-        speed_score = 15 * min(1, (network_stats.download_speed / 100))
-        network_score = ping_score + speed_score
-
-    cpu_score = 15 * (1 - (system_stats.cpu_percent / 100))
-    memory_score = 15 * (1 - (system_stats.memory_percent / 100))
-    system_score = cpu_score + memory_score
-
-    total_score = disk_score + network_score + system_score
-    return round(total_score, 1)
+        network_score = 15 * max(0, min(1, (200 - network_stats.ping) / 150)) + 15 * min(1, network_stats.download_speed / 100)
+    system_score = 15 * (2 - (system_stats.cpu_percent + system_stats.memory_percent) / 100)
+    return round(disk_score + network_score + system_score, 1)
 
 
 def get_health_status(score: float) -> HealthStatus:

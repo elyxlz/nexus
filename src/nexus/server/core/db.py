@@ -9,6 +9,7 @@ import typing as tp
 
 from nexus.server.core import context, schemas
 from nexus.server.core import exceptions as exc
+from nexus.server.core.schemas import STATUS_QUEUED
 from nexus.server.utils import logger
 
 __all__ = [
@@ -112,36 +113,7 @@ def _parse_json(json_obj: str | None) -> dict[str, str]:
     return json.loads(json_obj)
 
 
-_DB_COLS = [
-    "id",
-    "command",
-    "artifact_id",
-    "git_repo_url",
-    "git_branch",
-    "git_tag",
-    "status",
-    "created_at",
-    "priority",
-    "num_gpus",
-    "env",
-    "node_name",
-    "jobrc",
-    "integrations",
-    "notifications",
-    "notification_messages",
-    "pid",
-    "dir",
-    "started_at",
-    "gpu_idxs",
-    "wandb_url",
-    "marked_for_kill",
-    "completed_at",
-    "exit_code",
-    "error_message",
-    "user",
-    "ignore_blacklist",
-    "screen_session_name",
-]
+_DB_COLS = [f.name for f in dc.fields(schemas.Job)]
 
 _INSERT_SQL = f"INSERT INTO jobs VALUES ({','.join(['?'] * len(_DB_COLS))})"
 _UPDATE_SQL = f"UPDATE jobs SET {', '.join(f'{col} = ?' for col in _DB_COLS[1:])} WHERE id = ?"
@@ -235,6 +207,15 @@ def _validate_job_status(status: str | None) -> None:
             raise exc.JobError(message=f"Invalid job status: {status}. Must be one of {', '.join(valid_statuses)}")
 
 
+def _safe_regex_match(pattern: str, text: str | None) -> bool:
+    if not text:
+        return False
+    try:
+        return bool(re.search(pattern, text))
+    except (re.error, TimeoutError):
+        return False
+
+
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to list jobs")
 def _query_jobs(conn: sqlite3.Connection, status: str | None, command_regex: str | None = None) -> list[schemas.Job]:
     cur = conn.cursor()
@@ -254,7 +235,7 @@ def _query_jobs(conn: sqlite3.Connection, status: str | None, command_regex: str
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
 
-    conn.create_function("REGEXP", 2, lambda pattern, text: bool(re.search(pattern, text or "")) if text else False)
+    conn.create_function("REGEXP", 2, _safe_regex_match)
 
     cur.execute(query, params)
     rows = cur.fetchall()
@@ -334,8 +315,8 @@ def create_connection(db_path: str) -> sqlite3.Connection:
 @exc.handle_exception(sqlite3.IntegrityError, exc.JobError, message="Job already exists")
 @exc.handle_exception(sqlite3.Error, exc.DatabaseError, message="Failed to add job to database")
 def add_job(conn: sqlite3.Connection, job: schemas.Job) -> None:
-    if job.status != "queued":
-        job = dc.replace(job, status="queued")
+    if job.status != STATUS_QUEUED:
+        job = dc.replace(job, status=STATUS_QUEUED)
 
     cur = conn.cursor()
     cur.execute(_INSERT_SQL, _job_to_row(job))
