@@ -11,7 +11,7 @@ import typing as tp
 
 from termcolor import colored
 
-from nexus.server.utils.ids import generate_job_id
+from nexus.cli.ids import generate_job_id
 
 # Types
 Color = tp.Literal["grey", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
