@@ -53,7 +53,7 @@ def print_job_field(label: str, value: str | int, value_color: Color = "cyan") -
     print(f"  {colored('•', 'blue')} {label}: {colored(str(value), value_color)}")
 
 
-def format_gpu_info(gpu_idxs: list[int] | None, num_gpus: int, style: str = "prefix") -> str:
+def format_gpu_info(gpu_idxs: list[int] | None, num_gpus: int, style: tp.Literal["prefix", "parens", "inline"] = "prefix") -> str:
     if num_gpus == 0:
         return " (CPU)" if style == "parens" else " on CPU"
     if gpu_idxs:

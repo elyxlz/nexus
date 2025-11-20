@@ -10,6 +10,9 @@ from nexus.server.utils import format, logger
 
 __all__ = ["scheduler_loop"]
 
+WANDB_CHECK_MIN_DELAY_SECONDS = 30
+WANDB_CHECK_TIMEOUT_SECONDS = 720
+
 
 async def _for_running(ctx: context.NexusServerContext) -> None:
     for _job in db.list_jobs(ctx.db, status=STATUS_RUNNING):
@@ -39,12 +42,10 @@ async def update_running_jobs(ctx: context.NexusServerContext) -> None:
 
 
 def _should_skip_wandb_check(job: schemas.Job) -> bool:
-    return (
-        job.wandb_url is not None
-        or job.started_at is None
-        or "wandb" not in job.integrations
-        or dt.datetime.now().timestamp() - job.started_at > 720
-    )
+    if job.wandb_url is not None or job.started_at is None or "wandb" not in job.integrations:
+        return True
+    time_since_start = dt.datetime.now().timestamp() - job.started_at
+    return time_since_start < WANDB_CHECK_MIN_DELAY_SECONDS or time_since_start > WANDB_CHECK_TIMEOUT_SECONDS
 
 
 async def _for_wandb_urls(ctx: context.NexusServerContext) -> None:

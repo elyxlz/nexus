@@ -30,7 +30,7 @@ STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 STATUS_KILLED = "killed"
 
-TERMINAL_STATUSES: tuple[str, ...] = (STATUS_COMPLETED, STATUS_FAILED, STATUS_KILLED)
+TERMINAL_STATUSES: frozenset[str] = frozenset([STATUS_COMPLETED, STATUS_FAILED, STATUS_KILLED])
 
 
 @dc.dataclass(frozen=True, slots=True)

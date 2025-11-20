@@ -8,6 +8,9 @@ from nexus.cli import api_client, config, setup, utils
 from nexus.cli.config import IntegrationType, NotificationType
 from nexus.server.core.schemas import TERMINAL_STATUSES
 
+JOB_INIT_MAX_ATTEMPTS = 10
+COMPLETED_JOB_LOG_TAIL_LINES = 5000
+
 
 def _build_job_info(job: dict, **extras) -> dict:
     base_info = {
@@ -111,9 +114,10 @@ def run_job(
         try:
             git_ctx = utils.prepare_git_artifact(cfg.enable_git_tag_push and not local, target_name=target_name)
             job_env_vars = _load_and_merge_env()
-            notifications = _validate_notifications(notifications, job_env_vars)
-            if not notifications and (notification_types or cfg.default_notifications):
-                return
+            if notification_types or cfg.default_notifications:
+                notifications = _validate_notifications(notifications, job_env_vars)
+                if not notifications:
+                    return
 
             gpus_count = len(gpu_idxs) if gpu_idxs else num_gpus
 
@@ -156,8 +160,7 @@ def run_job(
 
             print(colored("\nWaiting for job to initialize...", "blue"))
 
-            max_attempts = 10
-            for i in range(max_attempts):
+            for i in range(JOB_INIT_MAX_ATTEMPTS):
                 time.sleep(1)
                 try:
                     job = api_client.get_job(job_id, target_name=target_name)
@@ -176,7 +179,7 @@ def run_job(
                 except Exception:
                     pass
 
-                if i < max_attempts - 1:
+                if i < JOB_INIT_MAX_ATTEMPTS - 1:
                     print(".", end="", flush=True)
 
             target_flag = f" -t {target_name}" if target_name else ""
@@ -260,9 +263,10 @@ def add_jobs(
                     integrations.append(integration_type)
 
         env_vars = _load_and_merge_env()
-        notifications = _validate_notifications(notifications, env_vars)
-        if not notifications and (notification_types or cfg.default_notifications):
-            return
+        if notification_types or cfg.default_notifications:
+            notifications = _validate_notifications(notifications, env_vars)
+            if not notifications:
+                return
 
         git_ctx = None
         try:
@@ -304,7 +308,7 @@ def add_jobs(
             print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
             for job in created_jobs:
                 priority_str = utils.format_priority_str(priority)
-                gpus_str = utils.format_gpu_info(gpu_idxs, num_gpus, style="parens") if num_gpus > 0 else ""
+                gpus_str = utils.format_gpu_info(gpu_idxs, num_gpus, style="parens") if num_gpus > 0 or cpu else ""
                 print(
                     f"  {colored('•', 'green')} Job {colored(job['id'], 'magenta')}: {job['command']}{priority_str}{gpus_str}"
                 )
@@ -676,7 +680,7 @@ def view_logs(
             return
 
         if tail is None and job["status"] in TERMINAL_STATUSES:
-            tail = 5000
+            tail = COMPLETED_JOB_LOG_TAIL_LINES
             print(colored(f"Job {job_id} is {job['status']}. Showing last {tail} lines:", "blue"))
 
         if tail:
