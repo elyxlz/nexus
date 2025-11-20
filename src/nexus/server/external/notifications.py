@@ -186,7 +186,7 @@ async def _make_phone_call(to_number: str, from_number: str, account_sid: str, a
 
 
 async def _send_phone_notification(job: schemas.Job, job_action: JobAction) -> None:
-    if job_action not in ["completed", "failed", "killed"]:
+    if job_action not in schemas.TERMINAL_STATUSES:
         return
 
     to_number, account_sid, auth_token, from_number = _get_phone_secrets(job)
@@ -216,8 +216,8 @@ async def notify_job_action(_job: schemas.Job, action: JobAction) -> schemas.Job
         message_data = _format_job_message_for_notification(_job, action)
         webhook_url = _get_discord_secrets(_job)[0]
 
-        if action in ["completed", "failed", "killed"] and _job.dir:
-            if action in ["failed", "killed"]:
+        if action in schemas.TERMINAL_STATUSES and _job.dir:
+            if action in [schemas.STATUS_FAILED, schemas.STATUS_KILLED]:
                 job_logs = await job.async_get_job_logs(_job.dir, last_n_lines=20)
                 if job_logs:
                     MAX_FIELD_LENGTH = 1024

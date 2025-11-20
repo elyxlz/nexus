@@ -165,7 +165,13 @@ def add_job(job_request: dict, target_name: str | None = None) -> dict:
     return response.json()
 
 
-def _process_job_batch(job_ids: list[str], method: str, endpoint_suffix: str, success_key: str, target_name: str | None) -> dict:
+def _process_job_batch(
+    job_ids: list[str],
+    method: tp.Literal["POST", "DELETE"],
+    endpoint_suffix: str,
+    success_key: str,
+    target_name: str | None,
+) -> dict:
     results = {success_key: [], "failed": []}
     api_url = get_api_base_url(target_name)
     request_fn = requests.post if method == "POST" else requests.delete
