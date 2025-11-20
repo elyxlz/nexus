@@ -233,6 +233,13 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         raise exc.JobError(message=f"Script syntax error: {stderr.decode()}")
 
     screenrc_path = _create_screenrc()
+    screendir = pl.Path(tempfile.gettempdir()) / "nexus-screen"
+    screendir.mkdir(parents=True, exist_ok=True)
+    screendir.chmod(0o700)
+
+    screen_env = env.copy()
+    screen_env["SCREENDIR"] = str(screendir)
+
     process = await asyncio.create_subprocess_exec(
         "screen",
         "-c",
@@ -240,7 +247,7 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         "-dmS",
         session_name,
         str(abs_script_path),
-        env=env,
+        env=screen_env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
