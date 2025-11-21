@@ -20,6 +20,7 @@ from nexus.cli.constants import (
     QUEUE_PREVIEW_COUNT,
     STATUS_COMPLETED,
     STATUS_FAILED,
+    STATUS_ICONS,
     STATUS_KILLED,
     STATUS_QUEUED,
     STATUS_RUNNING,
@@ -147,6 +148,67 @@ def _format_gpu_status_part(
     return f"{count} {label} {gpu_str}"
 
 
+def _build_notification_lists(
+    cfg: config.NexusCliConfig,
+    notification_types: list[NotificationType] | None,
+    integration_types: list[IntegrationType] | None,
+    silent: bool,
+) -> tuple[list[NotificationType], list[IntegrationType]]:
+    notifications = [] if silent else list(cfg.default_notifications)
+    integrations = list(cfg.default_integrations)
+    if notification_types:
+        notifications.extend(n for n in notification_types if n not in notifications)
+    if integration_types:
+        integrations.extend(i for i in integration_types if i not in integrations)
+    return notifications, integrations
+
+
+def _load_jobrc() -> str | None:
+    jobrc_path = setup.get_jobrc_path()
+    if jobrc_path.exists():
+        with open(jobrc_path) as f:
+            return f.read()
+    return None
+
+
+def _build_job_request(
+    job_id: str,
+    command: str,
+    user: str,
+    git_ctx: utils.GitArtifactContext,
+    num_gpus: int,
+    gpu_idxs: list[int] | None,
+    priority: int,
+    notifications: list[NotificationType],
+    integrations: list[IntegrationType],
+    env_vars: dict[str, str],
+    jobrc_content: str | None,
+    run_immediately: bool,
+    force: bool,
+    git_tag_pushed: bool,
+) -> dict:
+    gpus_count = len(gpu_idxs) if gpu_idxs else num_gpus
+    return {
+        "job_id": job_id,
+        "command": command,
+        "user": user,
+        "artifact_id": git_ctx.artifact_id,
+        "git_repo_url": git_ctx.git_repo_url,
+        "git_branch": git_ctx.branch_name,
+        "git_tag": git_ctx.git_tag,
+        "num_gpus": gpus_count,
+        "priority": priority,
+        "integrations": integrations,
+        "notifications": notifications,
+        "env": env_vars,
+        "jobrc": jobrc_content,
+        "gpu_idxs": gpu_idxs,
+        "run_immediately": run_immediately,
+        "ignore_blacklist": force,
+        "git_tag_pushed": git_tag_pushed,
+    }
+
+
 def run_job(
     cfg: config.NexusCliConfig,
     commands: list[str],
@@ -196,19 +258,7 @@ def run_job(
             return
 
         user = cfg.user or "anonymous"
-
-        notifications = [] if silent else list(cfg.default_notifications)
-        integrations = list(cfg.default_integrations)
-
-        if notification_types:
-            for notification_type in notification_types:
-                if notification_type not in notifications:
-                    notifications.append(notification_type)
-
-        if integration_types:
-            for integration_type in integration_types:
-                if integration_type not in integrations:
-                    integrations.append(integration_type)
+        notifications, integrations = _build_notification_lists(cfg, notification_types, integration_types, silent)
 
         git_ctx = None
         try:
@@ -219,33 +269,24 @@ def run_job(
                 if notifications is None:
                     return
 
-            gpus_count = len(gpu_idxs) if gpu_idxs else num_gpus
+            jobrc_content = _load_jobrc()
 
-            jobrc_content = None
-            jobrc_path = setup.get_jobrc_path()
-            if jobrc_path.exists():
-                with open(jobrc_path) as f:
-                    jobrc_content = f.read()
-
-            job_request = {
-                "job_id": git_ctx.job_id,
-                "command": command,
-                "user": user,
-                "artifact_id": git_ctx.artifact_id,
-                "git_repo_url": git_ctx.git_repo_url,
-                "git_branch": git_ctx.branch_name,
-                "git_tag": git_ctx.git_tag,
-                "num_gpus": gpus_count,
-                "priority": 0,
-                "integrations": integrations,
-                "notifications": notifications,
-                "env": job_env_vars,
-                "jobrc": jobrc_content,
-                "gpu_idxs": gpu_idxs,
-                "run_immediately": True,
-                "ignore_blacklist": force,
-                "git_tag_pushed": bool(cfg.enable_git_tag_push and not local),
-            }
+            job_request = _build_job_request(
+                job_id=git_ctx.job_id,
+                command=command,
+                user=user,
+                git_ctx=git_ctx,
+                num_gpus=num_gpus,
+                gpu_idxs=gpu_idxs,
+                priority=0,
+                notifications=notifications,
+                integrations=integrations,
+                env_vars=job_env_vars,
+                jobrc_content=jobrc_content,
+                run_immediately=True,
+                force=force,
+                git_tag_pushed=bool(cfg.enable_git_tag_push and not local),
+            )
 
             result = api_client.add_job(job_request, target_name=target_name)
             if "id" not in result:
@@ -345,19 +386,7 @@ def add_jobs(
             return
 
         user = cfg.user or "anonymous"
-
-        notifications = [] if silent else list(cfg.default_notifications)
-        integrations = list(cfg.default_integrations)
-
-        if notification_types:
-            for notification_type in notification_types:
-                if notification_type not in notifications:
-                    notifications.append(notification_type)
-
-        if integration_types:
-            for integration_type in integration_types:
-                if integration_type not in integrations:
-                    integrations.append(integration_type)
+        notifications, integrations = _build_notification_lists(cfg, notification_types, integration_types, silent)
 
         env_vars = _load_and_merge_env()
         if notification_types or cfg.default_notifications:
@@ -368,37 +397,27 @@ def add_jobs(
         git_ctx = None
         try:
             git_ctx = utils.prepare_git_artifact(enable_git_tag_push=False, target_name=target_name)
-            jobrc_content = None
-            jobrc_path = setup.get_jobrc_path()
-            if jobrc_path.exists():
-                with open(jobrc_path) as f:
-                    jobrc_content = f.read()
+            jobrc_content = _load_jobrc()
 
             created_jobs = []
-            job_env_vars = dict(env_vars)
-            gpus_count = len(gpu_idxs) if gpu_idxs else num_gpus
             for cmd in expanded_commands:
                 queued_job_id = utils.generate_job_id()
-                job_request = {
-                    "job_id": queued_job_id,
-                    "command": cmd,
-                    "user": user,
-                    "artifact_id": git_ctx.artifact_id,
-                    "git_repo_url": git_ctx.git_repo_url,
-                    "git_branch": git_ctx.branch_name,
-                    "git_tag": git_ctx.git_tag,
-                    "num_gpus": gpus_count,
-                    "priority": priority,
-                    "integrations": integrations,
-                    "notifications": notifications,
-                    "env": job_env_vars,
-                    "jobrc": jobrc_content,
-                    "gpu_idxs": gpu_idxs,
-                    "run_immediately": False,
-                    "ignore_blacklist": force,
-                    "git_tag_pushed": False,
-                }
-
+                job_request = _build_job_request(
+                    job_id=queued_job_id,
+                    command=cmd,
+                    user=user,
+                    git_ctx=git_ctx,
+                    num_gpus=num_gpus,
+                    gpu_idxs=gpu_idxs,
+                    priority=priority,
+                    notifications=notifications,
+                    integrations=integrations,
+                    env_vars=env_vars,
+                    jobrc_content=jobrc_content,
+                    run_immediately=False,
+                    force=force,
+                    git_tag_pushed=False,
+                )
                 result = api_client.add_job(job_request, target_name=target_name)
                 created_jobs.append(result)
 
@@ -488,15 +507,7 @@ def show_history(regex: str | None = None, target_name: str | None = None) -> No
             runtime = utils.calculate_runtime(job)
             started_time = utils.format_timestamp(job.get("started_at"))
             status_color = utils.get_status_color(job["status"])
-            status_icon = (
-                "✓"
-                if job["status"] == STATUS_COMPLETED
-                else "✗"
-                if job["status"] == STATUS_FAILED
-                else "🛑"
-                if job["status"] == STATUS_KILLED
-                else "?"
-            )
+            status_icon = STATUS_ICONS.get(job["status"], "?")
             status_str = colored(f"{status_icon} {job['status'].upper()}", status_color)
 
             command = utils.truncate_command(job["command"])
