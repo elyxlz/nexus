@@ -439,11 +439,13 @@ async def async_end_job(_job: schemas.Job, killed: bool) -> schemas.Job:
     elif exit_code is None:
         updates.update({"status": STATUS_FAILED, "error_message": "Could not find exit code in log"})
     else:
-        updates.update({
-            "exit_code": exit_code,
-            "status": STATUS_COMPLETED if exit_code == 0 else STATUS_FAILED,
-            "error_message": None if exit_code == 0 else f"Job failed with exit code {exit_code}"
-        })
+        updates.update(
+            {
+                "exit_code": exit_code,
+                "status": STATUS_COMPLETED if exit_code == 0 else STATUS_FAILED,
+                "error_message": None if exit_code == 0 else f"Job failed with exit code {exit_code}",
+            }
+        )
     return dc.replace(_job, **updates)
 
 

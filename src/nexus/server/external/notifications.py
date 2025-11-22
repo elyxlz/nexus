@@ -34,7 +34,9 @@ def _require_env(job: schemas.Job, __key1: str, __key2: str, /) -> tuple[str, st
 
 
 @tp.overload
-def _require_env(job: schemas.Job, __key1: str, __key2: str, __key3: str, __key4: str, /) -> tuple[str, str, str, str]: ...
+def _require_env(
+    job: schemas.Job, __key1: str, __key2: str, __key3: str, __key4: str, /
+) -> tuple[str, str, str, str]: ...
 
 
 def _require_env(job: schemas.Job, *keys: str) -> tuple[str, ...]:

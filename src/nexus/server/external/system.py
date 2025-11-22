@@ -143,7 +143,9 @@ def calculate_health_score(
         return min(30, disk_score)
     network_score = 0
     if network_stats.ping < 9999:
-        network_score = 15 * max(0, min(1, (200 - network_stats.ping) / 150)) + 15 * min(1, network_stats.download_speed / 100)
+        network_score = 15 * max(0, min(1, (200 - network_stats.ping) / 150)) + 15 * min(
+            1, network_stats.download_speed / 100
+        )
     system_score = 15 * (2 - (system_stats.cpu_percent + system_stats.memory_percent) / 100)
     return round(disk_score + network_score + system_score, 1)
 

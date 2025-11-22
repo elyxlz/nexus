@@ -61,11 +61,11 @@ def format_gpu_info(
     if num_gpus == 0:
         return " (CPU)" if style == "parens" else " on CPU"
     if gpu_idxs:
-        gpu_str = ','.join(map(str, gpu_idxs))
-        plural = 's' if len(gpu_idxs) > 1 else ''
+        gpu_str = ",".join(map(str, gpu_idxs))
+        plural = "s" if len(gpu_idxs) > 1 else ""
     else:
         gpu_str = str(num_gpus)
-        plural = 's' if num_gpus > 1 else ''
+        plural = "s" if num_gpus > 1 else ""
     if style == "prefix":
         return f" on GPU{plural}: {colored(gpu_str, 'cyan')}"
     elif style == "parens":
@@ -97,7 +97,7 @@ def format_priority_str(priority: int) -> str:
 
 
 def truncate_command(command: str, max_length: int = 80) -> str:
-    return command if len(command) <= max_length else command[:max_length - ELLIPSIS_LENGTH] + "..."
+    return command if len(command) <= max_length else command[: max_length - ELLIPSIS_LENGTH] + "..."
 
 
 def print_cancellation() -> None:

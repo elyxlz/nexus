@@ -9,7 +9,6 @@ from nexus.cli import api_client, config, setup, utils
 from nexus.cli.config import IntegrationType, NotificationType
 from nexus.cli.constants import (
     ATTACH_LOG_TAIL_LINES,
-    COMMAND_TRUNCATE_DEFAULT,
     COMMAND_TRUNCATE_QUEUE,
     COMMAND_TRUNCATE_SHORT,
     COMPLETED_JOB_LOG_TAIL_LINES,
@@ -37,7 +36,9 @@ def _build_job_info(job: dict, **extras) -> dict:
     return {**base_info, **extras}
 
 
-def _validate_notifications(notifications: list[NotificationType], env_vars: dict[str, str]) -> list[NotificationType] | None:
+def _validate_notifications(
+    notifications: list[NotificationType], env_vars: dict[str, str]
+) -> list[NotificationType] | None:
     invalid = [n for n in notifications if any(env_vars.get(v) is None for v in config.REQUIRED_ENV_VARS.get(n, []))]
     if invalid:
         print(colored("\nWarning: Some notification types are missing required configuration:", "yellow"))
@@ -425,7 +426,7 @@ def add_jobs(
             for job in created_jobs:
                 priority_str = utils.format_priority_str(priority)
                 gpus_str = utils.format_gpu_info(gpu_idxs, num_gpus, style="parens") if num_gpus > 0 or cpu else ""
-                job_id_colored = colored(job['id'], 'magenta')
+                job_id_colored = colored(job["id"], "magenta")
                 print(f"  {colored('•', 'green')} Job {job_id_colored}: {job['command']}{priority_str}{gpus_str}")
 
         finally:
@@ -521,8 +522,8 @@ def show_history(regex: str | None = None, target_name: str | None = None) -> No
 
         total_jobs = len(jobs)
         if total_jobs > HISTORY_MAX_DISPLAY:
-            msg_part1 = colored(f'Showing most recent {HISTORY_MAX_DISPLAY} of', 'blue', attrs=['bold'])
-            msg_part2 = colored(str(total_jobs), 'cyan')
+            msg_part1 = colored(f"Showing most recent {HISTORY_MAX_DISPLAY} of", "blue", attrs=["bold"])
+            msg_part2 = colored(str(total_jobs), "cyan")
             print(f"\n{msg_part1} {msg_part2}")
 
         completed_count = sum(1 for j in jobs if j["status"] == STATUS_COMPLETED)
@@ -568,9 +569,7 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False, ta
             runtime_str = utils.format_runtime(runtime) if runtime else "N/A"
 
             print(colored(f"Latest job found: {job_id}", "blue"))
-            print(
-                f"  {colored('•', 'blue')} Command: {utils.truncate_command(latest_job['command'])}"
-            )
+            print(f"  {colored('•', 'blue')} Command: {utils.truncate_command(latest_job['command'])}")
             print(f"  {colored('•', 'blue')} Runtime: {colored(runtime_str, 'cyan')}")
             if latest_job.get("user"):
                 print(f"  {colored('•', 'blue')} User: {colored(latest_job['user'], 'cyan')}")
@@ -640,7 +639,7 @@ def kill_jobs(targets: list[str] | None = None, bypass_confirm: bool = False, ta
             if info:
                 user_str = f" (User: {info['user']})" if info["user"] else ""
                 runtime_str = f" (Runtime: {info['runtime']})" if info["runtime"] else ""
-                job_id_colored = colored(job_id, 'magenta')
+                job_id_colored = colored(job_id, "magenta")
                 print(f"  {colored('•', 'green')} Successfully killed job {job_id_colored}{user_str}{runtime_str}")
             else:
                 print(f"  {colored('•', 'green')} Successfully killed job {colored(job_id, 'magenta')}")
@@ -701,7 +700,7 @@ def remove_jobs(job_ids: list[str], bypass_confirm: bool = False, target_name: s
             if info:
                 user_str = f" (User: {info['user']})" if info["user"] else ""
                 queue_str = f" (Queued: {info['queue_time']})" if info["queue_time"] else ""
-                job_id_colored = colored(job_id, 'magenta')
+                job_id_colored = colored(job_id, "magenta")
                 print(f"  {colored('•', 'green')} Successfully removed job {job_id_colored}{user_str}{queue_str}")
             else:
                 print(f"  {colored('•', 'green')} Successfully removed job {colored(job_id, 'magenta')}")
@@ -858,9 +857,9 @@ def edit_job_command(
         print(f"  {colored('•', 'blue')} GPUs: {colored(str(job['num_gpus']), 'cyan')}")
 
         print(f"\n{colored('Will edit to:', 'blue', attrs=['bold'])}")
-        cmd_display = command if command is not None else 'unchanged'
+        cmd_display = command if command is not None else "unchanged"
         print(f"  {colored('•', 'blue')} Command: {colored(cmd_display, 'white')}")
-        priority_display = str(priority) if priority is not None else 'unchanged'
+        priority_display = str(priority) if priority is not None else "unchanged"
         print(f"  {colored('•', 'blue')} Priority: {colored(priority_display, 'cyan')}")
         print(
             f"  {colored('•', 'blue')} GPUs: {colored(str(num_gpus) if num_gpus is not None else 'unchanged', 'cyan')}"
@@ -1087,8 +1086,8 @@ def print_status(target_name: str | None = None) -> None:
 
                 command = utils.truncate_command(job.get("command", ""))
 
-                job_id_colored = colored(job['id'], 'magenta')
-                runtime_colored = colored(runtime_str, 'cyan')
+                job_id_colored = colored(job["id"], "magenta")
+                runtime_colored = colored(runtime_str, "cyan")
                 print(f"  {colored('•', 'white')} {job_id_colored} ({resource_str}) - {runtime_colored}")
                 print(f"    {colored(command, 'white', attrs=['bold'])}")
                 if job.get("wandb_url"):
@@ -1223,9 +1222,9 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                 runtime_str = utils.format_runtime(runtime) if runtime else "N/A"
                 print(colored(f"Runtime: {runtime_str}", "cyan"))
 
-                logs = api_client.get_job_logs(
-                    job_id, last_n_lines=ATTACH_LOG_TAIL_LINES, target_name=target_name
-                ) or ""
+                logs = (
+                    api_client.get_job_logs(job_id, last_n_lines=ATTACH_LOG_TAIL_LINES, target_name=target_name) or ""
+                )
                 if logs:
                     print("\n" + logs)
                 else:
