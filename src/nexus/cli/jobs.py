@@ -9,6 +9,7 @@ from nexus.cli import api_client, config, setup, utils
 from nexus.cli.config import IntegrationType, NotificationType
 from nexus.cli.constants import (
     ATTACH_LOG_TAIL_LINES,
+    COMMAND_TRUNCATE_DEFAULT,
     COMMAND_TRUNCATE_QUEUE,
     COMMAND_TRUNCATE_SHORT,
     COMPLETED_JOB_LOG_TAIL_LINES,
