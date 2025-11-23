@@ -61,9 +61,7 @@ def measure_disk_space(path: str = "/") -> DiskStats:
 
 
 def check_disk_space(path: str = "/", force_refresh: bool = False) -> DiskStats:
-    if force_refresh and "disk_space" in _cache:
-        del _cache["disk_space"]
-
+    _clear_cache_if_refresh(force_refresh, "disk_space")
     return _get_cached(key="disk_space", default_factory=lambda: measure_disk_space(path), ttl=timedelta(minutes=30))
 
 
@@ -97,6 +95,12 @@ def measure_network_speed() -> NetworkStats:
 _cache: dict[str, CachedValue] = {}
 
 
+def _clear_cache_if_refresh(force_refresh: bool, *keys: str) -> None:
+    if force_refresh:
+        for key in keys:
+            _cache.pop(key, None)
+
+
 def _get_cached(key: str, default_factory: tp.Callable[[], tp.Any], ttl: timedelta) -> tp.Any:
     now = datetime.now()
     cache_entry = _cache.get(key)
@@ -110,9 +114,7 @@ def _get_cached(key: str, default_factory: tp.Callable[[], tp.Any], ttl: timedel
 
 
 def check_network_speed(force_refresh: bool = False) -> NetworkStats:
-    if force_refresh and "network_speed" in _cache:
-        del _cache["network_speed"]
-
+    _clear_cache_if_refresh(force_refresh, "network_speed")
     return _get_cached(key="network_speed", default_factory=measure_network_speed, ttl=timedelta(minutes=60))
 
 
@@ -126,9 +128,7 @@ def measure_system_stats() -> SystemStats:
 
 
 def check_system_stats(force_refresh: bool = False) -> SystemStats:
-    if force_refresh and "system_stats" in _cache:
-        del _cache["system_stats"]
-
+    _clear_cache_if_refresh(force_refresh, "system_stats")
     return _get_cached(key="system_stats", default_factory=measure_system_stats, ttl=timedelta(minutes=1))
 
 
@@ -143,7 +143,9 @@ def calculate_health_score(
         return min(30, disk_score)
     network_score = 0
     if network_stats.ping < 9999:
-        network_score = 15 * max(0, min(1, (200 - network_stats.ping) / 150)) + 15 * min(1, network_stats.download_speed / 100)
+        network_score = 15 * max(0, min(1, (200 - network_stats.ping) / 150)) + 15 * min(
+            1, network_stats.download_speed / 100
+        )
     system_score = 15 * (2 - (system_stats.cpu_percent + system_stats.memory_percent) / 100)
     return round(disk_score + network_score + system_score, 1)
 
@@ -169,13 +171,5 @@ def _calculate_health_result() -> HealthCheckResult:
 
 
 def check_health(force_refresh: bool = False) -> HealthCheckResult:
-    if force_refresh and "health_result" in _cache:
-        del _cache["health_result"]
-        if "disk_space" in _cache:
-            del _cache["disk_space"]
-        if "network_speed" in _cache:
-            del _cache["network_speed"]
-        if "system_stats" in _cache:
-            del _cache["system_stats"]
-
+    _clear_cache_if_refresh(force_refresh, "health_result", "disk_space", "network_speed", "system_stats")
     return _get_cached(key="health_result", default_factory=_calculate_health_result, ttl=timedelta(minutes=5))

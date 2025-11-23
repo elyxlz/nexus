@@ -1,5 +1,6 @@
 import functools
 import json
+import time
 import typing as tp
 
 import requests
@@ -42,15 +43,37 @@ def _print_error_response(response):
 def handle_api_errors(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except SSHTunnelError as e:
-            print(colored("\nSSH Tunnel Error:", "red", attrs=["bold"]))
-            print(str(e))
-            raise
-        except requests.exceptions.HTTPError as e:
-            _print_error_response(e.response)
-            raise
+        max_retries = 2
+
+        for attempt in range(max_retries):
+            try:
+                return func(*args, **kwargs)
+            except SSHTunnelError as e:
+                print(colored("\nSSH Tunnel Error:", "red", attrs=["bold"]))
+                print(str(e))
+                raise
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                if attempt < max_retries - 1:
+                    target_name = kwargs.get("target_name")
+                    active_name, target_cfg = config.get_active_target(target_name)
+                    if target_cfg and target_cfg.host not in ("localhost", "127.0.0.1"):
+                        print(
+                            colored(
+                                f"\nConnection failed, recreating tunnel (attempt {attempt + 1}/{max_retries})...",
+                                "yellow",
+                            )
+                        )
+                        tunnel_manager._stop_control_master(active_name)
+                        time.sleep(0.5)
+                        continue
+                print(colored("\nConnection Error:", "red", attrs=["bold"]))
+                print(f"Failed to connect after {max_retries} attempts: {e}")
+                raise
+            except requests.exceptions.HTTPError as e:
+                _print_error_response(e.response)
+                raise
+
+        return None
 
     return wrapper
 
@@ -78,7 +101,7 @@ def check_api_connection(target_name: str | None = None) -> bool:
 @handle_api_errors
 def get_gpus(target_name: str | None = None) -> list[dict]:
     api_url = get_api_base_url(target_name)
-    response = requests.get(f"{api_url}/gpus")
+    response = requests.get(f"{api_url}/gpus", timeout=5)
     response.raise_for_status()
     return response.json()
 
@@ -87,7 +110,7 @@ def get_gpus(target_name: str | None = None) -> list[dict]:
 def get_jobs(status: str | None = None, target_name: str | None = None) -> list[dict]:
     params = {"status": status} if status else {}
     api_url = get_api_base_url(target_name)
-    response = requests.get(f"{api_url}/jobs", params=params)
+    response = requests.get(f"{api_url}/jobs", params=params, timeout=5)
     response.raise_for_status()
     return response.json()
 
@@ -95,7 +118,7 @@ def get_jobs(status: str | None = None, target_name: str | None = None) -> list[
 @handle_api_errors
 def get_job(job_id: str, target_name: str | None = None) -> dict:
     api_url = get_api_base_url(target_name)
-    response = requests.get(f"{api_url}/jobs/{job_id}")
+    response = requests.get(f"{api_url}/jobs/{job_id}", timeout=5)
     response.raise_for_status()
     return response.json()
 
@@ -106,7 +129,7 @@ def get_job_logs(job_id: str, last_n_lines: int | None = None, target_name: str 
     if last_n_lines is not None:
         params["last_n_lines"] = last_n_lines
     api_url = get_api_base_url(target_name)
-    response = requests.get(f"{api_url}/jobs/{job_id}/logs", params=params)
+    response = requests.get(f"{api_url}/jobs/{job_id}/logs", params=params, timeout=10)
     response.raise_for_status()
     data = response.json()
     if "data" not in data:
@@ -117,7 +140,7 @@ def get_job_logs(job_id: str, last_n_lines: int | None = None, target_name: str 
 @handle_api_errors
 def get_server_status(target_name: str | None = None) -> dict:
     api_url = get_api_base_url(target_name)
-    response = requests.get(f"{api_url}/server/status")
+    response = requests.get(f"{api_url}/server/status", timeout=10)
     response.raise_for_status()
     return response.json()
 
@@ -128,7 +151,7 @@ def get_detailed_health(refresh: bool = False, target_name: str | None = None) -
     if refresh:
         params["refresh"] = True
     api_url = get_api_base_url(target_name)
-    response = requests.get(f"{api_url}/health", params=params)
+    response = requests.get(f"{api_url}/health", params=params, timeout=10)
     response.raise_for_status()
     return response.json()
 
@@ -136,7 +159,7 @@ def get_detailed_health(refresh: bool = False, target_name: str | None = None) -
 @handle_api_errors
 def check_artifact_by_sha(git_sha: str, target_name: str | None = None) -> tuple[bool, str | None]:
     api_url = get_api_base_url(target_name)
-    response = requests.get(f"{api_url}/artifacts/by-sha/{git_sha}")
+    response = requests.get(f"{api_url}/artifacts/by-sha/{git_sha}", timeout=5)
     response.raise_for_status()
     result = response.json()
     return result["exists"], result.get("artifact_id")
@@ -149,7 +172,7 @@ def upload_artifact(data: bytes, git_sha: str | None = None, target_name: str | 
     if git_sha:
         params["git_sha"] = git_sha
     api_url = get_api_base_url(target_name)
-    response = requests.post(f"{api_url}/artifacts", data=data, params=params, headers=headers)
+    response = requests.post(f"{api_url}/artifacts", data=data, params=params, headers=headers, timeout=30)
     response.raise_for_status()
     result = response.json()
     if "data" not in result:
@@ -160,18 +183,24 @@ def upload_artifact(data: bytes, git_sha: str | None = None, target_name: str | 
 @handle_api_errors
 def add_job(job_request: dict, target_name: str | None = None) -> dict:
     api_url = get_api_base_url(target_name)
-    response = requests.post(f"{api_url}/jobs", json=job_request)
+    response = requests.post(f"{api_url}/jobs", json=job_request, timeout=10)
     response.raise_for_status()
     return response.json()
 
 
-def _process_job_batch(job_ids: list[str], method: str, endpoint_suffix: str, success_key: str, target_name: str | None) -> dict:
+def _process_job_batch(
+    job_ids: list[str],
+    method: tp.Literal["POST", "DELETE"],
+    endpoint_suffix: str,
+    success_key: str,
+    target_name: str | None,
+) -> dict:
     results = {success_key: [], "failed": []}
     api_url = get_api_base_url(target_name)
     request_fn = requests.post if method == "POST" else requests.delete
     for job_id in job_ids:
         try:
-            response = request_fn(f"{api_url}/jobs/{job_id}{endpoint_suffix}")
+            response = request_fn(f"{api_url}/jobs/{job_id}{endpoint_suffix}", timeout=5)
             if response.status_code == 204:
                 results[success_key].append(job_id)
             else:
@@ -211,7 +240,7 @@ def edit_job(
         update_data["git_tag"] = git_tag
 
     api_url = get_api_base_url(target_name)
-    response = requests.patch(f"{api_url}/jobs/{job_id}", json=update_data)
+    response = requests.patch(f"{api_url}/jobs/{job_id}", json=update_data, timeout=5)
     response.raise_for_status()
     return response.json()
 
@@ -226,11 +255,11 @@ def manage_blacklist(
     for gpu_idx in gpu_indices:
         try:
             if action == "add":
-                response = requests.put(f"{api_url}/gpus/{gpu_idx}/blacklist")
+                response = requests.put(f"{api_url}/gpus/{gpu_idx}/blacklist", timeout=5)
                 if response.ok:
                     results["blacklisted"].append(gpu_idx)
             else:
-                response = requests.delete(f"{api_url}/gpus/{gpu_idx}/blacklist")
+                response = requests.delete(f"{api_url}/gpus/{gpu_idx}/blacklist", timeout=5)
                 if response.ok:
                     results["removed"].append(gpu_idx)
 

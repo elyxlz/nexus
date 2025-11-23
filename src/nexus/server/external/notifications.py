@@ -29,36 +29,32 @@ class NotificationMessage(pyd.BaseModel):
     username: str = "Nexus"
 
 
+@tp.overload
+def _require_env(job: schemas.Job, __key1: str, __key2: str, /) -> tuple[str, str]: ...
+
+
+@tp.overload
+def _require_env(
+    job: schemas.Job, __key1: str, __key2: str, __key3: str, __key4: str, /
+) -> tuple[str, str, str, str]: ...
+
+
+def _require_env(job: schemas.Job, *keys: str) -> tuple[str, ...]:
+    values = []
+    for key in keys:
+        value = job.env.get(key)
+        if not value:
+            raise exc.NotificationError(f"Missing {key} in job environment")
+        values.append(value)
+    return tuple(values)
+
+
 def _get_discord_secrets(job: schemas.Job) -> tuple[str, str]:
-    webhook_url = job.env.get("DISCORD_WEBHOOK_URL")
-    if not webhook_url:
-        raise exc.NotificationError("Missing DISCORD_WEBHOOK_URL in job environment")
-
-    user_id = job.env.get("DISCORD_USER_ID")
-    if not user_id:
-        raise exc.NotificationError("Missing DISCORD_USER_ID in job environment")
-
-    return webhook_url, user_id
+    return _require_env(job, "DISCORD_WEBHOOK_URL", "DISCORD_USER_ID")
 
 
 def _get_phone_secrets(job: schemas.Job) -> tuple[str, str, str, str]:
-    phone_number = job.env.get("PHONE_TO_NUMBER")
-    if not phone_number:
-        raise exc.NotificationError("Missing PHONE_TO_NUMBER in job environment")
-
-    twilio_account_sid = job.env.get("TWILIO_ACCOUNT_SID")
-    if not twilio_account_sid:
-        raise exc.NotificationError("Missing TWILIO_ACCOUNT_SID in job environment")
-
-    twilio_auth_token = job.env.get("TWILIO_AUTH_TOKEN")
-    if not twilio_auth_token:
-        raise exc.NotificationError("Missing TWILIO_AUTH_TOKEN in job environment")
-
-    twilio_from_number = job.env.get("TWILIO_FROM_NUMBER")
-    if not twilio_from_number:
-        raise exc.NotificationError("Missing TWILIO_FROM_NUMBER in job environment")
-
-    return phone_number, twilio_account_sid, twilio_auth_token, twilio_from_number
+    return _require_env(job, "PHONE_TO_NUMBER", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER")
 
 
 def _truncate_field_value(value: str, max_length: int = 1024) -> str:
@@ -186,7 +182,7 @@ async def _make_phone_call(to_number: str, from_number: str, account_sid: str, a
 
 
 async def _send_phone_notification(job: schemas.Job, job_action: JobAction) -> None:
-    if job_action not in ["completed", "failed", "killed"]:
+    if job_action not in schemas.TERMINAL_STATUSES:
         return
 
     to_number, account_sid, auth_token, from_number = _get_phone_secrets(job)
@@ -216,8 +212,8 @@ async def notify_job_action(_job: schemas.Job, action: JobAction) -> schemas.Job
         message_data = _format_job_message_for_notification(_job, action)
         webhook_url = _get_discord_secrets(_job)[0]
 
-        if action in ["completed", "failed", "killed"] and _job.dir:
-            if action in ["failed", "killed"]:
+        if action in schemas.TERMINAL_STATUSES and _job.dir:
+            if action in [schemas.STATUS_FAILED, schemas.STATUS_KILLED]:
                 job_logs = await job.async_get_job_logs(_job.dir, last_n_lines=20)
                 if job_logs:
                     MAX_FIELD_LENGTH = 1024

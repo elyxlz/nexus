@@ -24,7 +24,7 @@ def format_timestamp(timestamp: float | None) -> str:
 def calculate_runtime(job: schemas.Job) -> float:
     if not job.started_at:
         return 0.0
-    if job.status in ["completed", "failed", "killed"] and job.completed_at:
+    if job.status in schemas.TERMINAL_STATUSES and job.completed_at:
         return job.completed_at - job.started_at
     elif job.status == "running":
         return dt.datetime.now().timestamp() - job.started_at

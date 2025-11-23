@@ -11,9 +11,9 @@ import typing as tp
 
 from termcolor import colored
 
+from nexus.cli.constants import TERMINAL_STATUSES
 from nexus.cli.ids import generate_job_id
 
-# Types
 Color = tp.Literal["grey", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
 Attribute = tp.Literal["bold", "dark", "underline", "blink", "reverse", "concealed"]
 
@@ -53,15 +53,19 @@ def print_job_field(label: str, value: str | int, value_color: Color = "cyan") -
     print(f"  {colored('•', 'blue')} {label}: {colored(str(value), value_color)}")
 
 
-def format_gpu_info(gpu_idxs: list[int] | None, num_gpus: int, style: tp.Literal["prefix", "parens", "inline"] = "prefix") -> str:
+def format_gpu_info(
+    gpu_idxs: list[int] | None,
+    num_gpus: int,
+    style: tp.Literal["prefix", "parens", "inline"] = "prefix",
+) -> str:
     if num_gpus == 0:
         return " (CPU)" if style == "parens" else " on CPU"
     if gpu_idxs:
-        gpu_str = ','.join(map(str, gpu_idxs))
-        plural = 's' if len(gpu_idxs) > 1 else ''
+        gpu_str = ",".join(map(str, gpu_idxs))
+        plural = "s" if len(gpu_idxs) > 1 else ""
     else:
         gpu_str = str(num_gpus)
-        plural = 's' if num_gpus > 1 else ''
+        plural = "s" if num_gpus > 1 else ""
     if style == "prefix":
         return f" on GPU{plural}: {colored(gpu_str, 'cyan')}"
     elif style == "parens":
@@ -81,6 +85,8 @@ STATUS_COLOR_MAP: dict[str, Color] = {
     "unhealthy": "red",
 }
 
+ELLIPSIS_LENGTH = 3
+
 
 def get_status_color(status: str) -> Color:
     return STATUS_COLOR_MAP.get(status, "white")
@@ -91,7 +97,7 @@ def format_priority_str(priority: int) -> str:
 
 
 def truncate_command(command: str, max_length: int = 80) -> str:
-    return command if len(command) <= max_length else command[:max_length - 3] + "..."
+    return command if len(command) <= max_length else command[: max_length - ELLIPSIS_LENGTH] + "..."
 
 
 def print_cancellation() -> None:
@@ -102,7 +108,7 @@ def get_latest_user_job(jobs: list[dict], user: str) -> dict | None:
     user_jobs = [j for j in jobs if j.get("user") == user and j.get("started_at") is not None]
     if not user_jobs:
         return None
-    return max(user_jobs, key=lambda x: x.get("started_at", 0))
+    return max(user_jobs, key=lambda x: x["started_at"] or 0.0)
 
 
 def print_warning(message: str) -> None:
@@ -366,12 +372,14 @@ def format_timestamp(timestamp: float | None) -> str:
 
 
 def calculate_runtime(job: dict) -> float:
-    if not job.get("started_at"):
+    started_at = job.get("started_at")
+    if not started_at:
         return 0.0
-    if job.get("status") in ["completed", "failed", "killed"] and job.get("completed_at"):
-        return job["completed_at"] - job["started_at"]
+    completed_at = job.get("completed_at")
+    if job.get("status") in TERMINAL_STATUSES and completed_at:
+        return completed_at - started_at
     elif job.get("status") == "running":
-        return time.time() - job["started_at"]
+        return time.time() - started_at
     return 0.0
 
 

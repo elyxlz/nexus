@@ -21,6 +21,7 @@ Nexus is a GPU job management system with a client-server architecture. It sched
 - **CLI Client** (`nexus.cli`): Command-line interface for users to submit jobs, view status, attach to sessions
 - **FastAPI Server** (`nexus.server`): Backend service that manages jobs, schedules work, and monitors system health
 - **Communication**: Client talks to server via REST API on localhost (default port configurable)
+- **Code Separation**: CLI and server maintain separate implementations of shared utilities (e.g., `ids.py`) to ensure CLI can operate independently without server dependencies
 
 **Server Components:**
 - **Core** (`nexus.server.core`): Job management, database operations, configuration, context

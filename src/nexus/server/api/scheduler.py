@@ -1,7 +1,6 @@
 import asyncio
 import dataclasses as dc
 import datetime as dt
-import typing as tp
 
 from nexus.server.core import context, db, job, exceptions as exc, schemas
 from nexus.server.core.schemas import STATUS_FAILED, STATUS_QUEUED, STATUS_RUNNING
