@@ -109,7 +109,7 @@ def _check_control_socket(target_name: str) -> bool:
             ["ssh", "-S", str(socket_path), "-O", "check", "dummy"],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=2,
         )
         return result.returncode == 0
     except (subprocess.TimeoutExpired, OSError):
@@ -165,9 +165,11 @@ def _start_control_master(target_name: str, target_cfg: config.TargetConfig) -> 
             "-o",
             "ConnectTimeout=10",
             "-o",
-            "ServerAliveInterval=60",
+            "ServerAliveInterval=15",
             "-o",
-            "ServerAliveCountMax=3",
+            "ServerAliveCountMax=2",
+            "-o",
+            "TCPKeepAlive=yes",
             "-o",
             "ExitOnForwardFailure=yes",
             "-o",
@@ -224,7 +226,7 @@ def _get_tunnel_port(target_name: str) -> int | None:
         _stop_control_master(target_name)
         return None
 
-    if not _wait_for_tunnel(local_port, timeout=1.0):
+    if not _wait_for_tunnel(local_port, timeout=0.5):
         _stop_control_master(target_name)
         return None
 
