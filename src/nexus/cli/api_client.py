@@ -44,7 +44,6 @@ def handle_api_errors(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         max_retries = 2
-        last_error = None
 
         for attempt in range(max_retries):
             try:
@@ -54,7 +53,6 @@ def handle_api_errors(func):
                 print(str(e))
                 raise
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-                last_error = e
                 if attempt < max_retries - 1:
                     target_name = kwargs.get("target_name")
                     active_name, target_cfg = config.get_active_target(target_name)
@@ -69,13 +67,13 @@ def handle_api_errors(func):
                         time.sleep(0.5)
                         continue
                 print(colored("\nConnection Error:", "red", attrs=["bold"]))
-                print(f"Failed to connect after {max_retries} attempts: {last_error}")
+                print(f"Failed to connect after {max_retries} attempts: {e}")
                 raise
             except requests.exceptions.HTTPError as e:
                 _print_error_response(e.response)
                 raise
 
-        raise last_error
+        return None
 
     return wrapper
 
