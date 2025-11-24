@@ -143,17 +143,17 @@ def create_server_user(sup_groups: list[str] | None = None) -> bool:
 
 
 def setup_shared_screen_dir() -> bool:
-    screen_dir = pl.Path("/tmp/screen_nexus")
+    screen_dir = pl.Path("/tmp/nexus-screen")
     if not screen_dir.exists():
         screen_dir.mkdir(parents=True, exist_ok=True)
-        os.chmod(screen_dir, 0o1777)
+        os.chmod(screen_dir, 0o755)
         return True
     return False
 
 
 def setup_passwordless_nexus_attach() -> bool:
     sudoers_file = pl.Path("/etc/sudoers.d/nexus_attach")
-    content = "ALL ALL=(nexus) NOPASSWD: /usr/bin/screen -r *, /usr/bin/screen -S * -X acladd *\n"
+    content = "Defaults env_keep += \"SCREENDIR\"\nALL ALL=(nexus) NOPASSWD: /usr/bin/screen -r *, /usr/bin/screen -S * -X acladd *\n"
 
     try:
         sudoers_file.write_text(content)
@@ -468,18 +468,12 @@ def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
         print(f"User '{SERVER_USER}' already exists.")
 
     if setup_shared_screen_dir():
-        print("Created shared screen directory at /tmp/screen_nexus")
+        print("Created shared screen directory at /tmp/nexus-screen")
 
     setup_screen_run_dir()
 
     if setup_screen_multiuser():
         print("Enabled multiuser screen support (setuid on /usr/bin/screen)")
-
-    if setup_passwordless_nexus_attach():
-        print(
-            "PASSWORDLESS ACCESS ENABLED: Any user can now run 'sudo -u nexus screen -r <session>' without a password"
-        )
-        print("Added rule to /etc/sudoers.d/nexus_attach")
 
 
 def confirm_installation(_config: config.NexusServerConfig) -> bool:
@@ -844,7 +838,7 @@ Examples:
 
 
 def _check_screen_permissions() -> None:
-    screen_dir = pl.Path("/run/screen")
+    screen_dir = pl.Path("/tmp/nexus-screen")
     try:
         if not screen_dir.exists():
             screen_dir.mkdir(parents=True, exist_ok=True)
