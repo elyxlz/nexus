@@ -1179,6 +1179,8 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                     "sudo",
                     "-u",
                     "nexus",
+                    "env",
+                    "SCREENDIR=/tmp/nexus-screen",
                     "screen",
                     "-r",
                     screen_session_name,
@@ -1194,7 +1196,7 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
             current_user_exit_code = subprocess.call(["screen", "-x", f"nexus/{screen_session_name}"])
 
             if current_user_exit_code != 0:
-                exit_code = subprocess.call(["sudo", "-u", "nexus", "screen", "-r", screen_session_name])
+                exit_code = subprocess.call(["sudo", "-u", "nexus", "env", "SCREENDIR=/tmp/nexus-screen", "screen", "-r", screen_session_name])
 
                 if exit_code != 0:
                     print(colored("Screen session not found. Available sessions:", "yellow"))
