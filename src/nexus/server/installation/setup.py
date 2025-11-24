@@ -475,6 +475,10 @@ def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
     if setup_screen_multiuser():
         print("Enabled multiuser screen support (setuid on /usr/bin/screen)")
 
+    if setup_passwordless_nexus_attach():
+        print("Configured passwordless sudo for screen attach")
+        print("Added rule to /etc/sudoers.d/nexus_attach")
+
 
 def confirm_installation(_config: config.NexusServerConfig) -> bool:
     print("\n" + "=" * 80)
