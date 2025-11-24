@@ -143,7 +143,7 @@ def create_server_user(sup_groups: list[str] | None = None) -> bool:
 
 
 def setup_shared_screen_dir() -> bool:
-    screen_dir = pl.Path("/tmp/screen_nexus")
+    screen_dir = pl.Path("/tmp/nexus-screen")
     if not screen_dir.exists():
         screen_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(screen_dir, 0o1777)
@@ -468,18 +468,12 @@ def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
         print(f"User '{SERVER_USER}' already exists.")
 
     if setup_shared_screen_dir():
-        print("Created shared screen directory at /tmp/screen_nexus")
+        print("Created shared screen directory at /tmp/nexus-screen")
 
     setup_screen_run_dir()
 
     if setup_screen_multiuser():
         print("Enabled multiuser screen support (setuid on /usr/bin/screen)")
-
-    if setup_passwordless_nexus_attach():
-        print(
-            "PASSWORDLESS ACCESS ENABLED: Any user can now run 'sudo -u nexus screen -r <session>' without a password"
-        )
-        print("Added rule to /etc/sudoers.d/nexus_attach")
 
 
 def confirm_installation(_config: config.NexusServerConfig) -> bool:
@@ -844,26 +838,26 @@ Examples:
 
 
 def _check_screen_permissions() -> None:
-    screen_dir = pl.Path("/run/screen")
+    screen_dir = pl.Path("/tmp/nexus-screen")
     try:
         if not screen_dir.exists():
             screen_dir.mkdir(parents=True, exist_ok=True)
-        if stat.S_IMODE(screen_dir.stat().st_mode) != 0o755:
-            screen_dir.chmod(0o755)
+        if stat.S_IMODE(screen_dir.stat().st_mode) != 0o1777:
+            screen_dir.chmod(0o1777)
             actual_perms = stat.S_IMODE(screen_dir.stat().st_mode)
-            if actual_perms != 0o755:
-                raise RuntimeError(f"Failed to set {screen_dir} permissions to 755 (got {oct(actual_perms)})")
+            if actual_perms != 0o1777:
+                raise RuntimeError(f"Failed to set {screen_dir} permissions to 1777 (got {oct(actual_perms)})")
     except (OSError, PermissionError) as e:
         try:
             print(f"Attempting to fix {screen_dir} permissions using sudo...")
             subprocess.run(["sudo", "mkdir", "-p", str(screen_dir)], check=True, capture_output=True)
-            subprocess.run(["sudo", "chmod", "755", str(screen_dir)], check=True, capture_output=True)
+            subprocess.run(["sudo", "chmod", "1777", str(screen_dir)], check=True, capture_output=True)
             print(f"Successfully fixed {screen_dir} permissions.")
         except (subprocess.CalledProcessError, FileNotFoundError) as sudo_error:
             raise RuntimeError(
-                f"Screen requires {screen_dir} with permissions 755. Error: {e}\n"
+                f"Screen requires {screen_dir} with permissions 1777. Error: {e}\n"
                 f"Attempted automatic fix with sudo but failed: {sudo_error}\n"
-                f"Manual fix: sudo mkdir -p {screen_dir} && sudo chmod 755 {screen_dir}"
+                f"Manual fix: sudo mkdir -p {screen_dir} && sudo chmod 1777 {screen_dir}"
             )
 
 

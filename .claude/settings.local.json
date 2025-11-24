@@ -32,7 +32,8 @@
       "Bash(python3:*)",
       "WebSearch",
       "Bash(uv lock:*)",
-      "Bash(gh run list:*)"
+      "Bash(gh run list:*)",
+      "Bash(git pull:*)"
     ],
     "deny": []
   }

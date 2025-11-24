@@ -40,6 +40,7 @@ class NexusServerConfig(pyds.BaseSettings):
     model_config = pyds.SettingsConfigDict(env_prefix="ns_", frozen=True, extra="ignore")
 
     server_dir: pl.Path | None
+    screen_dir: pl.Path = pyd.Field(default=pl.Path("/tmp/nexus-screen"))
     refresh_rate: int = pyd.Field(default=3)
     port: int = pyd.Field(default=54323)
     node_name: str = pyd.Field(default_factory=get_default_node_name)

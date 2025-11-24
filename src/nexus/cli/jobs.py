@@ -1176,13 +1176,10 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                     "-o",
                     "StrictHostKeyChecking=accept-new",
                     f"{target_cfg.ssh_user}@{target_cfg.host}",
-                    "sudo",
-                    "-u",
-                    "nexus",
                     "SCREENDIR=/tmp/nexus-screen",
                     "screen",
-                    "-r",
-                    screen_session_name,
+                    "-x",
+                    f"nexus/{screen_session_name}",
                 ],
                 env=env,
             )
@@ -1192,19 +1189,19 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                 print(colored(f"View logs: nx logs {job_id}", "yellow"))
                 return
         else:
-            current_user_exit_code = subprocess.call(["screen", "-x", f"nexus/{screen_session_name}"])
+            env = os_module.environ.copy()
+            env["SCREENDIR"] = "/tmp/nexus-screen"
 
-            if current_user_exit_code != 0:
-                exit_code = subprocess.call(["sudo", "-u", "nexus", "SCREENDIR=/tmp/nexus-screen", "screen", "-r", screen_session_name])
+            exit_code = subprocess.call(["screen", "-x", f"nexus/{screen_session_name}"], env=env)
 
-                if exit_code != 0:
-                    print(colored("Screen session not found. Available sessions:", "yellow"))
-                    subprocess.call(["screen", "-ls"])
-                    print(colored("\nTroubleshooting tips:", "yellow"))
-                    print("  1. Verify that the job is still running and the session name is correct.")
-                    print("  2. Check if you have the proper permissions to access the screen session.")
-                    print(f"  3. You can always view job logs with: nx logs {job_id}")
-                    return
+            if exit_code != 0:
+                print(colored("Screen session not found. Available sessions:", "yellow"))
+                subprocess.call(["screen", "-ls"])
+                print(colored("\nTroubleshooting tips:", "yellow"))
+                print("  1. Verify that the job is still running and the session name is correct.")
+                print("  2. Check if you have the proper permissions to access the screen session.")
+                print(f"  3. You can always view job logs with: nx logs {job_id}")
+                return
 
         try:
             updated_job = api_client.get_job(job_id, target_name=target_name)
