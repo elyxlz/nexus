@@ -40,9 +40,6 @@ GRACEFUL_SHUTDOWN_TIMEOUT = 10.0
 SCREENRC_CONTENT = """termcapinfo xterm*|rxvt*|kterm*|Eterm*|alacritty*|kitty*|screen* ti@:te@
 
 defscrollback 10000
-
-multiuser on
-aclchg * +rwx "#?"
 """
 
 
