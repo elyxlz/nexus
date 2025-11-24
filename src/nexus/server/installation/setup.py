@@ -153,7 +153,7 @@ def setup_shared_screen_dir() -> bool:
 
 def setup_passwordless_nexus_attach() -> bool:
     sudoers_file = pl.Path("/etc/sudoers.d/nexus_attach")
-    content = "ALL ALL=(nexus) NOPASSWD: /usr/bin/screen -r *, /usr/bin/screen -S * -X acladd *\n"
+    content = "Defaults env_keep += \"SCREENDIR\"\nALL ALL=(nexus) NOPASSWD: /usr/bin/screen -r *, /usr/bin/screen -S * -X acladd *\n"
 
     try:
         sudoers_file.write_text(content)
