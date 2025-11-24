@@ -1176,7 +1176,6 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                     "-o",
                     "StrictHostKeyChecking=accept-new",
                     f"{target_cfg.ssh_user}@{target_cfg.host}",
-                    "SCREENDIR=/tmp/nexus-screen",
                     "screen",
                     "-x",
                     f"nexus/{screen_session_name}",
@@ -1189,10 +1188,7 @@ def attach_to_job(cfg: config.NexusCliConfig, target: str | None = None, target_
                 print(colored(f"View logs: nx logs {job_id}", "yellow"))
                 return
         else:
-            env = os_module.environ.copy()
-            env["SCREENDIR"] = "/tmp/nexus-screen"
-
-            exit_code = subprocess.call(["screen", "-x", f"nexus/{screen_session_name}"], env=env)
+            exit_code = subprocess.call(["screen", "-x", f"nexus/{screen_session_name}"])
 
             if exit_code != 0:
                 print(colored("Screen session not found. Available sessions:", "yellow"))

@@ -194,7 +194,7 @@ def _create_screenrc() -> pl.Path:
 
 @exc.handle_exception(FileNotFoundError, exc.JobError, message="Cannot launch job process - file not found")
 @exc.handle_exception(PermissionError, exc.JobError, message="Cannot launch job process - permission denied")
-async def _launch_screen_process(session_name: str, script_path: str, env: dict[str, str], screen_dir: pl.Path) -> int:
+async def _launch_screen_process(session_name: str, script_path: str, env: dict[str, str]) -> int:
     check_session = await asyncio.create_subprocess_exec(
         "screen", "-ls", session_name, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
@@ -233,10 +233,6 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         raise exc.JobError(message=f"Script syntax error: {stderr.decode()}")
 
     screenrc_path = _create_screenrc()
-    screen_dir.mkdir(parents=True, exist_ok=True)
-
-    screen_env = env.copy()
-    screen_env["SCREENDIR"] = str(screen_dir)
 
     process = await asyncio.create_subprocess_exec(
         "screen",
@@ -245,7 +241,7 @@ async def _launch_screen_process(session_name: str, script_path: str, env: dict[
         "-dmS",
         session_name,
         str(abs_script_path),
-        env=screen_env,
+        env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -386,7 +382,7 @@ async def async_start_job(job: schemas.Job, gpu_idxs: list[int], ctx) -> schemas
     log_file, job_repo_dir, env, script_path = await prepare_job_environment(job, gpu_idxs, ctx)
     session_name = _get_job_session_name(job.id)
 
-    pid = await _launch_screen_process(session_name, str(script_path), env, ctx.config.screen_dir)
+    pid = await _launch_screen_process(session_name, str(script_path), env)
     return dc.replace(
         job,
         started_at=dt.datetime.now().timestamp(),
