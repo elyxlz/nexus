@@ -8,7 +8,6 @@ import os
 import pathlib as pl
 import pwd
 import shutil
-import stat
 import subprocess
 import sys
 import time
@@ -142,36 +141,13 @@ def create_server_user(sup_groups: list[str] | None = None) -> bool:
     return not user_exists
 
 
-def setup_shared_screen_dir() -> bool:
-    screen_dir = pl.Path("/tmp/nexus-screen")
-    if not screen_dir.exists():
-        screen_dir.mkdir(parents=True, exist_ok=True)
-        os.chmod(screen_dir, 0o755)
-        return True
-    return False
-
-
 def setup_passwordless_nexus_attach() -> bool:
     sudoers_file = pl.Path("/etc/sudoers.d/nexus_attach")
-    content = "Defaults env_keep += \"SCREENDIR\"\nALL ALL=(nexus) NOPASSWD: /usr/bin/screen -r *, /usr/bin/screen -S * -X acladd *\n"
+    content = "ALL ALL=(nexus) NOPASSWD: /usr/bin/screen -r *\n"
 
     try:
         sudoers_file.write_text(content)
         os.chmod(sudoers_file, 0o440)
-        return True
-    except Exception:
-        return False
-
-
-def setup_screen_multiuser() -> bool:
-    screen_path = pl.Path("/usr/bin/screen")
-    if not screen_path.exists():
-        return False
-
-    try:
-        current_mode = screen_path.stat().st_mode
-        if not (current_mode & stat.S_ISUID):
-            subprocess.run(["chmod", "u+s", str(screen_path)], check=True)
         return True
     except Exception:
         return False
@@ -442,20 +418,14 @@ def check_installation_prerequisites(force: bool = False) -> None:
         sys.exit(f"Nexus server is already installed in system mode (version {info.version}).")
 
 
-def setup_screen_run_dir() -> None:
-    screen_dir = pl.Path("/run/screen")
-    if not screen_dir.exists():
-        screen_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Created screen directory at {screen_dir}")
-
-    current_perms = stat.S_IMODE(screen_dir.stat().st_mode)
-    if current_perms != 0o755:
-        screen_dir.chmod(0o755)
-        print(f"Set permissions 755 on {screen_dir}")
-
-        actual_perms = stat.S_IMODE(screen_dir.stat().st_mode)
-        if actual_perms != 0o755:
-            raise RuntimeError(f"Failed to set {screen_dir} permissions to 755 (got {oct(actual_perms)})")
+def setup_screen_tmpfiles() -> bool:
+    tmpfiles_config = pl.Path("/etc/tmpfiles.d/nexus-screen.conf")
+    content = "d /run/screen 0777 root root -\n"
+    try:
+        tmpfiles_config.write_text(content)
+        return True
+    except Exception:
+        return False
 
 
 def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
@@ -467,13 +437,9 @@ def prepare_system_environment(sup_groups: list[str] | None = None) -> None:
     else:
         print(f"User '{SERVER_USER}' already exists.")
 
-    if setup_shared_screen_dir():
-        print("Created shared screen directory at /tmp/nexus-screen")
-
-    setup_screen_run_dir()
-
-    if setup_screen_multiuser():
-        print("Enabled multiuser screen support (setuid on /usr/bin/screen)")
+    if setup_screen_tmpfiles():
+        print("Configured systemd tmpfiles for /run/screen")
+        print("Added /etc/tmpfiles.d/nexus-screen.conf")
 
     if setup_passwordless_nexus_attach():
         print("Configured passwordless sudo for screen attach")
@@ -841,32 +807,16 @@ Examples:
     return parser
 
 
-def _check_screen_permissions() -> None:
-    screen_dir = pl.Path("/tmp/nexus-screen")
+def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext:
+    screen_dir = pl.Path("/run/screen")
     try:
         if not screen_dir.exists():
             screen_dir.mkdir(parents=True, exist_ok=True)
-        if stat.S_IMODE(screen_dir.stat().st_mode) != 0o755:
-            screen_dir.chmod(0o755)
-            actual_perms = stat.S_IMODE(screen_dir.stat().st_mode)
-            if actual_perms != 0o755:
-                raise RuntimeError(f"Failed to set {screen_dir} permissions to 755 (got {oct(actual_perms)})")
-    except (OSError, PermissionError) as e:
-        try:
-            print(f"Attempting to fix {screen_dir} permissions using sudo...")
-            subprocess.run(["sudo", "mkdir", "-p", str(screen_dir)], check=True, capture_output=True)
-            subprocess.run(["sudo", "chmod", "755", str(screen_dir)], check=True, capture_output=True)
-            print(f"Successfully fixed {screen_dir} permissions.")
-        except (subprocess.CalledProcessError, FileNotFoundError) as sudo_error:
-            raise RuntimeError(
-                f"Screen requires {screen_dir} with permissions 755. Error: {e}\n"
-                f"Attempted automatic fix with sudo but failed: {sudo_error}\n"
-                f"Manual fix: sudo mkdir -p {screen_dir} && sudo chmod 755 {screen_dir}"
-            )
-
-
-def initialize_context(server_dir: pl.Path | None) -> context.NexusServerContext:
-    _check_screen_permissions()
+            screen_dir.chmod(0o777)
+        elif oct(screen_dir.stat().st_mode)[-3:] != "777":
+            screen_dir.chmod(0o777)
+    except (PermissionError, OSError):
+        pass
 
     if server_dir and (server_dir / "config.toml").exists():
         _config = config.load_config(server_dir)
