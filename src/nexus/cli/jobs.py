@@ -210,6 +210,55 @@ def _build_job_request(
     }
 
 
+def _prepare_and_submit(
+    cfg: config.NexusCliConfig,
+    commands: list[str],
+    user: str,
+    gpu_idxs: list[int] | None,
+    num_gpus: int,
+    priority: int,
+    notifications: list[NotificationType],
+    integrations: list[IntegrationType],
+    env_vars: dict[str, str],
+    jobrc_content: str | None,
+    force: bool,
+    local: bool,
+    target_name: str | None,
+    run_immediately: bool,
+) -> list[dict]:
+    git_ctx = None
+    try:
+        git_ctx = utils.prepare_git_artifact(cfg.enable_git_tag_push and not local, target_name=target_name)
+        git_tag_pushed = bool(cfg.enable_git_tag_push and not local)
+
+        created_jobs = []
+        for cmd in commands:
+            job_id = git_ctx.job_id if len(commands) == 1 else utils.generate_job_id()
+            job_request = _build_job_request(
+                job_id=job_id,
+                command=cmd,
+                user=user,
+                git_ctx=git_ctx,
+                num_gpus=num_gpus,
+                gpu_idxs=gpu_idxs,
+                priority=priority,
+                notifications=notifications,
+                integrations=integrations,
+                env_vars=env_vars,
+                jobrc_content=jobrc_content,
+                run_immediately=run_immediately,
+                force=force,
+                git_tag_pushed=git_tag_pushed,
+            )
+            result = api_client.add_job(job_request, target_name=target_name)
+            created_jobs.append(result)
+
+        return created_jobs
+    finally:
+        if git_ctx:
+            utils.cleanup_git_state(git_ctx)
+
+
 def run_job(
     cfg: config.NexusCliConfig,
     commands: list[str],
@@ -240,7 +289,7 @@ def run_job(
             gpu_info = f" using {colored(str(num_gpus), 'cyan')} GPU(s)"
 
         if interactive:
-            command = "bash"  # Use bash for interactive mode
+            command = "bash"
             print(f"\n{colored('Starting interactive session:', 'blue', attrs=['bold'])}")
             print(f"  {colored('•', 'blue')} Interactive shell{gpu_info}")
         else:
@@ -251,85 +300,74 @@ def run_job(
             print(f"\n{colored('Running job:', 'blue', attrs=['bold'])}")
             print(f"  {colored('•', 'blue')} {command}{gpu_info}")
 
-        if not utils.confirm_action(
-            "Run this job",
-            bypass=bypass_confirm,
-        ):
+        if not utils.confirm_action("Run this job", bypass=bypass_confirm):
             utils.print_cancellation()
             return
 
         user = cfg.user or "anonymous"
         notifications, integrations = _build_notification_lists(cfg, notification_types, integration_types, silent)
 
-        git_ctx = None
-        try:
-            git_ctx = utils.prepare_git_artifact(cfg.enable_git_tag_push and not local, target_name=target_name)
-            job_env_vars = _load_and_merge_env()
-            if notification_types or cfg.default_notifications:
-                notifications = _validate_notifications(notifications, job_env_vars)
-                if notifications is None:
+        env_vars = _load_and_merge_env()
+        if notification_types or cfg.default_notifications:
+            notifications = _validate_notifications(notifications, env_vars)
+            if notifications is None:
+                return
+
+        jobrc_content = _load_jobrc()
+
+        results = _prepare_and_submit(
+            cfg=cfg,
+            commands=[command],
+            user=user,
+            gpu_idxs=gpu_idxs,
+            num_gpus=num_gpus,
+            priority=0,
+            notifications=notifications,
+            integrations=integrations,
+            env_vars=env_vars,
+            jobrc_content=jobrc_content,
+            force=force,
+            local=local,
+            target_name=target_name,
+            run_immediately=True,
+        )
+
+        if not results:
+            raise ValueError("No job was created")
+        result = results[0]
+        if "id" not in result:
+            raise ValueError(f"API response missing 'id' field: {result}")
+        job_id = result["id"]
+
+        print(colored("\nJob started:", "green", attrs=["bold"]))
+        print(f"  {colored('•', 'green')} Job {colored(job_id, 'magenta')}: {result['command']}")
+
+        print(colored("\nWaiting for job to initialize...", "blue"))
+
+        for i in range(JOB_INIT_MAX_ATTEMPTS):
+            time.sleep(1)
+            try:
+                job = api_client.get_job(job_id, target_name=target_name)
+                if job["status"] in TERMINAL_STATUSES:
+                    status_color = "green" if job["status"] == STATUS_COMPLETED else "red"
+                    print(colored(f"\nJob {job_id} {job['status']}", status_color))
+                    view_logs(cfg, target=job_id, target_name=target_name)
                     return
+                if job["status"] == STATUS_RUNNING and job.get("screen_session_name"):
+                    print(colored(f"Job {job_id} running, attaching to screen session...", "green"))
+                    attach_to_job(cfg, job_id, target_name=target_name)
+                    return
+            except Exception:
+                pass
 
-            jobrc_content = _load_jobrc()
+            if i < JOB_INIT_MAX_ATTEMPTS - 1:
+                print(".", end="", flush=True)
 
-            job_request = _build_job_request(
-                job_id=git_ctx.job_id,
-                command=command,
-                user=user,
-                git_ctx=git_ctx,
-                num_gpus=num_gpus,
-                gpu_idxs=gpu_idxs,
-                priority=0,
-                notifications=notifications,
-                integrations=integrations,
-                env_vars=job_env_vars,
-                jobrc_content=jobrc_content,
-                run_immediately=True,
-                force=force,
-                git_tag_pushed=bool(cfg.enable_git_tag_push and not local),
-            )
-
-            result = api_client.add_job(job_request, target_name=target_name)
-            if "id" not in result:
-                raise ValueError(f"API response missing 'id' field: {result}")
-            job_id = result["id"]
-
-            print(colored("\nJob started:", "green", attrs=["bold"]))
-            print(f"  {colored('•', 'green')} Job {colored(job_id, 'magenta')}: {result['command']}")
-
-            utils.cleanup_git_state(git_ctx)
-            git_ctx = None
-
-            print(colored("\nWaiting for job to initialize...", "blue"))
-
-            for i in range(JOB_INIT_MAX_ATTEMPTS):
-                time.sleep(1)
-                try:
-                    job = api_client.get_job(job_id, target_name=target_name)
-                    if job["status"] in TERMINAL_STATUSES:
-                        status_color = "green" if job["status"] == STATUS_COMPLETED else "red"
-                        print(colored(f"\nJob {job_id} {job['status']}", status_color))
-                        view_logs(cfg, target=job_id, target_name=target_name)
-                        return
-                    if job["status"] == STATUS_RUNNING and job.get("screen_session_name"):
-                        print(colored(f"Job {job_id} running, attaching to screen session...", "green"))
-                        attach_to_job(cfg, job_id, target_name=target_name)
-                        return
-                except Exception:
-                    pass
-
-                if i < JOB_INIT_MAX_ATTEMPTS - 1:
-                    print(".", end="", flush=True)
-
-            target_flag = f" -t {target_name}" if target_name else ""
-            print(colored("\nCouldn't automatically attach to job. You can:", "yellow"))
-            print(f"  - Run 'nx attach{target_flag} {job_id}' to attach to the job's screen session")
-            print(f"  - Run 'nx logs{target_flag} {job_id}' to view the job output")
-            print(f"  - Use 'nx logs -n 20{target_flag} {job_id}' to see just the last 20 lines")
-
-        finally:
-            if git_ctx:
-                utils.cleanup_git_state(git_ctx)
+        target_flag = f" -t {target_name}" if target_name else ""
+        print(colored("\nCouldn't automatically attach to job. You can:", "yellow"))
+        print(f"  - Run 'nx attach{target_flag} {job_id}' to attach to the job's screen session")
+        print(f"  - Run 'nx logs{target_flag} {job_id}' to view the job output")
+        print(f"  - Use 'nx logs -n 20{target_flag} {job_id}' to see just the last 20 lines")
 
     except Exception as e:
         print(colored(f"\nError: {e}", "red"))
@@ -360,8 +398,6 @@ def add_jobs(
             return
 
         command_str = " ".join(commands)
-        commands_list = [command_str]
-
         gpu_idxs = None
         if cpu:
             num_gpus = 0
@@ -369,7 +405,7 @@ def add_jobs(
         elif gpu_idxs_str:
             gpu_idxs = utils.parse_gpu_list(gpu_idxs_str)
 
-        expanded_commands = utils.expand_job_commands(commands_list, repeat=repeat)
+        expanded_commands = utils.expand_job_commands([command_str], repeat=repeat)
         if not expanded_commands:
             return
 
@@ -395,43 +431,31 @@ def add_jobs(
             if notifications is None:
                 return
 
-        git_ctx = None
-        try:
-            git_ctx = utils.prepare_git_artifact(enable_git_tag_push=False, target_name=target_name)
-            jobrc_content = _load_jobrc()
+        jobrc_content = _load_jobrc()
 
-            created_jobs = []
-            for cmd in expanded_commands:
-                queued_job_id = utils.generate_job_id()
-                job_request = _build_job_request(
-                    job_id=queued_job_id,
-                    command=cmd,
-                    user=user,
-                    git_ctx=git_ctx,
-                    num_gpus=num_gpus,
-                    gpu_idxs=gpu_idxs,
-                    priority=priority,
-                    notifications=notifications,
-                    integrations=integrations,
-                    env_vars=env_vars,
-                    jobrc_content=jobrc_content,
-                    run_immediately=False,
-                    force=force,
-                    git_tag_pushed=False,
-                )
-                result = api_client.add_job(job_request, target_name=target_name)
-                created_jobs.append(result)
+        created_jobs = _prepare_and_submit(
+            cfg=cfg,
+            commands=expanded_commands,
+            user=user,
+            gpu_idxs=gpu_idxs,
+            num_gpus=num_gpus,
+            priority=priority,
+            notifications=notifications,
+            integrations=integrations,
+            env_vars=env_vars,
+            jobrc_content=jobrc_content,
+            force=force,
+            local=local,
+            target_name=target_name,
+            run_immediately=False,
+        )
 
-            print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
-            for job in created_jobs:
-                priority_str = utils.format_priority_str(priority)
-                gpus_str = utils.format_gpu_info(gpu_idxs, num_gpus, style="parens") if num_gpus > 0 or cpu else ""
-                job_id_colored = colored(job["id"], "magenta")
-                print(f"  {colored('•', 'green')} Job {job_id_colored}: {job['command']}{priority_str}{gpus_str}")
-
-        finally:
-            if git_ctx:
-                utils.cleanup_git_state(git_ctx)
+        print(colored("\nSuccessfully added:", "green", attrs=["bold"]))
+        for job in created_jobs:
+            priority_str = utils.format_priority_str(priority)
+            gpus_str = utils.format_gpu_info(gpu_idxs, num_gpus, style="parens") if num_gpus > 0 or cpu else ""
+            job_id_colored = colored(job["id"], "magenta")
+            print(f"  {colored('•', 'green')} Job {job_id_colored}: {job['command']}{priority_str}{gpus_str}")
 
     except Exception as e:
         print(colored(f"\nError: {e}", "red"))
